@@ -8,8 +8,11 @@
   },
   "dependencies": {
     "@pinecone-database/pinecone": "^6.1.2",
+    "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
-    "firebase-admin": "^12.7.0"
+    "firebase-admin": "^12.7.0",
+    "openai": "^6.7.0",
+    "pdf-parse": "^2.4.5"
   }
 }

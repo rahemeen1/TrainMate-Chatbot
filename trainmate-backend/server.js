@@ -1,109 +1,32 @@
-// import express from 'express';
-// import dotenv from 'dotenv';
-// import { Pinecone } from '@pinecone-database/pinecone';
+import express from "express";
+import dotenv from "dotenv";
+import cors from "cors";
+import { Pinecone } from "@pinecone-database/pinecone";
+import { db } from "./firebase.js";
 
-// dotenv.config();
-
-// const app = express();
-// app.use(express.json());
-// const PORT = process.env.PORT || 5000;
-
-// (async () => {
-//   try {
-//     const pinecone = new Pinecone({
-//       apiKey: process.env.PINECONE_API_KEY,
-//     });
-
-//     console.log('✅ Pinecone initialized');
-
-//     const INDEX_NAME = 'example-index';
-//     const DIMENSION = 1536;
-
-//     const { indexes } = await pinecone.listIndexes();
-
-//     if (!indexes.includes(INDEX_NAME)) {
-//       console.log('🆕 Creating new Pinecone index...');
-
-//       await pinecone.createIndex({
-//         name: INDEX_NAME,
-//         dimension: DIMENSION,
-//         metric: 'cosine',
-//         spec: {
-//           serverless: {
-//             cloud: 'aws',          // choose your provider
-//             region: 'us-east-1',   // choose your region
-//           },
-//         },
-//       });
-
-//       console.log(`✅ Index '${INDEX_NAME}' created`);
-//     } else {
-//       console.log(`✅ Index '${INDEX_NAME}' already exists`);
-//     }
-
-//     const index = pinecone.index(INDEX_NAME);
-
-//     // --- ROUTES ---
-//     app.get('/check-pinecone', async (req, res) => {
-//       try {
-//         const { indexes } = await pinecone.listIndexes();
-//         res.json({ success: true, indexes });
-//       } catch (error) {
-//         res.json({ success: false, error: error.message });
-//       }
-//     });
-
-//     app.get('/test-vector', async (req, res) => {
-//       try {
-//         const testVector = Array(DIMENSION).fill(0.5);
-
-//         await index.upsert([
-//           {
-//             id: 'test1',
-//             values: testVector,
-//           },
-//         ]);
-
-//         const result = await index.query({
-//           topK: 1,
-//           vector: testVector,
-//         });
-
-//         res.json({ message: '✅ Vector upserted & queried successfully!', result });
-//       } catch (error) {
-//         res.json({ error: error.message });
-//       }
-//     });
-
-//     app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
-//   } catch (err) {
-//     console.error('❌ Error initializing Pinecone:', err);
-//   }
-// })();
-
-import express from 'express';
-import dotenv from 'dotenv';
-import { Pinecone } from '@pinecone-database/pinecone';
-
+// app.use(cors());
 dotenv.config();
 
 const app = express();
 app.use(express.json());
+app.use(cors());
+
 const PORT = process.env.PORT || 5000;
 
-(async () => {
+async function startServer() {
   try {
-    // Initialize Pinecone
+    // ===========================
+    // 🔹 Initialize Pinecone
+    // ===========================
     const pinecone = new Pinecone({
       apiKey: process.env.PINECONE_API_KEY,
     });
 
-    console.log('✅ Pinecone initialized');
+    console.log("✅ Pinecone initialized");
 
-    const INDEX_NAME = 'example-index';
+    const INDEX_NAME = "train-mate19";
     const DIMENSION = 1536;
 
-    // List existing indexes
     const { indexes } = await pinecone.listIndexes();
 
     if (!indexes.includes(INDEX_NAME)) {
@@ -112,11 +35,11 @@ const PORT = process.env.PORT || 5000;
       await pinecone.createIndex({
         name: INDEX_NAME,
         dimension: DIMENSION,
-        metric: 'cosine',
+        metric: "cosine",
         spec: {
           serverless: {
-            cloud: 'aws',          // you can use 'aws' or 'gcp'
-            region: 'us-east-1',   // same as your project region
+            cloud: "aws",
+            region: "us-east-1",
           },
         },
       });
@@ -128,8 +51,10 @@ const PORT = process.env.PORT || 5000;
 
     const index = pinecone.index(INDEX_NAME);
 
-    // Test routes
-    app.get('/check-pinecone', async (req, res) => {
+    // ===========================
+    // 🔹 Pinecone Test Routes
+    // ===========================
+    app.get("/check-pinecone", async (req, res) => {
       try {
         const { indexes } = await pinecone.listIndexes();
         res.json({ success: true, indexes });
@@ -138,28 +63,96 @@ const PORT = process.env.PORT || 5000;
       }
     });
 
-    app.get('/test-vector', async (req, res) => {
+    app.get("/test-vector", async (req, res) => {
       try {
         const testVector = Array(DIMENSION).fill(0.5);
 
-        await index.upsert([
-          { id: 'test1', values: testVector },
-        ]);
-
+        await index.upsert([{ id: "test1", values: testVector }]);
         const result = await index.query({
           topK: 1,
           vector: testVector,
         });
 
-        res.json({ message: '✅ Vector upserted and queried!', result });
+        res.json({ message: "✅ Vector upserted and queried!", result });
       } catch (error) {
         res.json({ error: error.message });
       }
     });
 
-    app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
-  } catch (err) {
-    console.error('❌ Error initializing Pinecone:', err);
-  }
-})();
+    // ===========================
+    // 🔹 FIREBASE LOGIN ROUTES
+    // ===========================
 
+    // Super Admin Login
+    app.post("/login/superadmin", async (req, res) => {
+      const { email, password } = req.body;
+      try {
+        const snapshot = await db
+          .collection("super_admins")
+          .where("email", "==", email)
+          .where("password", "==", password)
+          .get();
+
+        if (snapshot.empty)
+          return res.status(401).json({ message: "Invalid credentials" });
+
+        const user = snapshot.docs[0].data();
+        res.json({ message: "Super Admin login successful", user });
+      } catch (error) {
+        res.status(500).json({ message: "Error logging in", error });
+      }
+    });
+
+    // Company Admin Login
+    app.post("/login/company", async (req, res) => {
+      const { email, password } = req.body;
+      try {
+        const snapshot = await db
+          .collection("companies")
+          .where("email", "==", email)
+          .where("password", "==", password)
+          .get();
+
+        if (snapshot.empty)
+          return res.status(401).json({ message: "Invalid credentials" });
+
+        const company = snapshot.docs[0].data();
+        res.json({ message: "Company Admin login successful", company });
+      } catch (error) {
+        res.status(500).json({ message: "Error logging in", error });
+      }
+    });
+
+    // Candidate Login
+    app.post("/login/candidate", async (req, res) => {
+      const { email, password } = req.body;
+      try {
+        const snapshot = await db
+          .collection("candidates")
+          .where("email", "==", email)
+          .where("password", "==", password)
+          .get();
+
+        if (snapshot.empty)
+          return res.status(401).json({ message: "Invalid credentials" });
+
+        const candidate = snapshot.docs[0].data();
+        res.json({ message: "Candidate login successful", candidate });
+      } catch (error) {
+        res.status(500).json({ message: "Error logging in", error });
+      }
+    });
+
+    // ===========================
+    // 🔹 START SERVER
+    // ===========================
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running successfully on port ${PORT}`);
+    });
+  } catch (err) {
+    console.error("❌ Error initializing Pinecone:", err);
+  }
+}
+
+// Call the async function
+startServer();
