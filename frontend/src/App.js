@@ -1,14 +1,14 @@
-import Home from "./components/Home";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import SuperAdmin from "./components/SuperAdmin";
-import { useState } from "react";
+import AdminDashboard from "./components/AdminDashboard";
 
 export default function App() {
-  const [open, setOpen] = useState(true);
-
   return (
-    <>
-      {/* <Home /> */}
-      <SuperAdmin isOpen={open} onClose={() => setOpen(false)} />
-    </>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<SuperAdmin />} />
+        <Route path="/admin-dashboard" element={<AdminDashboard />} />
+      </Routes>
+    </BrowserRouter>
   );
 }

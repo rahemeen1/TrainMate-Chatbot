@@ -2,7 +2,7 @@ import { useState } from "react";
 import Header from "./Header";
 import HeroSection from "./HeroSection";
 import LearnMoreSection from "./LearnMoreSection";
-import AuthModal from "./AuthModal";
+import AuthModal from "../AuthModal";
 import LoadingScreen from "./LoadingScreen";
 
 export default function Home() {

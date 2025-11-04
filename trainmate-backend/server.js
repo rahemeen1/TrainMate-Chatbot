@@ -2,29 +2,38 @@ import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
 import { Pinecone } from "@pinecone-database/pinecone";
-import { db } from "./firebase.js";
+import admin from "firebase-admin";
+import fs from "fs";
 
-// app.use(cors());
 dotenv.config();
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 
+// ✅ Load Firebase JSON manually
+const serviceAccount = JSON.parse(
+  fs.readFileSync("./serviceAccountKey.json", "utf8")
+);
+
+// ✅ Initialize Firebase
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
+
+const db = admin.firestore();
 const PORT = process.env.PORT || 5000;
 
 async function startServer() {
   try {
-    // ===========================
-    // 🔹 Initialize Pinecone
-    // ===========================
+    // ✅ Initialize Pinecone
     const pinecone = new Pinecone({
       apiKey: process.env.PINECONE_API_KEY,
     });
 
     console.log("✅ Pinecone initialized");
 
-    const INDEX_NAME = "train-mate19";
+    const INDEX_NAME = "train-mate20";
     const DIMENSION = 1536;
 
     const { indexes } = await pinecone.listIndexes();
@@ -51,39 +60,11 @@ async function startServer() {
 
     const index = pinecone.index(INDEX_NAME);
 
-    // ===========================
-    // 🔹 Pinecone Test Routes
-    // ===========================
-    app.get("/check-pinecone", async (req, res) => {
-      try {
-        const { indexes } = await pinecone.listIndexes();
-        res.json({ success: true, indexes });
-      } catch (error) {
-        res.json({ success: false, error: error.message });
-      }
-    });
+    // ------------------------------------------
+    // ✅ ✅ ✅ ROUTES BELOW HERE
+    // ------------------------------------------
 
-    app.get("/test-vector", async (req, res) => {
-      try {
-        const testVector = Array(DIMENSION).fill(0.5);
-
-        await index.upsert([{ id: "test1", values: testVector }]);
-        const result = await index.query({
-          topK: 1,
-          vector: testVector,
-        });
-
-        res.json({ message: "✅ Vector upserted and queried!", result });
-      } catch (error) {
-        res.json({ error: error.message });
-      }
-    });
-
-    // ===========================
-    // 🔹 FIREBASE LOGIN ROUTES
-    // ===========================
-
-    // Super Admin Login
+    // ✅ Login Super Admin
     app.post("/login/superadmin", async (req, res) => {
       const { email, password } = req.body;
       try {
@@ -103,56 +84,79 @@ async function startServer() {
       }
     });
 
-    // Company Admin Login
-    app.post("/login/company", async (req, res) => {
+    // ✅ Add Super Admin (checks duplicate email)
+    app.post("/add-superadmin", async (req, res) => {
       const { email, password } = req.body;
+
+      if (!email || !password)
+        return res.status(400).json({ message: "Email & Password required" });
+
       try {
-        const snapshot = await db
-          .collection("companies")
+        const exists = await db
+          .collection("super_admins")
           .where("email", "==", email)
-          .where("password", "==", password)
           .get();
 
-        if (snapshot.empty)
-          return res.status(401).json({ message: "Invalid credentials" });
+        if (!exists.empty) {
+          return res.status(409).json({ message: "Email already exists" });
+        }
 
-        const company = snapshot.docs[0].data();
-        res.json({ message: "Company Admin login successful", company });
-      } catch (error) {
-        res.status(500).json({ message: "Error logging in", error });
+        await db.collection("super_admins").add({ email, password });
+
+        res.json({ message: "Super Admin added successfully" });
+      } catch (err) {
+        res.status(500).json({ message: "Server error" });
       }
     });
 
-    // Candidate Login
-    app.post("/login/candidate", async (req, res) => {
-      const { email, password } = req.body;
+    // ✅ Get all Super Admins
+    app.get("/superadmins", async (req, res) => {
       try {
-        const snapshot = await db
-          .collection("candidates")
-          .where("email", "==", email)
-          .where("password", "==", password)
-          .get();
+        const snapshot = await db.collection("super_admins").get();
+        const admins = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
 
-        if (snapshot.empty)
-          return res.status(401).json({ message: "Invalid credentials" });
-
-        const candidate = snapshot.docs[0].data();
-        res.json({ message: "Candidate login successful", candidate });
+        res.json({ admins });
       } catch (error) {
-        res.status(500).json({ message: "Error logging in", error });
+        res.status(500).json({ message: "Server error" });
       }
     });
 
-    // ===========================
-    // 🔹 START SERVER
-    // ===========================
+    // ✅ Delete Super Admin
+    app.delete("/superadmins/:id", async (req, res) => {
+      const { id } = req.params;
+
+      try {
+        await db.collection("super_admins").doc(id).delete();
+        res.json({ message: "Super Admin deleted successfully" });
+      } catch (error) {
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+
+    // ✅ Update Super Admin
+    app.put("/superadmins/:id", async (req, res) => {
+      const { id } = req.params;
+      const { email, password } = req.body;
+
+      try {
+        await db.collection("super_admins").doc(id).update({ email, password });
+        res.json({ message: "Super Admin updated successfully" });
+      } catch (error) {
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+
+    // ✅ Start Server
     app.listen(PORT, () => {
-      console.log(`🚀 Server running successfully on port ${PORT}`);
+      console.log(`🚀 Server running on port ${PORT}`);
     });
-  } catch (err) {
-    console.error("❌ Error initializing Pinecone:", err);
+
+  } catch (error) {
+    console.error("❌ Pinecone Initialization Error:", error);
   }
 }
 
-// Call the async function
 startServer();
