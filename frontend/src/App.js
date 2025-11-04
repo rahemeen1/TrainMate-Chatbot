@@ -7,7 +7,6 @@ export default function App() {
     <BrowserRouter>
       <Routes>
                <Route path="/superadmin" element={<SuperAdmin />} />
-
         <Route path="/admin-dashboard" element={<AdminDashboard />} />
       </Routes>
     </BrowserRouter>
