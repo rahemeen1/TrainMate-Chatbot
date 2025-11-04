@@ -2,9 +2,12 @@ import { useState } from "react";
 import { Users, Building2, UserPlus, LogOut } from "lucide-react";
 import NewSuperAdmin from "./NewSuperAdmin";
 import ManageSuperAdmins from "./ManageSuperAdmins";
+import { useNavigate } from "react-router-dom";
+
 
 export default function AdminDashboard() {
   const [activeSection, setActiveSection] = useState("overview");
+  const navigate = useNavigate();
 
   return (
     <div className="flex min-h-screen bg-[#02142B] text-white">
@@ -61,9 +64,18 @@ export default function AdminDashboard() {
             Manage Super Admins
           </li>
 
-          <li className="cursor-pointer p-2 rounded-lg flex items-center gap-2 text-red-400">
-            <LogOut size={16} /> Logout
-          </li>
+         <li
+  className="cursor-pointer p-2 rounded-lg flex items-center gap-2 text-red-400"
+  onClick={() => {
+    console.log("Logout clicked"); // ✅ debug log
+    console.error("Navigating to SuperAdmin"); // ✅ debug error log
+    navigate("/superadmin");
+  }}
+>
+  <LogOut size={16} /> Logout
+</li>
+
+
         </ul>
       </div>
 
