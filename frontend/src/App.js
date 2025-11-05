@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import SuperAdmin from "./components/SuperAdmin";
-import AdminDashboard from "./components/AdminDashboard";
+import SuperAdmin from "./components/superadminpanel/SuperAdmin";
+import AdminDashboard from "./components/superadminpanel/AdminDashboard";
 
 export default function App() {
   return (
