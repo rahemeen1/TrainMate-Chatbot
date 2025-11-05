@@ -84,30 +84,49 @@ async function startServer() {
       }
     });
 
-    // ✅ Add Super Admin (checks duplicate email)
-    app.post("/add-superadmin", async (req, res) => {
-      const { email, password } = req.body;
+    // ✅ Add Super Admin with incremental adminId
+app.post("/add-superadmin", async (req, res) => {
+  const { email, password } = req.body;
 
-      if (!email || !password)
-        return res.status(400).json({ message: "Email & Password required" });
+  if (!email || !password)
+    return res.status(400).json({ message: "Email & Password required" });
 
-      try {
-        const exists = await db
-          .collection("super_admins")
-          .where("email", "==", email)
-          .get();
+  try {
+    // Check if email already exists
+    const exists = await db
+      .collection("super_admins")
+      .where("email", "==", email)
+      .get();
 
-        if (!exists.empty) {
-          return res.status(409).json({ message: "Email already exists" });
-        }
+    if (!exists.empty) {
+      return res.status(409).json({ message: "Email already exists" });
+    }
 
-        await db.collection("super_admins").add({ email, password });
+    // Find the max adminId
+    const snapshot = await db
+      .collection("super_admins")
+      .orderBy("adminId", "desc")
+      .limit(1)
+      .get();
 
-        res.json({ message: "Super Admin added successfully" });
-      } catch (err) {
-        res.status(500).json({ message: "Server error" });
-      }
+    const lastId = snapshot.empty ? 0 : snapshot.docs[0].data().adminId;
+    const newAdminId = lastId + 1;
+
+    // ✅ Add new super admin with numeric adminId
+    await db.collection("super_admins").doc(String(newAdminId)).set({
+      adminId: newAdminId,
+      email,
+      password, // hash in production
     });
+
+    res.json({
+      message: `Super Admin added successfully with ID ${newAdminId}`,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
 
     // ✅ Get all Super Admins
     app.get("/superadmins", async (req, res) => {
@@ -137,17 +156,39 @@ async function startServer() {
     });
 
     // ✅ Update Super Admin
-    app.put("/superadmins/:id", async (req, res) => {
-      const { id } = req.params;
-      const { email, password } = req.body;
+   app.put("/superadmins/:id", async (req, res) => {
+  const { id } = req.params;
+  const { email, oldPassword, newPassword } = req.body;
 
-      try {
-        await db.collection("super_admins").doc(id).update({ email, password });
-        res.json({ message: "Super Admin updated successfully" });
-      } catch (error) {
-        res.status(500).json({ message: "Server error" });
+  try {
+    const docRef = db.collection("super_admins").doc(id);
+    const docSnap = await docRef.get();
+
+    if (!docSnap.exists) {
+      return res.status(404).json({ message: "Admin not found" });
+    }
+
+    const admin = docSnap.data();
+
+    // ✅ If user wants to update password, oldPassword must match
+    if (newPassword) {
+      if (!oldPassword || oldPassword !== admin.password) {
+        return res.status(400).json({ message: "Old password is incorrect" });
       }
-    });
+    }
+
+    // Prepare update object
+    const updateData = { email };
+    if (newPassword) updateData.password = newPassword; // update password only if verified
+
+    await docRef.update(updateData);
+    res.json({ message: "Super Admin updated successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 
     // ✅ Start Server
     app.listen(PORT, () => {

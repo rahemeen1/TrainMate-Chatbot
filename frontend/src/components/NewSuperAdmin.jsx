@@ -1,8 +1,33 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export default function NewSuperAdmin() {
   const [formData, setFormData] = useState({ email: "", password: "" });
   const [message, setMessage] = useState("");
+  const [nextId, setNextId] = useState(null); // ✅ store next ID
+
+  // ✅ Fetch next admin ID on component mount
+  const fetchNextId = async () => {
+    try {
+      const res = await fetch("http://localhost:5000/superadmins");
+      const data = await res.json();
+      const admins = data.admins || [];
+
+      if (admins.length === 0) {
+        setNextId(1); // First admin
+      } else {
+        // Find max adminId
+        const maxId = Math.max(...admins.map((a) => a.adminId || 0));
+        setNextId(maxId + 1);
+      }
+    } catch (err) {
+      console.error("Error fetching next ID:", err);
+      setNextId(null);
+    }
+  };
+
+  useEffect(() => {
+    fetchNextId();
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -20,8 +45,8 @@ export default function NewSuperAdmin() {
 
       if (res.ok) {
         setFormData({ email: "", password: "" });
+        fetchNextId(); // Refresh next ID
       }
-
     } catch (err) {
       setMessage("Server error. Try later.");
     }
@@ -33,6 +58,10 @@ export default function NewSuperAdmin() {
         Add Super Admin
       </h2>
 
+      {nextId !== null && (
+        <p className="text-[#AFCBE3] mb-2">Next Admin ID: {nextId}</p>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-3">
         <input
           type="email"
@@ -40,7 +69,9 @@ export default function NewSuperAdmin() {
           required
           className="w-full p-2 bg-[#021B36]/60 text-white rounded border border-[#00FFFF30]"
           value={formData.email}
-          onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+          onChange={(e) =>
+            setFormData({ ...formData, email: e.target.value })
+          }
         />
 
         <input
@@ -59,9 +90,7 @@ export default function NewSuperAdmin() {
         </button>
       </form>
 
-      {message && (
-        <p className="mt-3 text-sm text-[#AFCBE3]">{message}</p>
-      )}
+      {message && <p className="mt-3 text-sm text-[#AFCBE3]">{message}</p>}
     </div>
   );
 }

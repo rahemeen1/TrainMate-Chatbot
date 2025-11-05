@@ -26,8 +26,7 @@ export default function SuperAdmin() {
 
     const data = await response.json();
 
-    // ✅ Add this line
-    console.log("Response from backend:", data);
+  
 if (response.ok && data.message.includes("login successful")) {
 
 

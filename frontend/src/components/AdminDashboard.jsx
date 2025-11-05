@@ -11,8 +11,6 @@ export default function AdminDashboard() {
 
   return (
     <div className="flex min-h-screen bg-[#02142B] text-white">
-
-      {/* ✅ Sidebar */}
       <div className="w-64 bg-[#031C3A] border-r border-[#00FFFF30] shadow-lg p-6">
         <h2 className="text-xl font-bold text-[#00FFFF] mb-8">Super Admin</h2>
 
@@ -67,8 +65,6 @@ export default function AdminDashboard() {
          <li
   className="cursor-pointer p-2 rounded-lg flex items-center gap-2 text-red-400"
   onClick={() => {
-    console.log("Logout clicked"); // ✅ debug log
-    console.error("Navigating to SuperAdmin"); // ✅ debug error log
     navigate("/superadmin");
   }}
 >
