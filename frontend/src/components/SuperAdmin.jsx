@@ -33,8 +33,6 @@ if (response.ok && data.message.includes("login successful")) {
       alert("Login successful!");
 
       setTimeout(() => {
-        // ✅ Also add console to check if navigate is reached
-        console.log("Navigating to dashboard...");
         navigate("/admin-dashboard");
       }, 300);
     } else {
@@ -137,7 +135,7 @@ if (response.ok && data.message.includes("login successful")) {
               </button>
             </div>
 
-            {/* Submit */}
+          
             <button
               type="submit"
               className="w-full py-2.5 bg-gradient-to-r from-[#00FFFF] to-[#007BFF] text-[#02142B] font-semibold rounded-lg shadow-[0_0_20px_rgba(0,255,255,0.3)] hover:shadow-[0_0_35px_rgba(0,255,255,0.5)] transform hover:scale-105 transition-all duration-300"
