@@ -33,7 +33,7 @@ async function startServer() {
 
     console.log("✅ Pinecone initialized");
 
-    const INDEX_NAME = "train-mate20";
+    const INDEX_NAME = "train-mate2";
     const DIMENSION = 1536;
 
     const { indexes } = await pinecone.listIndexes();
@@ -58,12 +58,6 @@ async function startServer() {
       console.log(`✅ Index '${INDEX_NAME}' already exists`);
     }
 
-    const index = pinecone.index(INDEX_NAME);
-
-    // ------------------------------------------
-    // ✅ ✅ ✅ ROUTES BELOW HERE
-    // ------------------------------------------
-
     // ✅ Login Super Admin
     app.post("/login/superadmin", async (req, res) => {
       const { email, password } = req.body;
@@ -84,49 +78,46 @@ async function startServer() {
       }
     });
 
-    // ✅ Add Super Admin with incremental adminId
-app.post("/add-superadmin", async (req, res) => {
-  const { email, password } = req.body;
+    // ✅ Add Super Admin
+    app.post("/add-superadmin", async (req, res) => {
+      const { email, password } = req.body;
 
-  if (!email || !password)
-    return res.status(400).json({ message: "Email & Password required" });
+      if (!email || !password)
+        return res.status(400).json({ message: "Email & Password required" });
 
-  try {
-    // Check if email already exists
-    const exists = await db
-      .collection("super_admins")
-      .where("email", "==", email)
-      .get();
+      try {
+        const exists = await db
+          .collection("super_admins")
+          .where("email", "==", email)
+          .get();
 
-    if (!exists.empty) {
-      return res.status(409).json({ message: "Email already exists" });
-    }
+        if (!exists.empty) {
+          return res.status(409).json({ message: "Email already exists" });
+        }
 
-    // Find the max adminId
-    const snapshot = await db
-      .collection("super_admins")
-      .orderBy("adminId", "desc")
-      .limit(1)
-      .get();
+        const snapshot = await db
+          .collection("super_admins")
+          .orderBy("adminId", "desc")
+          .limit(1)
+          .get();
 
-    const lastId = snapshot.empty ? 0 : snapshot.docs[0].data().adminId;
-    const newAdminId = lastId + 1;
+        const lastId = snapshot.empty ? 0 : snapshot.docs[0].data().adminId;
+        const newAdminId = lastId + 1;
 
-    // ✅ Add new super admin with numeric adminId
-    await db.collection("super_admins").doc(String(newAdminId)).set({
-      adminId: newAdminId,
-      email,
-      password, // hash in production
+        await db.collection("super_admins").doc(String(newAdminId)).set({
+          adminId: newAdminId,
+          email,
+          password,
+        });
+
+        res.json({
+          message: `Super Admin added successfully with ID ${newAdminId}`,
+        });
+      } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: "Server error" });
+      }
     });
-
-    res.json({
-      message: `Super Admin added successfully with ID ${newAdminId}`,
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
-  }
-});
 
     // ✅ Get all Super Admins
     app.get("/superadmins", async (req, res) => {
@@ -146,7 +137,6 @@ app.post("/add-superadmin", async (req, res) => {
     // ✅ Delete Super Admin
     app.delete("/superadmins/:id", async (req, res) => {
       const { id } = req.params;
-
       try {
         await db.collection("super_admins").doc(id).delete();
         res.json({ message: "Super Admin deleted successfully" });
@@ -156,41 +146,187 @@ app.post("/add-superadmin", async (req, res) => {
     });
 
     // ✅ Update Super Admin
-   app.put("/superadmins/:id", async (req, res) => {
-  const { id } = req.params;
-  const { email, oldPassword, newPassword } = req.body;
+    app.put("/superadmins/:id", async (req, res) => {
+      const { id } = req.params;
+      const { email, oldPassword, newPassword } = req.body;
 
-  try {
-    const docRef = db.collection("super_admins").doc(id);
-    const docSnap = await docRef.get();
+      try {
+        const docRef = db.collection("super_admins").doc(id);
+        const docSnap = await docRef.get();
 
-    if (!docSnap.exists) {
-      return res.status(404).json({ message: "Admin not found" });
-    }
+        if (!docSnap.exists) {
+          return res.status(404).json({ message: "Admin not found" });
+        }
 
-    const admin = docSnap.data();
+        const adminData = docSnap.data();
 
-    // ✅ If user wants to update password, oldPassword must match
-    if (newPassword) {
-      if (!oldPassword || oldPassword !== admin.password) {
-        return res.status(400).json({ message: "Old password is incorrect" });
+        if (newPassword) {
+          if (!oldPassword || oldPassword !== adminData.password) {
+            return res.status(400).json({ message: "Old password is incorrect" });
+          }
+        }
+
+        const updateData = { email };
+        if (newPassword) updateData.password = newPassword;
+
+        await docRef.update(updateData);
+        res.json({ message: "Super Admin updated successfully" });
+      } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: "Server error" });
       }
-    }
+    });
 
-    // Prepare update object
-    const updateData = { email };
-    if (newPassword) updateData.password = newPassword; // update password only if verified
+    // ✅ Add Company
+    app.post("/add-company", async (req, res) => {
+      const { name, email, phone, address } = req.body;
 
-    await docRef.update(updateData);
-    res.json({ message: "Super Admin updated successfully" });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+      if (!name || !email) {
+        return res.status(400).json({ message: "Company name and email are required" });
+      }
+
+      try {
+        const companiesRef = db.collection("companies");
+
+        const nameExists = await companiesRef.where("name", "==", name).get();
+        if (!nameExists.empty) {
+          return res.status(409).json({ message: "Company name already exists" });
+        }
+
+        const emailExists = await companiesRef.where("email", "==", email).get();
+        if (!emailExists.empty) {
+          return res.status(409).json({ message: "Company email already exists" });
+        }
+
+        const lastDoc = await companiesRef
+          .orderBy("companyIdNum", "desc")
+          .limit(1)
+          .get();
+
+        const lastId = lastDoc.empty ? 0 : lastDoc.docs[0].data().companyIdNum;
+        const newId = lastId + 1;
+
+        const baseId = name.trim().toLowerCase().replace(/\s+/g, "");
+        const loginId = `${baseId}_trainmate${newId}`;
+
+        await companiesRef.doc(String(newId)).set({
+          companyIdNum: newId,
+          companyId: loginId,
+          name,
+          email,
+          phone: phone || "",
+          address: address || "",
+          status: "active",
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          username: loginId,
+          password: `${baseId}@${newId}`,
+        });
+
+        res.json({
+          message: "✅ Company added successfully",
+          id: newId,
+          username: loginId,
+          password: `${baseId}@${newId}`,
+        });
+      } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+
+    // ✅ GET Companies (FIXED ✅)
+    app.get("/companies", async (req, res) => {
+      try {
+        const snapshot = await db.collection("companies").get();
+
+        const companies = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+
+        res.json(companies);
+      } catch (error) {
+        console.error("❌ Error fetching companies:", error);
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    // ✅ Toggle status
+    app.put("/companies/:id/status", async (req, res) => {
+      const { id } = req.params;
+      const { status } = req.body;
+
+      try {
+        await db.collection("companies").doc(id).update({ status });
+        res.json({ message: "Status updated", status });
+      } catch (error) {
+        console.error("❌ Status update error:", error);
+        res.status(500).json({ error: "Failed to update status" });
+      }
+    });
+
+    // ✅ Edit company
+    app.put("/companies/:id", async (req, res) => {
+      const { id } = req.params;
+      const { email, phone, address } = req.body;
+
+      try {
+        await db.collection("companies").doc(id).update({
+          email,
+          phone,
+          address,
+        });
+
+        res.json({ message: "Company updated!" });
+      } catch (error) {
+        console.error("❌ Edit error:", error);
+        res.status(500).json({ error: "Edit failed" });
+      }
+    });
+
+    // ✅ Delete company
+    app.delete("/companies/:id", async (req, res) => {
+      const { id } = req.params;
+      try {
+        await db.collection("companies").doc(id).delete();
+        res.json({ message: "Company deleted!" });
+      } catch (error) {
+        console.error("❌ Delete error:", error);
+        res.status(500).json({ error: "Delete failed" });
+      }
+    });
+    // ✅ Total companies count
+app.get("/stats/companies", async (req, res) => {
+  try {
+    const snapshot = await admin.firestore().collection("companies").get();
+    res.json({ count: snapshot.size });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch companies count" });
+  }
+});
+
+// ✅ Total users count (if you have users collection, else return 0 for now)
+app.get("/stats/users", async (req, res) => {
+  try {
+    const snapshot = await admin.firestore().collection("users").get();
+    res.json({ count: snapshot.size });
+  } catch (error) {
+    res.json({ count: 0 });
+  }
+});
+
+// ✅ Total super admins
+app.get("/stats/superadmins", async (req, res) => {
+  try {
+    const snapshot = await admin.firestore().collection("super_admins").get();
+    res.json({ count: snapshot.size });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch super admins count" });
   }
 });
 
 
-    // ✅ Start Server
+    // ✅ Start server
     app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
     });
