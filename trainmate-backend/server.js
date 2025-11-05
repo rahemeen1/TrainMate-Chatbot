@@ -33,7 +33,7 @@ async function startServer() {
 
     console.log("✅ Pinecone initialized");
 
-    const INDEX_NAME = "train-mate2";
+    const INDEX_NAME = "train-mate9";
     const DIMENSION = 1536;
 
     const { indexes } = await pinecone.listIndexes();
@@ -324,7 +324,46 @@ app.get("/stats/superadmins", async (req, res) => {
     res.status(500).json({ error: "Failed to fetch super admins count" });
   }
 });
+// POST /company-login
 
+   app.post("/company-login", async (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    // Check for missing credentials
+    if (!username || !password) {
+      return res.status(400).json({ message: "Missing credentials" });
+    }
+
+    const companyRef = db.collection("companies");
+    const querySnapshot = await companyRef
+      .where("companyId", "==", username)
+      .limit(1)
+      .get();
+
+    if (querySnapshot.empty) {
+      return res.status(404).json({ message: "Company not found" });
+    }
+
+    const company = querySnapshot.docs[0].data();
+
+    // Check password (plain text for now; later hash it!)
+    if (company.password !== password) {
+      return res.status(401).json({ message: "Invalid password" });
+    }
+
+    // Login successful
+    return res.json({
+      message: "Login successful",
+      companyId: company.companyId,
+      name: company.name,
+      email: company.email,
+    });
+  } catch (err) {
+    console.error("❌ Server error:", err);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
 
     // ✅ Start server
     app.listen(PORT, () => {
