@@ -33,7 +33,7 @@ async function startServer() {
 
     console.log("✅ Pinecone initialized");
 
-    const INDEX_NAME = "train-mate9";
+    const INDEX_NAME = "train-mate90";
     const DIMENSION = 1536;
 
     const { indexes } = await pinecone.listIndexes();

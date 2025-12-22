@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
 import { X, Eye, EyeOff, Mail, Lock, Briefcase, User } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import CompanyDashboard from "./CompanyDashboard";  
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { auth } from "../firebase";
+import FresherDashboard from "../FresherDashboard";
 
 export default function AuthModal({ isOpen, mode: initialMode, onClose }) {
   const [showPassword, setShowPassword] = useState(false);
@@ -12,9 +14,10 @@ export default function AuthModal({ isOpen, mode: initialMode, onClose }) {
   });
   const [mode, setMode] = useState(initialMode);
   const [userType, setUserType] = useState(null); // 'admin' or 'fresher'
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const navigate = useNavigate();
 
-  // Reset state when modal opens
   useEffect(() => {
     if (isOpen) {
       setMode(initialMode);
@@ -22,51 +25,51 @@ export default function AuthModal({ isOpen, mode: initialMode, onClose }) {
       setFormData({ emailOrUsername: "", password: "" });
       setShowPassword(false);
       setRememberMe(false);
+      setError("");
     }
   }, [isOpen, initialMode]);
 
   if (!isOpen) return null;
   const isLogin = mode === "login";
 
-  // Login submit handler
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!userType) return console.error("User type not selected");
+    if (!userType) return;
 
-    const url =
-      userType === "admin"
-        ? "http://localhost:5000/company-login"
-        : "http://localhost:5000/fresher-login";
-
-    const body =
-      userType === "admin"
-        ? { username: formData.emailOrUsername, password: formData.password }
-        : { email: formData.emailOrUsername, password: formData.password };
-
-    console.log("Sending login request:", body);
+    setError("");
+    setLoading(true);
 
     try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      const data = await res.json();
-      console.log("Login response:", data);
-
-      if (res.ok) {
-      // ✅ Navigate using the username from backend response
-      navigate("/company-dashboard", {
-        state: { username: data.username || formData.emailOrUsername },
-      });
-      onClose(); // close modal after successful login
+      if (userType === "fresher") {
+        // Fresher login logic
+        const email = `${formData.emailOrUsername}@example.com`; // userId mapped to email
+        await signInWithEmailAndPassword(auth, email, formData.password);
+        onClose();
+        navigate("/fresher-dashboard", { state: { userId: formData.emailOrUsername } });
       } else {
-        alert(data.message || "Login failed");
+        // Admin login logic
+        const url = "http://localhost:5000/company-login";
+        const body = { username: formData.emailOrUsername, password: formData.password };
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          onClose();
+          navigate("/company-dashboard", {
+            state: { companyId: data.companyId, companyName: data.name },
+          });
+        } else {
+          setError(data.message || "Login failed");
+        }
       }
     } catch (err) {
-      console.error("Login error:", err);
-      alert("Something went wrong, check console");
+      console.error(err);
+      setError("Invalid credentials");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -122,129 +125,94 @@ export default function AuthModal({ isOpen, mode: initialMode, onClose }) {
             </p>
           </div>
 
-          {isLogin ? (
-            !userType ? (
-              <div className="flex flex-col items-center justify-center space-y-6 animate-fade-in-up">
-                <p className="text-[#AFCBE3] text-sm text-center mb-2">
-                  Are you a Company Admin or a Fresher?
-                </p>
-                <div className="flex justify-center gap-5 flex-wrap">
-                  <SelectCard type="admin" icon={Briefcase} label="Company Admin" />
-                  <SelectCard type="fresher" icon={User} label="Fresher" />
-                </div>
-              </div>
-            ) : (
-              <form onSubmit={handleSubmit} className="space-y-5 animate-fade-in-up w-full">
-                {/* Username / Email field */}
-                <div>
-                  <label className="block text-sm font-medium text-[#AFCBE3] mb-1.5">
-                    {userType === "admin" ? "Username / Company ID" : "Email Address"}
-                  </label>
-                  <div className="relative">
-                    {userType === "admin" ? (
-                      <User className="absolute left-4 top-1/2 -translate-y-1/2 text-[#00FFFF]/60" size={18} />
-                    ) : (
-                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-[#00FFFF]/60" size={18} />
-                    )}
-                    <input
-                      type={userType === "admin" ? "text" : "email"}
-                      value={formData.emailOrUsername}
-                      onChange={(e) =>
-                        setFormData({ ...formData, emailOrUsername: e.target.value })
-                      }
-                      className="w-full pl-11 pr-4 py-2.5 bg-[#021B36]/60 border border-[#00FFFF30] text-white rounded-lg focus:border-[#00FFFF]"
-                      placeholder={userType === "admin" ? "company_username" : "you@example.com"}
-                      required
-                    />
-                  </div>
-                </div>
-
-                {/* Password field */}
-                <div>
-                  <label className="block text-sm font-medium text-[#AFCBE3] mb-1.5">Password</label>
-                  <div className="relative">
-                    <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 text-[#00FFFF]/60" size={18} />
-                    <input
-                      type={showPassword ? "text" : "password"}
-                      value={formData.password}
-                      onChange={(e) =>
-                        setFormData({ ...formData, password: e.target.value })
-                      }
-                      className="w-full pl-11 pr-10 py-2.5 bg-[#021B36]/60 border border-[#00FFFF30] text-white rounded-lg focus:border-[#00FFFF]"
-                      placeholder="••••••••"
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[#00FFFF]/70 hover:text-[#00FFFF] transition"
-                    >
-                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Remember Me + Forgot */}
-                <div className="flex items-center justify-between">
-                  <label className="flex items-center space-x-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={rememberMe}
-                      onChange={(e) => setRememberMe(e.target.checked)}
-                      className="w-4 h-4 accent-[#00FFFF] border-gray-600 rounded focus:ring-[#00FFFF]"
-                    />
-                    <span className="text-sm text-[#AFCBE3]">Remember me</span>
-                  </label>
-                  <button type="button" className="text-sm text-[#00FFFF] hover:text-[#7FFFD4] transition-colors font-medium">
-                    Forgot password?
-                  </button>
-                </div>
-
-                {/* Submit */}
-                <button
-                  type="submit"
-                  className="w-full py-2.5 bg-gradient-to-r from-[#00FFFF] to-[#007BFF] 
-                  text-[#02142B] font-semibold rounded-lg 
-                  shadow-[0_0_20px_rgba(0,255,255,0.3)] 
-                  hover:shadow-[0_0_35px_rgba(0,255,255,0.5)] 
-                  transform hover:scale-105 transition-all duration-300"
-                >
-                  Sign In
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setUserType(null)}
-                  className="text-sm text-[#6B94B8] hover:text-[#00FFFF] block mx-auto mt-3"
-                >
-                  ← Back to selection
-                </button>
-              </form>
-            )
-          ) : (
-            // Signup placeholder
-            <div className="bg-gradient-to-br from-[#021B36]/90 to-[#032A4A]/90 border border-[#00FFFF40] rounded-xl p-5 shadow-[0_0_20px_rgba(0,255,255,0.25)] text-center animate-fade-in-up">
-              <p className="text-[#AFCBE3] text-sm leading-relaxed">
-                To create an account with <span className="text-[#00FFFF] font-medium">TrainMate</span>, please contact us at <span className="text-[#00FFFF] font-semibold">trainmate@gmail.com</span>.
+          {isLogin && !userType && (
+            <div className="flex flex-col items-center justify-center space-y-6 animate-fade-in-up">
+              <p className="text-[#AFCBE3] text-sm text-center mb-2">
+                Are you a Company Admin or a Fresher?
               </p>
+              <div className="flex justify-center gap-5 flex-wrap">
+                <SelectCard type="admin" icon={Briefcase} label="Company Admin" />
+                <SelectCard type="fresher" icon={User} label="Fresher" />
+              </div>
             </div>
           )}
 
-          {/* Toggle login/signup */}
-          <div className="mt-5 text-center">
-            <p className="text-[#AFCBE3] text-sm">
-              {isLogin ? "Don't have an account? " : "Already have an account? "}
+          {isLogin && userType && (
+            <form onSubmit={handleSubmit} className="space-y-5 animate-fade-in-up w-full">
+              <div>
+                <label className="block text-sm font-medium text-[#AFCBE3] mb-1.5">
+                  {userType === "admin" ? "Username / Company ID" : "User ID"}
+                </label>
+                <div className="relative">
+                  {userType === "admin" ? (
+                    <User className="absolute left-4 top-1/2 -translate-y-1/2 text-[#00FFFF]/60" size={18} />
+                  ) : (
+                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-[#00FFFF]/60" size={18} />
+                  )}
+                  <input
+                    type="text"
+                    value={formData.emailOrUsername}
+                    onChange={(e) => setFormData({ ...formData, emailOrUsername: e.target.value })}
+                    className="w-full pl-11 pr-4 py-2.5 bg-[#021B36]/60 border border-[#00FFFF30] text-white rounded-lg focus:border-[#00FFFF]"
+                    placeholder={userType === "admin" ? "company_username" : "your_user_id"}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-[#AFCBE3] mb-1.5">Password</label>
+                <div className="relative">
+                  <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 text-[#00FFFF]/60" size={18} />
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    className="w-full pl-11 pr-10 py-2.5 bg-[#021B36]/60 border border-[#00FFFF30] text-white rounded-lg focus:border-[#00FFFF]"
+                    placeholder="••••••••"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[#00FFFF]/70 hover:text-[#00FFFF] transition"
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
+
+              {error && <p className="text-red-500 text-sm">{error}</p>}
+
+              <div className="flex items-center justify-between">
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="w-4 h-4 accent-[#00FFFF] border-gray-600 rounded focus:ring-[#00FFFF]"
+                  />
+                  <span className="text-sm text-[#AFCBE3]">Remember me</span>
+                </label>
+              </div>
+
               <button
-                onClick={() => {
-                  setMode(isLogin ? "signup" : "login");
-                  setUserType(null);
-                }}
-                className="text-[#00FFFF] hover:text-[#7FFFD4] font-semibold transition-colors"
+                type="submit"
+                disabled={loading}
+                className="w-full py-2.5 bg-[#00FFFF] text-[#031C3A] font-semibold rounded-lg"
               >
-                {isLogin ? "Sign up" : "Sign in"}
+                {loading ? "Logging in..." : "Sign In"}
               </button>
-            </p>
-          </div>
+
+              <button
+                type="button"
+                onClick={() => setUserType(null)}
+                className="text-sm text-[#6B94B8] hover:text-[#00FFFF] block mx-auto mt-3"
+              >
+                ← Back to selection
+              </button>
+            </form>
+          )}
         </div>
       </div>
     </div>
