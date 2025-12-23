@@ -10,6 +10,8 @@ import {
 import { db, auth } from "../../firebase";
 import { useLocation, useNavigate } from "react-router-dom";
 import { createUserWithEmailAndPassword } from "firebase/auth";
+import jsPDF from "jspdf";
+import bcrypt from "bcryptjs";
 
 export default function DepartmentDetails() {
   const location = useLocation();
@@ -30,6 +32,7 @@ export default function DepartmentDetails() {
   });
   const [newDocName, setNewDocName] = useState("");
   const [generatedPassword, setGeneratedPassword] = useState("");
+  const [lastAddedUser, setLastAddedUser] = useState(null); // store last added user
 
   // --- Fetch Users ---
   useEffect(() => {
@@ -83,41 +86,102 @@ export default function DepartmentDetails() {
     return password;
   };
 
-  // --- Add User ---
-  const handleAddUser = async () => {
-    if (!newUser.name || !newUser.email) return alert("Enter name and email");
+ const handleAddUser = async () => {
+  const { name, email, phone, trainingOn } = newUser;
 
-    const randomNum = Math.floor(Math.random() * 10000);
-    const sanitizedName = newUser.name.toLowerCase().replace(/\s/g, "");
-    const sanitizedDept = deptName.toLowerCase().replace(/\s/g, "");
-    const sanitizedCompany = companyName.toLowerCase().replace(/\s/g, "");
-    const userId = `${sanitizedName}${sanitizedDept}${sanitizedCompany}${randomNum}`;
+  // --- Basic validation ---
+  if (!name || !email || !phone) return alert("Enter name, email, and phone");
 
-    const password = generatePassword();
+  // Validate email format
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) return alert("Enter a valid email address");
 
-    // 1️⃣ Firebase Auth
+  // Validate phone number (11 digits, numeric)
+  const phoneRegex = /^[0-9]{11}$/;
+  if (!phoneRegex.test(phone)) return alert("Enter a valid 11-digit phone number");
+
+  const fullName = name.trim();
+  const firstName = fullName.split(" ")[0];
+  const deptShort = deptName.replace(/\s+/g, "").toUpperCase();
+  const companyShort = companyName
+    .split(" ")
+    .map(w => w[0])
+    .join("")
+    .toUpperCase();
+  const randomNum = Math.floor(1000 + Math.random() * 9000);
+  const userId = `${firstName}-${deptShort}-${companyShort}-${randomNum}`;
+
+  const password = generatePassword();
+
+  try {
+    // --- Firebase Auth ---
     await createUserWithEmailAndPassword(auth, `${userId}@example.com`, password);
 
-    // 2️⃣ Firestore
-    await setDoc(doc(db, "companies", companyId, "departments", deptId, "users", userId), {
-      name: newUser.name,
-      email: newUser.email,
-      phone: newUser.phone,
-      trainingOn: newUser.trainingOn,
-      createdAt: serverTimestamp(),
-      progress: 0,
-      userId,
-      password,
-    });
+    // --- Firestore with hashed password ---
+    const hashedPassword = await bcrypt.hash(password, 12);
+    await setDoc(
+      doc(db, "companies", companyId, "departments", deptId, "users", userId), // <-- userId as doc ID
+      {
+        name: fullName,
+        email,
+        phone,
+        trainingOn,
+        createdAt: serverTimestamp(),
+        progress: 0,
+        userId,
+        password: hashedPassword,
+      }
+    );
 
-    // Fetch updated users
+    // --- Refresh users list ---
     const usersRef = collection(db, "companies", companyId, "departments", deptId, "users");
     const snap = await getDocs(usersRef);
     setUsers(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
 
-    setShowAddUserModal(false);
+    // --- Keep modal open for PDF download ---
+    setLastAddedUser({ userId, password, fullName });
+
+    // --- Clear form but keep modal open ---
     setNewUser({ name: "", email: "", phone: "", trainingOn: "" });
-  };
+
+  } catch (err) {
+    console.error("❌ Error adding user:", err);
+    alert("Failed to add user. Check console for details.");
+  }
+};
+
+
+  // --- Download PDF ---
+  const downloadUserPDF = () => {
+  if (!lastAddedUser) return;
+
+  const doc = new jsPDF();
+
+  // Title
+  doc.setFontSize(18);
+  doc.setFont("helvetica", "bold");
+  doc.text("User Credentials", 20, 20);
+
+  // Draw a line below title
+  doc.setLineWidth(0.5);
+  doc.line(20, 25, 190, 25);
+
+  doc.setFontSize(14);
+  doc.setFont("helvetica", "normal");
+
+  // Full name
+  doc.text(`Full Name: ${newUser.name || lastAddedUser.fullName}`, 20, 40);
+
+  // User ID
+  doc.text(`User ID: ${lastAddedUser.userId}`, 20, 50);
+
+  // Password
+  doc.text(`Password: ${lastAddedUser.password}`, 20, 60);
+
+  // Save PDF with filename = userId
+  doc.save(`${lastAddedUser.userId}_credentials.pdf`);
+};
+
 
   return (
     <div className="p-4 md:p-8 min-h-screen bg-[#031C3A] text-white">
@@ -151,7 +215,6 @@ export default function DepartmentDetails() {
             Add Document
           </button>
         </div>
-
         {loadingDocs ? (
           <p>Loading documents...</p>
         ) : docs.length === 0 ? (
@@ -159,10 +222,7 @@ export default function DepartmentDetails() {
         ) : (
           <ul className="space-y-1">
             {docs.map(docItem => (
-              <li
-                key={docItem.id}
-                className="flex justify-between items-center bg-[#021B36]/50 p-2 rounded text-sm sm:text-base"
-              >
+              <li key={docItem.id} className="flex justify-between items-center bg-[#021B36]/50 p-2 rounded text-sm sm:text-base">
                 <span>{docItem.name}</span>
               </li>
             ))}
@@ -200,10 +260,7 @@ export default function DepartmentDetails() {
               </thead>
               <tbody>
                 {users.map(u => (
-                  <tr
-                    key={u.id}
-                    className="border-t border-[#00FFFF20] hover:bg-[#00FFFF10] text-sm sm:text-base"
-                  >
+                  <tr key={u.id} className="border-t border-[#00FFFF20] hover:bg-[#00FFFF10] text-sm sm:text-base">
                     <td className="p-2">{u.name}</td>
                     <td className="p-2">{u.email}</td>
                     <td className="p-2">{u.phone}</td>
@@ -255,17 +312,17 @@ export default function DepartmentDetails() {
               className="w-full p-2 rounded bg-[#031C3A] border border-[#00FFFF30]"
             />
 
-            {generatedPassword && (
-              <div className="flex items-center justify-between bg-[#031C3A]/50 p-2 rounded text-sm">
-                <span>Password: {generatedPassword}</span>
-                <button
-                  className="px-2 py-1 bg-[#00FFFF] text-[#031C3A] rounded"
-                  onClick={() => navigator.clipboard.writeText(generatedPassword)}
-                >
-                  Copy
-                </button>
-              </div>
-            )}
+            {/* PDF Download Button */}
+          
+{lastAddedUser && (
+  <button
+    className="px-4 py-2 bg-green-500 text-white rounded"
+    onClick={downloadUserPDF}
+  >
+    Download PDF
+  </button>
+)}
+
 
             <div className="flex justify-end gap-2 mt-2">
               <button

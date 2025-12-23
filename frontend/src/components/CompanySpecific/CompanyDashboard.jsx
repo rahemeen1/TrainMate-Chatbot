@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { collection, getDocs, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useNavigate, useLocation } from "react-router-dom";
+import { doc, setDoc } from "firebase/firestore";
 
 const DEPARTMENT_OPTIONS = ["HR", "Software Development", "AI", "Finance", "Marketing", "Operations"];
 
@@ -90,12 +91,13 @@ console.log("companyId:", companyId);
       await addDoc(answersRef, { answers, createdAt: serverTimestamp() });
 
       // Save selected departments only if not already created
-      if (!hasDepartments && selectedDepts.length > 0) {
-        const deptRef = collection(db, "companies", companyId, "departments");
-        for (let dept of selectedDepts) {
-          await addDoc(deptRef, { name: dept, createdAt: serverTimestamp() });
-        }
-      }
+     if (!hasDepartments && selectedDepts.length > 0) {
+  const deptRef = collection(db, "companies", companyId, "departments");
+  for (let dept of selectedDepts) {
+    const deptDocRef = doc(deptRef, dept); // use department name as doc ID
+    await setDoc(deptDocRef, { name: dept, createdAt: serverTimestamp() });
+  }
+}
 
       // Mark onboarding as done
       setHasDepartments(true);
@@ -146,7 +148,7 @@ console.log("companyId:", companyId);
       <div className="flex-1 p-8">
         {/* Welcome */}
         <div className="max-w-4xl mx-auto text-center mb-6">
-          <h1 className="text-3xl font-bold text-[#00FFFF] mb-2">Welcome, {companyName} Limited!</h1>
+          <h1 className="text-3xl font-bold text-[#00FFFF] mb-2">Welcome, {companyName}</h1>
           {!hasDepartments && <p className="text-[#AFCBE3]">To get started, please answer a few questions.</p>}
         </div>
 

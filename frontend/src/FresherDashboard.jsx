@@ -1,87 +1,89 @@
 import { useEffect, useState } from "react";
-import { useLocation } from "react-router-dom";
-import { collection, getDocs } from "firebase/firestore";
-import { db } from "./firebase";
+import { useLocation, useNavigate } from "react-router-dom";
+import { doc, getDoc } from "firebase/firestore";
+import { signOut } from "firebase/auth";
+import { db, auth } from "./firebase";
 
 export default function FresherDashboard() {
   const location = useLocation();
-  const userId = location.state?.userId; // must come from login
-  const [fresherInfo, setFresherInfo] = useState(null);
+  const navigate = useNavigate();
+  const { userId, companyId, deptId } = location.state || {};
+  const [info, setInfo] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || !companyId || !deptId) {
+      console.error("❌ Missing userId, companyId, or deptId");
+      setLoading(false);
+      return;
+    }
 
-    const fetchFresherData = async () => {
-      setLoading(true);
+    const fetchUserData = async () => {
       try {
-        const companiesSnap = await getDocs(collection(db, "companies"));
-        let found = null;
+        console.log("🔍 Fetching user document for:", userId);
 
-        for (const companyDoc of companiesSnap.docs) {
-          const companyId = companyDoc.id;
-          const companyName = companyDoc.data().name || companyId;
+        const userDocRef = doc(db, "companies", companyId, "departments", deptId, "users", userId);
+        const userSnap = await getDoc(userDocRef);
 
-          const departmentsSnap = await getDocs(
-            collection(db, "companies", companyId, "departments")
-          );
-
-          for (const deptDoc of departmentsSnap.docs) {
-            const deptId = deptDoc.id;
-            const deptName = deptDoc.data().name;
-
-            const usersSnap = await getDocs(
-              collection(db, "companies", companyId, "departments", deptId, "users")
-            );
-
-            const userDoc = usersSnap.docs.find(u => u.data().userId === userId);
-
-            if (userDoc) {
-              found = {
-                companyId,
-                companyName,
-                deptId,
-                deptName,
-                trainingOn: userDoc.data().trainingOn,
-                userName: userDoc.data().name,
-              };
-              break;
-            }
-          }
-
-          if (found) break;
+        if (userSnap.exists()) {
+          const data = userSnap.data();
+          console.log("✅ User data found:", data);
+          setInfo({
+            name: data.name,
+            email: data.email,
+            phone: data.phone,
+            trainingOn: data.trainingOn,
+            progress: data.progress,
+            company: companyId,
+            department: deptId,
+          });
+        } else {
+          console.warn("❌ User document does not exist in Firestore");
         }
-
-        setFresherInfo(found);
       } catch (err) {
-        console.error("Error fetching fresher data:", err);
+        console.error("🔥 Error fetching user data:", err);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchFresherData();
-  }, [userId]);
+    fetchUserData();
+  }, [userId, companyId, deptId]);
 
-  if (!userId) return <p className="p-4 text-white">No userId provided.</p>;
-  if (loading) return <p className="p-4 text-white">Loading your dashboard...</p>;
-  if (!fresherInfo) return <p className="p-4 text-white">Fresher record not found.</p>;
+  const handleLogout = async () => {
+    await signOut(auth);
+    navigate("/"); // Redirect to login page
+  };
+
+  if (loading) return <p>Loading fresher data...</p>;
+
+  if (!info)
+    return <p className="text-red-400">User data not found. Check your credentials.</p>;
 
   return (
-    <div className="min-h-screen bg-[#031C3A] text-white p-6 flex flex-col items-center">
-      <h1 className="text-3xl font-bold text-[#00FFFF] mb-4">
-        Welcome, {fresherInfo.userName}!
-      </h1>
-
-      <div className="bg-[#021B36]/80 p-6 rounded-xl shadow-lg w-full max-w-md space-y-4">
-        <p><span className="font-semibold">Company:</span> {fresherInfo.companyName}</p>
-        <p><span className="font-semibold">Department:</span> {fresherInfo.deptName}</p>
-        <p><span className="font-semibold">Training Assigned:</span> {fresherInfo.trainingOn}</p>
+    <div className="flex min-h-screen bg-[#031C3A] text-white">
+      {/* Side Menu always visible */}
+      <div className="bg-[#021B36] w-64 p-6 space-y-6">
+        <h2 className="text-xl font-bold mb-4">Menu</h2>
+        <ul className="space-y-3">
+          <li className="hover:text-[#00FFFF] cursor-pointer">Dashboard</li>
+          <li className="hover:text-[#00FFFF] cursor-pointer">Training</li>
+          <li className="hover:text-[#00FFFF] cursor-pointer">Progress</li>
+          <li className="hover:text-red-500 cursor-pointer" onClick={handleLogout}>Logout</li>
+        </ul>
       </div>
 
-      <p className="mt-6 text-[#AFCBE3] text-center">
-        Best of luck on your training journey!
-      </p>
+      {/* Main Content */}
+      <div className="flex-1 p-6 md:p-8">
+        <h2 className="text-2xl font-bold mb-4">Welcome, {info.name} 🎉</h2>
+        <p><b>Company:</b> {info.company}</p>
+        <p><b>Department:</b> {info.department}</p>
+        <p><b>Training On:</b> {info.trainingOn}</p>
+        <p><b>Email:</b> {info.email}</p>
+        <p><b>Phone:</b> {info.phone}</p>
+        <p><b>Progress:</b> {info.progress}%</p>
+        <p>Best of luck 🚀</p>
+      </div>
     </div>
   );
 }

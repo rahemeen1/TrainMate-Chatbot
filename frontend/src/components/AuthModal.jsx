@@ -3,7 +3,11 @@ import { X, Eye, EyeOff, Mail, Lock, Briefcase, User } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "../firebase";
+import { doc, getDoc, getDocs, collection } from "firebase/firestore";
+
 import FresherDashboard from "../FresherDashboard";
+import { db } from "../firebase";
+
 
 export default function AuthModal({ isOpen, mode: initialMode, onClose }) {
   const [showPassword, setShowPassword] = useState(false);
@@ -32,46 +36,112 @@ export default function AuthModal({ isOpen, mode: initialMode, onClose }) {
   if (!isOpen) return null;
   const isLogin = mode === "login";
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!userType) return;
+ 
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  if (!userType) return;
 
-    setError("");
-    setLoading(true);
+  setError("");
+  setLoading(true);
 
-    try {
-      if (userType === "fresher") {
-        // Fresher login logic
-        const email = `${formData.emailOrUsername}@example.com`; // userId mapped to email
-        await signInWithEmailAndPassword(auth, email, formData.password);
-        onClose();
-        navigate("/fresher-dashboard", { state: { userId: formData.emailOrUsername } });
-      } else {
-        // Admin login logic
-        const url = "http://localhost:5000/company-login";
-        const body = { username: formData.emailOrUsername, password: formData.password };
-        const res = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-        const data = await res.json();
-        if (res.ok) {
-          onClose();
-          navigate("/company-dashboard", {
-            state: { companyId: data.companyId, companyName: data.name },
-          });
-        } else {
-          setError(data.message || "Login failed");
-        }
+  try {
+    if (userType === "fresher") {
+      const userIdInput = formData.emailOrUsername?.trim();
+      if (!userIdInput) {
+        setError("Enter your User ID");
+        setLoading(false);
+        return;
       }
-    } catch (err) {
-      console.error(err);
-      setError("Invalid credentials");
-    } finally {
-      setLoading(false);
+
+      console.log("🟢 Fresher login attempt with userId:", userIdInput);
+
+      // Map userId to email for Firebase Auth sign-in
+      const email = `${userIdInput}@example.com`;
+
+      await signInWithEmailAndPassword(auth, email, formData.password);
+      console.log("✅ Auth login successful");
+
+      // Traverse Firestore to find companyId and deptId
+      console.log("🔍 Searching Firestore for user document...");
+
+      const companiesSnap = await getDocs(collection(db, "companies"));
+      let found = false;
+      let currentCompanyId = null;
+      let currentDeptId = null;
+
+      for (const companyDoc of companiesSnap.docs) {
+        const companyId = companyDoc.id;
+        const departmentsSnap = await getDocs(
+          collection(db, "companies", companyId, "departments")
+        );
+
+        for (const deptDoc of departmentsSnap.docs) {
+          const deptId = deptDoc.id;
+          const usersSnap = await getDocs(
+            collection(db, "companies", companyId, "departments", deptId, "users")
+          );
+
+          const userDoc = usersSnap.docs.find(u => u.data().userId === userIdInput);
+
+          if (userDoc) {
+            console.log("✅ User found in Firestore");
+            currentCompanyId = companyId;
+            currentDeptId = deptId;
+            found = true;
+            break;
+          }
+        }
+        if (found) break;
+      }
+
+      if (!found) {
+        console.warn("❌ User not found in any company/department");
+        setError("User not found in the system");
+        setLoading(false);
+        return;
+      }
+
+      console.log("➡️ Redirecting to FresherDashboard with:", {
+        userId: userIdInput,
+        companyId: currentCompanyId,
+        deptId: currentDeptId,
+      });
+
+      onClose();
+      navigate("/fresher-dashboard", {
+        state: {
+          userId: userIdInput,
+          companyId: currentCompanyId,
+          deptId: currentDeptId,
+        },
+      });
+    } else {
+      // Admin login logic
+      const url = "http://localhost:5000/company-login";
+      const body = { username: formData.emailOrUsername, password: formData.password };
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        onClose();
+        navigate("/company-dashboard", {
+          state: { companyId: data.companyId, companyName: data.name },
+        });
+      } else {
+        setError(data.message || "Login failed");
+      }
     }
-  };
+  } catch (err) {
+    console.error("🔥 Login error:", err);
+    setError("Invalid credentials or server error");
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const SelectCard = ({ type, icon: Icon, label }) => (
     <div

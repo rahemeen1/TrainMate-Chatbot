@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 import cors from "cors";
 import { Pinecone } from "@pinecone-database/pinecone";
 import admin from "firebase-admin";
+import bcrypt from "bcrypt";
 import fs from "fs";
 
 dotenv.config();
@@ -10,6 +11,8 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 app.use(cors());
+
+
 
 // ✅ Load Firebase JSON manually
 const serviceAccount = JSON.parse(
@@ -24,6 +27,7 @@ admin.initializeApp({
 const db = admin.firestore();
 const PORT = process.env.PORT || 5000;
 
+
 async function startServer() {
   try {
     // ✅ Initialize Pinecone
@@ -33,7 +37,7 @@ async function startServer() {
 
     console.log("✅ Pinecone initialized");
 
-    const INDEX_NAME = "train-mate90";
+    const INDEX_NAME = "train-mate110";
     const DIMENSION = 1536;
 
     const { indexes } = await pinecone.listIndexes();
@@ -58,7 +62,133 @@ async function startServer() {
       console.log(`✅ Index '${INDEX_NAME}' already exists`);
     }
 
-    // ✅ Login Super Admin
+ const aot = await db.collection("companies").get();
+
+   // ✅ TEST ROUTE
+app.get("/test", (req, res) => {
+  res.send("Backend working!");
+});
+
+app.post("/company-login", async (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+      return res.status(400).json({ message: "Username & password required" });
+    }
+
+    const snapshot = await db.collection("companies").get();
+
+    let companyData = null;
+
+    for (const doc of snapshot.docs) {
+      const infoSnap = await doc.ref.collection("CompanyInfo").doc("info").get();
+
+      if (!infoSnap.exists) {
+        console.log(`⚠️ CompanyInfo not found for company: ${doc.id}`);
+        continue;
+      }
+
+      const info = infoSnap.data();
+
+      console.log(`Checking company: ${info.username}`); // 🔍 debug
+
+      if (info.username === username) {
+        companyData = {
+          companyId: doc.id,
+          ...info,
+        };
+        break;
+      }
+    }
+
+    if (!companyData) {
+      console.log(`❌ Username not found: ${username}`);
+      return res.status(404).json({ message: "Company not found" });
+    }
+
+    if (!companyData.passwordHash) {
+      console.log(`❌ Password hash missing for company: ${username}`);
+      return res.status(500).json({ message: "Password not set for this company" });
+    }
+
+    const isMatch = await bcrypt.compare(password, companyData.passwordHash);
+
+    if (!isMatch) {
+      console.log(`❌ Invalid password for username: ${username}`);
+      return res.status(401).json({ message: "Invalid password" });
+    }
+
+    console.log(`✅ Login successful for: ${username}`);
+    return res.json({
+      message: "Login successful",
+      companyId: companyData.companyId,
+      name: companyData.name,
+      email: companyData.email,
+      username: companyData.username,
+    });
+
+  } catch (err) {
+    console.error("❌ Company login error:", err);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+// app.post("/company-login", async (req, res) => {
+//   try {
+//     const { username, password } = req.body;
+
+//     if (!username || !password) {
+//       return res.status(400).json({ message: "Missing credentials" });
+//     }
+
+//     const snapshot = await db.collection("companies").get();
+//     let companyData = null;
+
+//     for (const doc of snapshot.docs) {
+//       const infoSnap = await doc.ref
+//         .collection("CompanyInfo")
+//         .doc("info")
+//         .get();
+
+//       if (!infoSnap.exists) continue;
+
+//       const info = infoSnap.data();
+
+//       if (info.username === username) {
+//         companyData = { ...info, companyId: doc.id };
+//         break;
+//       }
+//     }
+
+//     if (!companyData) {
+//       return res.status(404).json({ message: "Company not found" });
+//     }
+
+//     const match = await bcrypt.compare(
+//       password,
+//       companyData.passwordHash
+//     );
+
+//     if (!match) {
+//       return res.status(401).json({ message: "Invalid password" });
+//     }
+
+//     res.json({
+//       message: "Login successful",
+//       companyId: companyData.companyId,
+//       name: companyData.name,
+//       email: companyData.email,
+//     });
+//   } catch (err) {
+//     console.error("❌ Login error:", err);
+//     res.status(500).json({ message: "Server error" });
+//   }
+// });
+
+
+
+    //✅ Login Super Admin
     app.post("/login/superadmin", async (req, res) => {
       const { email, password } = req.body;
       try {
@@ -176,80 +306,104 @@ async function startServer() {
         res.status(500).json({ message: "Server error" });
       }
     });
-
     // ✅ Add Company
-    app.post("/add-company", async (req, res) => {
-      const { name, email, phone, address } = req.body;
+app.post("/add-company", async (req, res) => {
+  const { name, email, phone, address } = req.body;
 
-      if (!name || !email) {
-        return res.status(400).json({ message: "Company name and email are required" });
-      }
-
-      try {
-        const companiesRef = db.collection("companies");
-
-        const nameExists = await companiesRef.where("name", "==", name).get();
-        if (!nameExists.empty) {
-          return res.status(409).json({ message: "Company name already exists" });
-        }
-
-        const emailExists = await companiesRef.where("email", "==", email).get();
-        if (!emailExists.empty) {
-          return res.status(409).json({ message: "Company email already exists" });
-        }
-
-        const lastDoc = await companiesRef
-          .orderBy("companyIdNum", "desc")
-          .limit(1)
-          .get();
-
-        const lastId = lastDoc.empty ? 0 : lastDoc.docs[0].data().companyIdNum;
-        const newId = lastId + 1;
-
-        const baseId = name.trim().toLowerCase().replace(/\s+/g, "");
-        const loginId = `${baseId}_trainmate${newId}`;
-
-        await companiesRef.doc(String(newId)).set({
-          companyIdNum: newId,
-          companyId: loginId,
-          name,
-          email,
-          phone: phone || "",
-          address: address || "",
-          status: "active",
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          username: loginId,
-          password: `${baseId}@${newId}`,
-        });
-
-        res.json({
-          message: "✅ Company added successfully",
-          id: newId,
-          username: loginId,
-          password: `${baseId}@${newId}`,
-        });
-      } catch (err) {
-        console.error(err);
-        res.status(500).json({ message: "Server error" });
-      }
+  if (!name || !email) {
+    return res.status(400).json({
+      message: "Company name and email are required",
     });
+  }
+
+  try {
+    const companyId = name.trim(); // ❗ company name = docId
+
+    const companyRef = db.collection("companies").doc(companyId);
+    const exists = await companyRef.get();
+
+    if (exists.exists) {
+      return res.status(409).json({
+        message: "Company already exists",
+      });
+    }
+
+    const baseId = name.toLowerCase().replace(/\s+/g, "_");
+    const username = baseId + "_trainmate";
+    const plainPassword = Math.random().toString(36).slice(-10);
+    const passwordHash = await bcrypt.hash(plainPassword, 12);
+
+    // parent doc
+    await companyRef.set({
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      status: "active",
+    });
+
+    // subcollection → CompanyInfo
+    await companyRef
+      .collection("CompanyInfo")
+      .doc("info")
+      .set({
+        name,
+        email,
+        phone: phone || "",
+        address: address || "",
+        username,
+        passwordHash, // 🔐 HASHED
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+    res.json({
+      message: "✅ Company added successfully",
+      username,
+      password: plainPassword, // 👀 ONE TIME ONLY
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 
     // ✅ GET Companies (FIXED ✅)
     app.get("/companies", async (req, res) => {
-      try {
-        const snapshot = await db.collection("companies").get();
+  try {
+    const snapshot = await db.collection("companies").get();
 
-        const companies = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
+    const companies = await Promise.all(
+      snapshot.docs.map(async (doc) => {
+        const companyId = doc.id;
+        const parentData = doc.data();
 
-        res.json(companies);
-      } catch (error) {
-        console.error("❌ Error fetching companies:", error);
-        res.status(500).json({ error: error.message });
-      }
-    });
+        // 🔽 get CompanyInfo subcollection
+        const infoSnap = await db
+          .collection("companies")
+          .doc(companyId)
+          .collection("CompanyInfo")
+          .doc("info")
+          .get();
+
+        const infoData = infoSnap.exists ? infoSnap.data() : {};
+
+        // ❌ never expose passwordHash
+        delete infoData.passwordHash;
+
+        return {
+          id: companyId,
+          status: parentData.status || "active",
+          createdAt: parentData.createdAt || null,
+          ...infoData,
+        };
+      })
+    );
+
+    res.json(companies);
+  } catch (error) {
+    console.error("❌ Error fetching companies:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 
     // ✅ Toggle status
     app.put("/companies/:id/status", async (req, res) => {
@@ -324,47 +478,6 @@ app.get("/stats/superadmins", async (req, res) => {
     res.status(500).json({ error: "Failed to fetch super admins count" });
   }
 });
-// POST /company-login
-
-   app.post("/company-login", async (req, res) => {
-  try {
-    const { username, password } = req.body;
-
-    // Check for missing credentials
-    if (!username || !password) {
-      return res.status(400).json({ message: "Missing credentials" });
-    }
-
-    const companyRef = db.collection("companies");
-    const querySnapshot = await companyRef
-      .where("companyId", "==", username)
-      .limit(1)
-      .get();
-
-    if (querySnapshot.empty) {
-      return res.status(404).json({ message: "Company not found" });
-    }
-
-    const company = querySnapshot.docs[0].data();
-
-    // Check password (plain text for now; later hash it!)
-    if (company.password !== password) {
-      return res.status(401).json({ message: "Invalid password" });
-    }
-
-    // Login successful
-    return res.json({
-      message: "Login successful",
-      companyId: company.companyId,
-      name: company.name,
-      email: company.email,
-    });
-  } catch (err) {
-    console.error("❌ Server error:", err);
-    return res.status(500).json({ message: "Server error" });
-  }
-});
-
     // ✅ Start server
     app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);

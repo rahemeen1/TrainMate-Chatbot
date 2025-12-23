@@ -11,7 +11,6 @@ export default function ManageCompanies() {
   try {
     const res = await fetch("http://localhost:5000/companies");
     const data = await res.json();
-    console.log("✅ Received companies from backend:", data);
     setCompanies(data); // ✅ FIXED
   } catch (err) {
     console.error("❌ Error fetching companies:", err);
@@ -26,10 +25,7 @@ export default function ManageCompanies() {
   const changeStatus = async (id, currentStatus) => {
     const newStatus = currentStatus === "active" ? "suspended" : "active";
 
-    console.log("🔁 Toggle Request:");
-    console.log("Company ID:", id);
-    console.log("Old Status:", currentStatus);
-    console.log("New Status:", newStatus);
+    
 
     try {
       const res = await fetch(`http://localhost:5000/companies/${id}/status`, {
@@ -136,7 +132,7 @@ export default function ManageCompanies() {
       <table className="w-full text-white border border-[#00FFFF30]">
         <thead className="bg-[#021B36]">
           <tr>
-            <th className="p-2">Company ID</th>
+          
             <th className="p-2">Name</th>
             <th className="p-2">Email</th>
             <th className="p-2">Phone</th>
@@ -148,7 +144,7 @@ export default function ManageCompanies() {
         <tbody>
           {companies.map((c) => (
             <tr key={c.id} className="border-b border-[#00FFFF30]">
-              <td className="p-2">{c.companyIdNum}</td>
+             
               <td className="p-2">{c.name}</td>
               <td className="p-2">{c.email}</td>
               <td className="p-2">{c.phone || "-"}</td>

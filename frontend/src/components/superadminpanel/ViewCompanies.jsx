@@ -44,7 +44,7 @@ export default function ViewCompanies() {
             <thead>
               <tr className="bg-[#021B36] text-[#00FFFF]">
                 <th className="p-2 border border-[#00FFFF30]">#</th>
-                <th className="p-2 border border-[#00FFFF30]">Company ID</th>
+              
                 <th className="p-2 border border-[#00FFFF30]">Name</th>
                 <th className="p-2 border border-[#00FFFF30]">Email</th>
                 <th className="p-2 border border-[#00FFFF30]">Phone</th>
@@ -60,7 +60,7 @@ export default function ViewCompanies() {
                   <td className="p-2 border border-[#00FFFF30] text-center">
                     {index + 1}
                   </td>
-                  <td className="p-2 border border-[#00FFFF30]">{c.companyId}</td>
+                 
                   <td className="p-2 border border-[#00FFFF30]">{c.name}</td>
                   <td className="p-2 border border-[#00FFFF30]">{c.email}</td>
                   <td className="p-2 border border-[#00FFFF30]">{c.phone}</td>
