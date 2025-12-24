@@ -4,7 +4,6 @@ import { useNavigate } from "react-router-dom";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "../firebase";
 import { doc, getDoc, getDocs, collection } from "firebase/firestore";
-
 import FresherDashboard from "../FresherDashboard";
 import { db } from "../firebase";
 
@@ -114,10 +113,35 @@ const handleSubmit = async (e) => {
           companyId: currentCompanyId,
           deptId: currentDeptId,
         },
-      });
-    } else {
-      // Admin login logic
-      const url = "http://localhost:5000/company-login";
+      });}
+  else {
+  // 1️⃣ Check Super Admin FIRST
+  // ---------------------------
+  const superAdminRef = doc(db, "super_admins", "1");
+  const superSnap = await getDoc(superAdminRef);
+
+  if (superSnap.exists()) {
+    const superData = superSnap.data();
+
+    const emailMatch =
+      formData.emailOrUsername === superData.email;
+
+    const passwordMatch =
+      formData.password === superData.password;
+
+    if (emailMatch && passwordMatch) {
+      console.log("✅ Super Admin login successful");
+
+      onClose();
+      navigate("/super-admin-dashboard");
+      return; // 
+    }
+  }
+
+  // --------------------------------
+  // 2️⃣ If NOT super admin → Company Admin
+  // --------------------------------
+  const url = "http://localhost:5000/company-login";
       const body = { username: formData.emailOrUsername, password: formData.password };
       const res = await fetch(url, {
         method: "POST",
@@ -134,7 +158,9 @@ const handleSubmit = async (e) => {
         setError(data.message || "Login failed");
       }
     }
-  } catch (err) {
+  } 
+
+  catch (err) {
     console.error("🔥 Login error:", err);
     setError("Invalid credentials or server error");
   } finally {
@@ -198,10 +224,10 @@ const handleSubmit = async (e) => {
           {isLogin && !userType && (
             <div className="flex flex-col items-center justify-center space-y-6 animate-fade-in-up">
               <p className="text-[#AFCBE3] text-sm text-center mb-2">
-                Are you a Company Admin or a Fresher?
+                Are you an Admin or a Fresher?
               </p>
               <div className="flex justify-center gap-5 flex-wrap">
-                <SelectCard type="admin" icon={Briefcase} label="Company Admin" />
+                <SelectCard type="admin" icon={Briefcase} label="Admin" />
                 <SelectCard type="fresher" icon={User} label="Fresher" />
               </div>
             </div>

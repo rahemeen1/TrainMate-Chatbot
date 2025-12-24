@@ -98,7 +98,7 @@ export default function AdminDashboard() {
 
           <li
             className="cursor-pointer p-2 rounded-lg flex items-center gap-2 text-red-400"
-            onClick={() => navigate("/superadmin")}
+            onClick={() => navigate("/")}
           >
             <LogOut size={16} /> Logout
           </li>
