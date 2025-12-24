@@ -3,9 +3,11 @@ import { X, Eye, EyeOff, Mail, Lock, Briefcase, User } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "../firebase";
-import { doc, getDoc, getDocs, collection } from "firebase/firestore";
-import FresherDashboard from "../FresherDashboard";
+import { doc, getDoc, getDocs, collection, setDoc } from "firebase/firestore";
+import FresherDashboard from "./Fresher/FresherDashboard";
 import { db } from "../firebase";
+import bcrypt from "bcryptjs";
+
 
 
 export default function AuthModal({ isOpen, mode: initialMode, onClose }) {
@@ -29,13 +31,13 @@ export default function AuthModal({ isOpen, mode: initialMode, onClose }) {
       setShowPassword(false);
       setRememberMe(false);
       setError("");
+     
     }
   }, [isOpen, initialMode]);
 
   if (!isOpen) return null;
   const isLogin = mode === "login";
 
- 
 const handleSubmit = async (e) => {
   e.preventDefault();
   if (!userType) return;
@@ -45,121 +47,175 @@ const handleSubmit = async (e) => {
 
   try {
     if (userType === "fresher") {
-      const userIdInput = formData.emailOrUsername?.trim();
-      if (!userIdInput) {
-        setError("Enter your User ID");
-        setLoading(false);
-        return;
-      }
-
-      console.log("🟢 Fresher login attempt with userId:", userIdInput);
-
-      // Map userId to email for Firebase Auth sign-in
-      const email = `${userIdInput}@example.com`;
-
-      await signInWithEmailAndPassword(auth, email, formData.password);
-      console.log("✅ Auth login successful");
-
-      // Traverse Firestore to find companyId and deptId
-      console.log("🔍 Searching Firestore for user document...");
-
-      const companiesSnap = await getDocs(collection(db, "companies"));
-      let found = false;
-      let currentCompanyId = null;
-      let currentDeptId = null;
-
-      for (const companyDoc of companiesSnap.docs) {
-        const companyId = companyDoc.id;
-        const departmentsSnap = await getDocs(
-          collection(db, "companies", companyId, "departments")
-        );
-
-        for (const deptDoc of departmentsSnap.docs) {
-          const deptId = deptDoc.id;
-          const usersSnap = await getDocs(
-            collection(db, "companies", companyId, "departments", deptId, "users")
-          );
-
-          const userDoc = usersSnap.docs.find(u => u.data().userId === userIdInput);
-
-          if (userDoc) {
-            console.log("✅ User found in Firestore");
-            currentCompanyId = companyId;
-            currentDeptId = deptId;
-            found = true;
-            break;
-          }
-        }
-        if (found) break;
-      }
-
-      if (!found) {
-        console.warn("❌ User not found in any company/department");
-        setError("User not found in the system");
-        setLoading(false);
-        return;
-      }
-
-      console.log("➡️ Redirecting to FresherDashboard with:", {
-        userId: userIdInput,
-        companyId: currentCompanyId,
-        deptId: currentDeptId,
-      });
-
-      onClose();
-      navigate("/fresher-dashboard", {
-        state: {
-          userId: userIdInput,
-          companyId: currentCompanyId,
-          deptId: currentDeptId,
-        },
-      });}
-  else {
-  // 1️⃣ Check Super Admin FIRST
-  // ---------------------------
-  const superAdminRef = doc(db, "super_admins", "1");
-  const superSnap = await getDoc(superAdminRef);
-
-  if (superSnap.exists()) {
-    const superData = superSnap.data();
-
-    const emailMatch =
-      formData.emailOrUsername === superData.email;
-
-    const passwordMatch =
-      formData.password === superData.password;
-
-    if (emailMatch && passwordMatch) {
-      console.log("✅ Super Admin login successful");
-
-      onClose();
-      navigate("/super-admin-dashboard");
-      return; // 
-    }
+  const userIdInput = formData.emailOrUsername?.trim();
+  if (!userIdInput) {
+    setError("Enter your User ID");
+    setLoading(false);
+    return;
   }
 
-  // --------------------------------
-  // 2️⃣ If NOT super admin → Company Admin
-  // --------------------------------
-  const url = "http://localhost:5000/company-login";
-      const body = { username: formData.emailOrUsername, password: formData.password };
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        onClose();
-        navigate("/company-dashboard", {
-          state: { companyId: data.companyId, companyName: data.name },
-        });
-      } else {
-        setError(data.message || "Login failed");
+  console.log("🟢 Fresher login attempt with userId:", userIdInput);
+
+  // Map userId to email for Firebase Auth sign-in
+  const email = `${userIdInput}@example.com`;
+  await signInWithEmailAndPassword(auth, email, formData.password);
+  console.log("✅ Auth login successful");
+
+  // 🔍 Traverse Firestore to find company & dept
+  const companiesSnap = await getDocs(collection(db, "companies"));
+
+  let found = false;
+  let currentCompanyId = null;
+  let currentDeptId = null;
+
+  for (const companyDoc of companiesSnap.docs) {
+    const companyId = companyDoc.id;
+
+    const departmentsSnap = await getDocs(
+      collection(db, "companies", companyId, "departments")
+    );
+
+    for (const deptDoc of departmentsSnap.docs) {
+      const deptId = deptDoc.id;
+
+      const usersSnap = await getDocs(
+        collection(
+          db,
+          "companies",
+          companyId,
+          "departments",
+          deptId,
+          "users"
+        )
+      );
+
+      const userDoc = usersSnap.docs.find(
+        u => u.data().userId === userIdInput
+      );
+
+      if (userDoc) {
+        currentCompanyId = companyId;
+        currentDeptId = deptId;
+        found = true;
+        break;
       }
     }
-  } 
+    if (found) break;
+  }
 
+  if (!found) {
+    setError("User not found in the system");
+    setLoading(false);
+    return;
+  }
+
+  // 🚨 CHECK COMPANY STATUS
+  const companyRef = doc(db, "companies", currentCompanyId);
+  const companySnap = await getDoc(companyRef);
+
+  if (!companySnap.exists()) {
+    setError("Company not found");
+    setLoading(false);
+    return;
+  }
+
+  const companyStatus = companySnap.data().status;
+
+  if (companyStatus !== "active") {
+    alert(
+      `Your company is suspended.\nPlease contact trainmate@gmail.com for further queries.`
+    );
+    setLoading(false);
+    return;
+  }
+
+  // ✅ Company active → allow fresher login
+  console.log("➡️ Redirecting to FresherDashboard");
+
+  onClose();
+  navigate("/fresher-dashboard", {
+    state: {
+      userId: userIdInput,
+      companyId: currentCompanyId,
+      deptId: currentDeptId,
+    },
+  });
+}
+
+  else {
+  // --------------------------------
+  // 1️⃣ Check Super Admin FIRST
+  // --------------------------------
+  const superAdminRef = doc(db, "super_admins", "1");
+const superSnap = await getDoc(superAdminRef);
+
+if (superSnap.exists()) {
+  const superData = superSnap.data();
+
+  const isEmail =
+    formData.emailOrUsername === superData.email;
+
+  let isPasswordCorrect = false;
+
+  // Password compare only if email matches
+  if (isEmail) {
+    isPasswordCorrect = await bcrypt.compare(
+      formData.password,
+      superData.password
+    );
+  }
+
+  // ✅ SUPER ADMIN SUCCESS
+  if (isEmail && isPasswordCorrect) {
+    console.log("✅ Super Admin login successful");
+
+    onClose();
+    navigate("/super-admin-dashboard");
+    return; // ⛔ STOP HERE (VERY IMPORTANT)
+  }
+}
+
+  const url = "http://localhost:5000/company-login";
+    const body = { username: formData.emailOrUsername, password: formData.password };
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    const data = await res.json();
+
+    if (res.ok) {
+      const companyName = data.name;
+      const companyId = data.companyId;
+
+      // 🔍 Check company status in Firestore
+      const companyRef = doc(db, "companies", companyName);
+      const companySnap = await getDoc(companyRef);
+
+      if (companySnap.exists()) {
+        const companyData = companySnap.data();
+
+        if (companyData.status === "active") {
+          // ✅ Company is active → proceed to dashboard
+          onClose();
+          navigate("/company-dashboard", {
+            state: { companyId, companyName },
+          });
+        } else {
+          // ⚠ Company suspended → show modal
+          alert(
+            `Your company "${companyName}" is suspended. Please contact trainmate@gmail.com for further queries.`
+          );
+        }
+      } else {
+        // ⚠ Company not found in Firestore
+        alert(`Company "${companyName}" not found in the system.`);
+      }
+    } else {
+      setError(data.message || "Login failed");
+    }
+  } }
   catch (err) {
     console.error("🔥 Login error:", err);
     setError("Invalid credentials or server error");

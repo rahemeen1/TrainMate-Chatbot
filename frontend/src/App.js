@@ -5,7 +5,7 @@ import CompanyDashboard from "./components/CompanySpecific/CompanyDashboard";
 import AuthModal from "./components/AuthModal";
 import ManageDepartments from "./components/CompanySpecific/ManageDepartments";
 import DepartmentDetails from "./components/CompanySpecific/DepartmentDetails";
-import FresherDashboard from "./FresherDashboard.jsx";
+import FresherDashboard from "./components/Fresher/FresherDashboard";
 
 
 export default function App() {

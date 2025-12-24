@@ -134,60 +134,6 @@ app.post("/company-login", async (req, res) => {
   }
 });
 
-// app.post("/company-login", async (req, res) => {
-//   try {
-//     const { username, password } = req.body;
-
-//     if (!username || !password) {
-//       return res.status(400).json({ message: "Missing credentials" });
-//     }
-
-//     const snapshot = await db.collection("companies").get();
-//     let companyData = null;
-
-//     for (const doc of snapshot.docs) {
-//       const infoSnap = await doc.ref
-//         .collection("CompanyInfo")
-//         .doc("info")
-//         .get();
-
-//       if (!infoSnap.exists) continue;
-
-//       const info = infoSnap.data();
-
-//       if (info.username === username) {
-//         companyData = { ...info, companyId: doc.id };
-//         break;
-//       }
-//     }
-
-//     if (!companyData) {
-//       return res.status(404).json({ message: "Company not found" });
-//     }
-
-//     const match = await bcrypt.compare(
-//       password,
-//       companyData.passwordHash
-//     );
-
-//     if (!match) {
-//       return res.status(401).json({ message: "Invalid password" });
-//     }
-
-//     res.json({
-//       message: "Login successful",
-//       companyId: companyData.companyId,
-//       name: companyData.name,
-//       email: companyData.email,
-//     });
-//   } catch (err) {
-//     console.error("❌ Login error:", err);
-//     res.status(500).json({ message: "Server error" });
-//   }
-// });
-
-
-
     //✅ Login Super Admin
     app.post("/login/superadmin", async (req, res) => {
       const { email, password } = req.body;
@@ -487,5 +433,47 @@ app.get("/stats/superadmins", async (req, res) => {
     console.error("❌ Pinecone Initialization Error:", error);
   }
 }
+app.put("/superadmins/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { email, oldPassword, newPassword } = req.body;
+
+    const adminRef = db.collection("super_admins").doc(id);
+    const adminSnap = await adminRef.get();
+
+    if (!adminSnap.exists) {
+      return res.status(404).json({ message: "Super admin not found" });
+    }
+
+    const adminData = adminSnap.data();
+
+    // 🔹 EMAIL UPDATE
+    if (email) {
+      await adminRef.update({ email });
+      return res.json({ message: "Email updated successfully" });
+    }
+
+    // 🔹 PASSWORD UPDATE
+    if (!oldPassword || !newPassword) {
+      return res.status(400).json({ message: "Missing password fields" });
+    }
+
+    const isMatch = await bcrypt.compare(oldPassword, adminData.password);
+
+    if (!isMatch) {
+      return res.status(401).json({ message: "Old password is incorrect" });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    await adminRef.update({ password: hashedPassword });
+
+    return res.json({ message: "Password updated successfully" });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
 
 startServer();

@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
 import { Users, Building2, UserPlus, LogOut } from "lucide-react";
-import NewSuperAdmin from "./NewSuperAdmin";
-import ManageSuperAdmins from "./ManageSuperAdmins";
+import SuperAdminSettings from "./SuperAdminSettings";
 import AddCompany from "./AddCompany";
 import { useNavigate } from "react-router-dom";
 import ViewCompanies from "./ViewCompanies";
 import ManageCompanies from "./ManageCompanies";
+
 
 export default function AdminDashboard() {
   const [activeSection, setActiveSection] = useState("overview");
@@ -80,20 +80,11 @@ export default function AdminDashboard() {
 
           <li
             className={`cursor-pointer p-2 rounded-lg ${
-              activeSection === "addAdmin" ? "bg-[#00FFFF]/20" : ""
-            }`}
-            onClick={() => setActiveSection("addAdmin")}
-          >
-            Add Super Admin
-          </li>
-
-          <li
-            className={`cursor-pointer p-2 rounded-lg ${
               activeSection === "manageAdmins" ? "bg-[#00FFFF]/20" : ""
             }`}
             onClick={() => setActiveSection("manageAdmins")}
           >
-            Manage Super Admins
+            Settings
           </li>
 
           <li
@@ -112,7 +103,7 @@ export default function AdminDashboard() {
           {activeSection === "addCompany" && "Add New Company"}
           {activeSection === "viewCompanies" && "Registered Companies"}
           {activeSection === "addAdmin" && "Add Super Admin"}
-          {activeSection === "manageAdmins" && "Manage Super Admins"}
+          {activeSection === "manageAdmins" && "Super Admin Settings"}
         </h1>
 
         {/* ✅ Overview Stats */}
@@ -127,11 +118,8 @@ export default function AdminDashboard() {
         {/* ✅ Add Company Page */}
         {activeSection === "addCompany" && <AddCompany />}
 
-        {/* ✅ Add Super Admin Form */}
-        {activeSection === "addAdmin" && <NewSuperAdmin />}
-
         {/* ✅ Manage Super Admins */}
-        {activeSection === "manageAdmins" && <ManageSuperAdmins />}
+        {activeSection === "manageAdmins" && <SuperAdminSettings />}
         {activeSection === "viewCompanies" && <ViewCompanies />}
         {activeSection === "manageCompanies" && <ManageCompanies />}
       </div>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
-export default function ManageSuperAdmins() {
+
+export default function SuperAdminSettings() {
   const [admins, setAdmins] = useState([]);
   const [message, setMessage] = useState("");
   const [editingId, setEditingId] = useState(null);
@@ -34,45 +35,43 @@ export default function ManageSuperAdmins() {
     setEditData({ email: "", oldPassword: "", newPassword: "" });
   };
 
-  const handleSave = async (id) => {
-    try {
-      const res = await fetch(`http://localhost:5000/superadmins/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(editData),
-      });
-      const data = await res.json();
-      setMessage(data.message);
-      if (res.ok) {
-        setEditingId(null);
-        setEditMode(null);
-        getAdmins();
-      }
-    } catch (err) {
-      console.error(err);
-      setMessage("Server error. Try later.");
-    }
-  };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this admin?")) return;
-    try {
-      const res = await fetch(`http://localhost:5000/superadmins/${id}`, {
-        method: "DELETE",
-      });
-      const data = await res.json();
-      setMessage(data.message);
+  const handleSave = async (id) => {
+  try {
+    const payload =
+      editMode === "email"
+        ? { email: editData.email }
+        : {
+            oldPassword: editData.oldPassword,
+            newPassword: editData.newPassword,
+          };
+
+    const res = await fetch(`http://localhost:5000/superadmins/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await res.json();
+    setMessage(data.message);
+
+    if (res.ok) {
+      setEditingId(null);
+      setEditMode(null);
       getAdmins();
-    } catch (err) {
-      console.error(err);
-      setMessage("Server error. Try later.");
     }
-  };
+  } catch (err) {
+    console.error(err);
+    setMessage("Server error. Try later.");
+  }
+};
+
+
 
   return (
     <div className="bg-[#031C3A]/50 border border-[#00FFFF30] p-6 rounded-xl shadow-lg max-w-4xl">
       <h2 className="text-xl text-[#00FFFF] font-semibold mb-4">
-        Manage Super Admins
+        Super Admin Settings
       </h2>
 
       <table className="w-full text-left text-white border border-[#00FFFF30]">
@@ -173,12 +172,7 @@ export default function ManageSuperAdmins() {
                       >
                         Edit
                       </button>
-                      <button
-                        onClick={() => handleDelete(a.id)}
-                        className="bg-red-500 px-3 py-1 rounded hover:bg-red-600 text-sm"
-                      >
-                        Delete
-                      </button>
+                     
                     </>
                   )}
                 </td>

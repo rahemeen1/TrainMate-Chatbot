@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useNavigate, useLocation } from "react-router-dom";
+import CompanySidebar from "../../components/CompanySpecific/CompanySidebar";
+
 
 export default function ManageDepartments() {
   const navigate = useNavigate();
@@ -91,8 +93,18 @@ export default function ManageDepartments() {
   }
 
   return (
-    <div className="min-h-screen bg-[#031C3A] text-white p-8">
+  <div className="flex min-h-screen bg-[#031C3A] text-white">
+    
+    {/* Sidebar - LEFT */}
+    <CompanySidebar
+      companyId={companyId}
+      companyName={companyName}
+    />
+
+    {/* Main Content - RIGHT */}
+    <div className="flex-1 p-8">
       <div className="max-w-6xl mx-auto">
+
         {/* Header */}
         <div className="flex justify-between items-center mb-6">
           <div>
@@ -126,10 +138,7 @@ export default function ManageDepartments() {
             <tbody>
               {departments.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan="3"
-                    className="p-6 text-center text-[#AFCBE3]"
-                  >
+                  <td colSpan="3" className="p-6 text-center text-[#AFCBE3]">
                     No departments found
                   </td>
                 </tr>
@@ -164,7 +173,10 @@ export default function ManageDepartments() {
             </tbody>
           </table>
         </div>
+
       </div>
     </div>
-  );
+  </div>
+);
+
 }

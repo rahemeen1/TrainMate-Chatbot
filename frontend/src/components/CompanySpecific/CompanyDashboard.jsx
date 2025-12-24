@@ -3,6 +3,8 @@ import { collection, getDocs, addDoc, serverTimestamp } from "firebase/firestore
 import { db } from "../../firebase";
 import { useNavigate, useLocation } from "react-router-dom";
 import { doc, setDoc } from "firebase/firestore";
+import CompanySidebar from "../../components/CompanySpecific/CompanySidebar";
+
 
 const DEPARTMENT_OPTIONS = ["HR", "Software Development", "AI", "Finance", "Marketing", "Operations"];
 
@@ -12,13 +14,6 @@ const QUESTIONS = [
   { text: "Batch size", type: "single-select", options: ["Small (5-10)", "Medium (10-20)", "Large (20+)"] },
 ];
 
-const MENU_OPTIONS = [
-  { label: "Manage Departments", path: "/manage-departments" },
-  { label: "Total Users", path: "/total-users" },
-  { label: "Active Users", path: "/active-users" },
-  { label: "Analytics", path: "/analytics" },
-  { label: "Logout", path: "/" },
-];
 
 export default function CompanyDashboard() {
   
@@ -112,37 +107,8 @@ console.log("companyId:", companyId);
 
   return (
     <div className="flex min-h-screen bg-[#031C3A] text-white">
-      {/* Vertical Sidebar */}
-      <div className="w-64 bg-[#021B36]/90 flex flex-col p-4 shadow-lg">
-        <div className="text-center mb-6">
-          <div className="w-16 h-16 mx-auto bg-[#00FFFF]/20 rounded-2xl flex items-center justify-center shadow-[0_0_18px_#00FFFF50] border border-[#00FFFF30]">
-            <span className="text-[#00FFFF] font-extrabold text-xl tracking-wider">TM</span>
-          </div>
-          <h1 className="text-[#00FFFF] font-bold text-xl mt-1">TrainMate</h1>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          {MENU_OPTIONS.map(opt => (
-            <button
-              key={opt.path}
-              className="text-left px-4 py-2 rounded-lg hover:bg-[#00FFFF]/20 transition text-[#AFCBE3] font-medium"
-              onClick={() => {
-                if (opt.label === "Logout") {
-                  const confirmed = window.confirm("Do you really want to logout?");
-                  if (confirmed) navigate("/");
-                } else {
-                 navigate(opt.path, {
-  state: { companyId, companyName }
-});
-
-                }
-              }}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* Sidebar */}
+      <CompanySidebar companyId={companyId} companyName={companyName} />
 
       {/* Main Content */}
       <div className="flex-1 p-8">
