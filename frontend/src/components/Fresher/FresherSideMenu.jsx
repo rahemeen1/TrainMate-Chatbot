@@ -1,9 +1,9 @@
 import { useNavigate } from "react-router-dom";
 import { signOut } from "firebase/auth";
 import { auth } from "../../firebase";
-export function FresherSideMenu() {
+export function FresherSideMenu({ companyId }) {
   const navigate = useNavigate();
-
+console.log("FresherSideMenu companyId:", companyId);
   const handleLogout = async () => {
     await signOut(auth);
     navigate("/"); // Redirect to login page
@@ -16,7 +16,7 @@ export function FresherSideMenu() {
                   <span className="text-[#00FFFF] font-extrabold text-xl">TM</span>
                 </div>
                 <h1 className="text-[#00FFFF] font-bold text-xl mt-2">TrainMate</h1>
-                <p className="text-sm text-[#AFCBE3] mt-1">Fresher Panel</p>
+                <p className="text-sm text-[#AFCBE3] mt-1">{companyId}</p>
               </div>
       <button
         onClick={() => navigate("/fresher-dashboard")}
@@ -29,7 +29,7 @@ export function FresherSideMenu() {
         onClick={() => navigate("/fresher-training")}
         className="text-left px-4 py-2 rounded-lg hover:bg-[#00FFFF]/20 transition font-medium"
       >
-        Training
+        RoadMap
       </button>
 
       <button
