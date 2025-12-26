@@ -1,21 +1,23 @@
 import { useState, useEffect } from "react";
+import axios from "axios";
 
 export default function ManageCompanies() {
   const [companies, setCompanies] = useState([]);
   const [selected, setSelected] = useState(null);
   const [message, setMessage] = useState("");
 
-  // ✅ Fetch companies
+  // ✅ Fetch companies from backend
   const fetchCompanies = async () => {
-  console.log("✅ Fetching companies...");
-  try {
-    const res = await fetch("http://localhost:5000/companies");
-    const data = await res.json();
-    setCompanies(data); // ✅ FIXED
-  } catch (err) {
-    console.error("❌ Error fetching companies:", err);
-  }
-};
+    console.log("Fetching companies...");
+    try {
+      const res = await axios.get("http://localhost:5000/companies");
+      setCompanies(res.data);
+      console.log("Companies fetched:", res.data);
+    } catch (err) {
+      console.error("Error fetching companies:", err);
+      setMessage("❌ Failed to fetch companies");
+    }
+  };
 
   useEffect(() => {
     fetchCompanies();
@@ -24,100 +26,71 @@ export default function ManageCompanies() {
   // ✅ Toggle Status
   const changeStatus = async (id, currentStatus) => {
     const newStatus = currentStatus === "active" ? "suspended" : "active";
-
-    
-
+    console.log(`Toggling status for ${id}: ${currentStatus} -> ${newStatus}`);
     try {
-      const res = await fetch(`http://localhost:5000/companies/${id}/status`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
+      const res = await axios.put(`http://localhost:5000/companies/${id}/status`, {
+        status: newStatus,
       });
+      console.log("Toggle response:", res.data);
 
-      const data = await res.json();
-      console.log("✅ Toggle Response:", data);
-
-      if (res.ok) {
-        console.log("✅ Updating UI state...");
-        setCompanies((prev) =>
-          prev.map((c) => (c.id === id ? { ...c, status: newStatus } : c))
-        );
-        setMessage("✅ Status updated!");
-      } else {
-        console.log("❌ Backend returned error:", data);
-        setMessage("❌ Update failed");
-      }
+      setCompanies((prev) =>
+        prev.map((c) => (c.id === id ? { ...c, status: newStatus } : c))
+      );
+      setMessage("✅ Status updated!");
     } catch (err) {
-      console.error("❌ Toggle error:", err);
+      console.error("Toggle error:", err);
+      setMessage("❌ Status update failed");
     }
   };
 
-  // ✅ Update company (Edit)
+  // ✅ Update Company
   const updateCompany = async () => {
-    console.log("✏️ Editing company:", selected);
+    if (!selected) return;
+    const { id, name, email, phone, address } = selected;
+
+    if (!name || !email || !phone || !address) {
+      setMessage("❌ All fields are mandatory");
+      return;
+    }
+
+    console.log("Updating company:", selected);
 
     try {
-      const res = await fetch(
-        `http://localhost:5000/companies/${selected.id}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            email: selected.email,
-            phone: selected.phone,
-            address: selected.address,
-          }),
-        }
+      const res = await axios.put(`http://localhost:5000/companies/${id}`, {
+        name,
+        email,
+        phone,
+        address,
+      });
+      console.log("Update response:", res.data);
+
+      setCompanies((prev) =>
+        prev.map((c) =>
+          c.id === id ? { ...c, name, email, phone, address } : c
+        )
       );
-
-      const data = await res.json();
-      console.log("✅ Edit Response from backend:", data);
-
-      if (res.ok) {
-        console.log("✅ Updating UI state with edited company...");
-        setCompanies((prev) =>
-          prev.map((c) =>
-            c.id === selected.id
-              ? {
-                  ...c,
-                  email: selected.email,
-                  phone: selected.phone,
-                  address: selected.address,
-                }
-              : c
-          )
-        );
-        setMessage("✅ Company updated!");
-        setSelected(null);
-      } else {
-        setMessage("❌ Edit failed");
-        console.error("❌ Backend edit error:", data);
-      }
+      setMessage("✅ Company updated!");
+      setSelected(null);
     } catch (err) {
-      console.error("❌ Edit error:", err);
+      console.error("Edit error:", err.response || err);
+      setMessage("❌ Update failed: " + (err.response?.data?.message || err.message));
     }
   };
 
   // ✅ Delete Company
   const deleteCompany = async (id) => {
-    console.log("🗑 Deleting company:", id);
-
     if (!window.confirm("Delete this company?")) return;
+    console.log("Deleting company:", id);
 
     try {
-      const res = await fetch(`http://localhost:5000/companies/${id}`, {
-        method: "DELETE",
-      });
+      const res = await axios.delete(`http://localhost:5000/companies/${id}`);
+      console.log("Delete response:", res.data);
 
-      const data = await res.json();
-      console.log("✅ Delete Response:", data);
-
-      if (res.ok) {
-        setCompanies((prev) => prev.filter((c) => c.id !== id));
-        setMessage("✅ Company deleted!");
-      }
+      setCompanies((prev) => prev.filter((c) => c.id !== id));
+      setMessage("✅ Company deleted!");
     } catch (err) {
-      console.error("❌ Delete error:", err);
+      console.error("Delete error:", err.response || err);
+      setMessage("❌ Delete failed: " + (err.response?.data?.message || err.message));
     }
   };
 
@@ -132,7 +105,6 @@ export default function ManageCompanies() {
       <table className="w-full text-white border border-[#00FFFF30]">
         <thead className="bg-[#021B36]">
           <tr>
-          
             <th className="p-2">Name</th>
             <th className="p-2">Email</th>
             <th className="p-2">Phone</th>
@@ -144,37 +116,28 @@ export default function ManageCompanies() {
         <tbody>
           {companies.map((c) => (
             <tr key={c.id} className="border-b border-[#00FFFF30]">
-             
-              <td className="p-2">{c.name}</td>
-              <td className="p-2">{c.email}</td>
+              <td className="p-2">{c.name || "-"}</td>
+              <td className="p-2">{c.email || "-"}</td>
               <td className="p-2">{c.phone || "-"}</td>
-
               <td className="p-2">
                 <span
                   className={`px-2 py-1 rounded ${
                     c.status === "active" ? "bg-green-600" : "bg-red-600"
                   }`}
                 >
-                  {c.status}
+                  {c.status || "-"}
                 </span>
               </td>
-
               <td className="p-2 flex gap-2">
                 <button
-                  onClick={() => {
-                    console.log("⚡ Toggle button clicked for:", c.id);
-                    changeStatus(c.id, c.status);
-                  }}
+                  onClick={() => changeStatus(c.id, c.status)}
                   className="px-2 py-1 bg-yellow-400 text-black rounded"
                 >
                   Toggle
                 </button>
 
                 <button
-                  onClick={() => {
-                    console.log("✏️ Edit button clicked:", c);
-                    setSelected(c);
-                  }}
+                  onClick={() => setSelected(c)}
                   className="px-2 py-1 bg-blue-400 text-black rounded"
                 >
                   Edit
@@ -192,7 +155,7 @@ export default function ManageCompanies() {
         </tbody>
       </table>
 
-      {/* ✅ EDIT POPUP */}
+      {/* ✅ Edit Popup */}
       {selected && (
         <div className="fixed top-0 left-0 w-full h-full bg-[#00000080] flex justify-center items-center">
           <div className="bg-[#031C3A] p-6 rounded-xl border border-[#00FFFF50] w-96">
@@ -201,33 +164,39 @@ export default function ManageCompanies() {
             </h3>
 
             <input
+              type="text"
+              className="w-full p-2 bg-[#021B36] text-white rounded mb-2"
+              value={selected.name}
+              onChange={(e) =>
+                setSelected({ ...selected, name: e.target.value })
+              }
+            />
+
+            <input
               type="email"
               className="w-full p-2 bg-[#021B36] text-white rounded mb-2"
               value={selected.email}
-              onChange={(e) => {
-                console.log("✏️ Email updated:", e.target.value);
-                setSelected({ ...selected, email: e.target.value });
-              }}
+              onChange={(e) =>
+                setSelected({ ...selected, email: e.target.value })
+              }
             />
 
             <input
               type="text"
               className="w-full p-2 bg-[#021B36] text-white rounded mb-2"
               value={selected.phone}
-              onChange={(e) => {
-                console.log("📞 Phone updated:", e.target.value);
-                setSelected({ ...selected, phone: e.target.value });
-              }}
+              onChange={(e) =>
+                setSelected({ ...selected, phone: e.target.value })
+              }
             />
 
             <input
               type="text"
               className="w-full p-2 bg-[#021B36] text-white rounded mb-2"
               value={selected.address}
-              onChange={(e) => {
-                console.log("📍 Address updated:", e.target.value);
-                setSelected({ ...selected, address: e.target.value });
-              }}
+              onChange={(e) =>
+                setSelected({ ...selected, address: e.target.value })
+              }
             />
 
             <div className="flex gap-2 mt-3">
@@ -239,10 +208,7 @@ export default function ManageCompanies() {
               </button>
 
               <button
-                onClick={() => {
-                  console.log("❌ Closing edit popup");
-                  setSelected(null);
-                }}
+                onClick={() => setSelected(null)}
                 className="px-3 py-1 bg-gray-500 rounded text-black"
               >
                 Cancel

@@ -3,11 +3,13 @@ import { X, Eye, EyeOff, Mail, Lock, Briefcase, User } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "../firebase";
-import { doc, getDoc, getDocs, collection, setDoc } from "firebase/firestore";
-import FresherDashboard from "./Fresher/FresherDashboard";
+import { doc, getDoc, getDocs, collection } from "firebase/firestore";
+import Fresherdashboard from "../components/Fresher/FresherDashboard";
 import { db } from "../firebase";
-import bcrypt from "bcryptjs";
-
+import { 
+  query, 
+  where 
+} from "firebase/firestore";
 
 
 export default function AuthModal({ isOpen, mode: initialMode, onClose }) {
@@ -18,7 +20,7 @@ export default function AuthModal({ isOpen, mode: initialMode, onClose }) {
     password: "",
   });
   const [mode, setMode] = useState(initialMode);
-  const [userType, setUserType] = useState(null); // 'admin' or 'fresher'
+  const [userType, setUserType] = useState(null); 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const navigate = useNavigate();
@@ -31,12 +33,155 @@ export default function AuthModal({ isOpen, mode: initialMode, onClose }) {
       setShowPassword(false);
       setRememberMe(false);
       setError("");
-     
     }
   }, [isOpen, initialMode]);
 
   if (!isOpen) return null;
   const isLogin = mode === "login";
+
+ 
+// const handleSubmit = async (e) => {
+//   e.preventDefault();
+//   if (!userType) return;
+
+//   setError("");
+//   setLoading(true);
+
+ 
+//   if (userType === "fresher") {
+//   const email = formData.emailOrUsername?.trim();
+//   const password = formData.password;
+
+//   if (!email || !password) {
+//     setError("Enter your email and password");
+//     setLoading(false);
+//     return;
+//   }
+
+//   try {
+    
+//     // 2️⃣ Look up fresher in the freshers collection
+//    await signInWithEmailAndPassword(auth, email, password);
+
+//    const fresherRef = collection(db, "freshers");
+//     const q = query(fresherRef, where("email", "==", email));
+//     const snap = await getDocs(q);
+
+//     if (snap.empty) {
+//       setError("User not found in freshers");
+//       setLoading(false);
+//       return;
+//     }
+//     const fresherDoc = snap.docs[0];
+//     const fresherData = fresherDoc.data();
+//     const userId = fresherDoc.id;
+
+//     // 3️⃣ Check company status
+//     const companySnap = await getDoc(doc(db, "companies", fresherData.companyId));
+//     if (!companySnap.exists() || companySnap.data().status !== "active") {
+//       alert("Company suspended");
+//       setLoading(false);
+//       return;
+//     }
+    
+//     // 4️⃣ Successful login, navigate to fresher dashboard
+//     onClose();
+//     navigate("/fresher-dashboard", {
+//       state: {
+//         email,
+//         companyId: fresherData.companyId,
+//         deptId: fresherData.deptId,
+//         companyName: companySnap.data().name,
+//       },
+//     });
+//     setLoading(false);
+
+//   } catch (err) {
+//     console.error("❌ Fresher login failed:", err);
+//     setError("Invalid credentials");
+//     setLoading(false);
+//   }
+
+
+
+//     // =====================================================
+// // 🔹 ADMIN LOGIN
+// // =====================================================
+// else if (userType === "admin") {
+
+//   // 1️⃣ Super Admin (AS-IT-IS)
+//   const superAdminRef = doc(db, "super_admins", "1");
+//   const superSnap = await getDoc(superAdminRef);
+
+//   if (superSnap.exists()) {
+//     const { email, role } = superSnap.data();
+
+//     if (role === "SUPER_ADMIN" && formData.emailOrUsername === email) {
+//       await signInWithEmailAndPassword(auth, email, formData.password);
+//       onClose();
+//       navigate("/super-admin-dashboard");
+//       setLoading(false);
+//       return;
+//     }
+//   }
+
+//   // =====================================================
+//   // 2️⃣ COMPANY ADMIN  ✅ FIXED
+//   // =====================================================
+//   const companiesSnap = await getDocs(collection(db, "companies"));
+
+//   let companyData = null;
+//   let companyId = null;
+
+//   for (const companyDoc of companiesSnap.docs) {
+//     const data = companyDoc.data();
+
+//     // 🔑 email match
+//     if (data.email === formData.emailOrUsername) {
+//       companyData = data;
+//       companyId = companyDoc.id;
+//       break;
+//     }
+//   }
+
+//   if (!companyData) {
+//     setError("Invalid company email");
+//     setLoading(false);
+//     return;
+//   }
+
+//   // 🔐 Firebase Auth login using COMPANY EMAIL
+//   await signInWithEmailAndPassword(
+//     auth,
+//     companyData.email,
+//     formData.password
+//   );
+
+//   if (companyData.status !== "active") {
+//     setError("Your company is suspended");
+//     setLoading(false);
+//     return;
+//   }
+
+//   console.log("✅ Company Admin Logged In");
+
+//   onClose();
+//   navigate("/company-dashboard", {
+//     state: {
+//       companyId,
+//       companyName: companyData.name,
+//     },
+//   });
+
+//   setLoading(false);
+// }
+
+//   } catch (error) {
+//     console.error("❌ Login Failed:", error.message);
+//     setError("Invalid credentials");
+//     setLoading(false);
+//   }
+// };
 
 const handleSubmit = async (e) => {
   e.preventDefault();
@@ -46,180 +191,138 @@ const handleSubmit = async (e) => {
   setLoading(true);
 
   try {
+    // =====================================================
+    // 🔹 FRESHER LOGIN
+    // =====================================================
     if (userType === "fresher") {
-  const userIdInput = formData.emailOrUsername?.trim();
-  if (!userIdInput) {
-    setError("Enter your User ID");
-    setLoading(false);
-    return;
-  }
+      const email = formData.emailOrUsername?.trim();
+      const password = formData.password;
 
-  console.log("🟢 Fresher login attempt with userId:", userIdInput);
-
-  // Map userId to email for Firebase Auth sign-in
-  const email = `${userIdInput}@example.com`;
-  await signInWithEmailAndPassword(auth, email, formData.password);
-  console.log("✅ Auth login successful");
-
-  // 🔍 Traverse Firestore to find company & dept
-  const companiesSnap = await getDocs(collection(db, "companies"));
-
-  let found = false;
-  let currentCompanyId = null;
-  let currentDeptId = null;
-
-  for (const companyDoc of companiesSnap.docs) {
-    const companyId = companyDoc.id;
-
-    const departmentsSnap = await getDocs(
-      collection(db, "companies", companyId, "departments")
-    );
-
-    for (const deptDoc of departmentsSnap.docs) {
-      const deptId = deptDoc.id;
-
-      const usersSnap = await getDocs(
-        collection(
-          db,
-          "companies",
-          companyId,
-          "departments",
-          deptId,
-          "users"
-        )
-      );
-
-      const userDoc = usersSnap.docs.find(
-        u => u.data().userId === userIdInput
-      );
-
-      if (userDoc) {
-        currentCompanyId = companyId;
-        currentDeptId = deptId;
-        found = true;
-        break;
+      if (!email || !password) {
+        setError("Enter your email and password");
+        setLoading(false);
+        return;
       }
+
+      console.log("🔹 Fresher login attempt:", email);
+
+      // Firebase Auth
+      await signInWithEmailAndPassword(auth, email, password);
+      console.log("✅ Firebase auth successful for fresher");
+
+      // Look up fresher in the freshers collection
+      const fresherRef = collection(db, "freshers");
+      const q = query(fresherRef, where("email", "==", email));
+      const snap = await getDocs(q);
+
+      if (snap.empty) {
+        setError("User not found in freshers");
+        setLoading(false);
+        console.warn("❌ Fresher not found in database:", email);
+        return;
+      }
+
+      const fresherDoc = snap.docs[0];
+      const fresherData = fresherDoc.data();
+      const userId = fresherDoc.id;
+      console.log("✅ Fresher data fetched:", fresherData);
+
+      // Check company status
+      const companySnap = await getDoc(doc(db, "companies", fresherData.companyId));
+      if (!companySnap.exists() || companySnap.data().status !== "active") {
+        alert("Company suspended");
+        setLoading(false);
+        console.warn("❌ Fresher's company is suspended or missing:", fresherData.companyId);
+        return;
+      }
+
+      console.log("✅ Company is active:", companySnap.data().name);
+
+      // Navigate to Fresher Dashboard
+      onClose();
+      navigate("/fresher-dashboard", {
+        state: {
+          email,
+          userId,
+          companyId: fresherData.companyId,
+          deptId: fresherData.deptId,
+          companyName: companySnap.data().name,
+        },
+      });
+
+      setLoading(false);
+      console.log("✅ Navigated to fresher dashboard");
     }
-    if (found) break;
-  }
 
-  if (!found) {
-    setError("User not found in the system");
-    setLoading(false);
-    return;
-  }
+    // =====================================================
+    // 🔹 ADMIN LOGIN
+    // =====================================================
+    else if (userType === "admin") {
+      console.log("🔹 Admin login attempt:", formData.emailOrUsername);
 
-  // 🚨 CHECK COMPANY STATUS
-  const companyRef = doc(db, "companies", currentCompanyId);
-  const companySnap = await getDoc(companyRef);
+      // 1️⃣ Super Admin
+      const superAdminRef = doc(db, "super_admins", "1");
+      const superSnap = await getDoc(superAdminRef);
 
-  if (!companySnap.exists()) {
-    setError("Company not found");
-    setLoading(false);
-    return;
-  }
+      if (superSnap.exists()) {
+        const { email: superEmail, role } = superSnap.data();
 
-  const companyStatus = companySnap.data().status;
-
-  if (companyStatus !== "active") {
-    alert(
-      `Your company is suspended.\nPlease contact trainmate@gmail.com for further queries.`
-    );
-    setLoading(false);
-    return;
-  }
-
-  // ✅ Company active → allow fresher login
-  console.log("➡️ Redirecting to FresherDashboard");
-
-  onClose();
-  navigate("/fresher-dashboard", {
-    state: {
-      userId: userIdInput,
-      companyId: currentCompanyId,
-      deptId: currentDeptId,
-    },
-  });
-}
-
-  else {
-  // --------------------------------
-  // 1️⃣ Check Super Admin FIRST
-  // --------------------------------
-  const superAdminRef = doc(db, "super_admins", "1");
-const superSnap = await getDoc(superAdminRef);
-
-if (superSnap.exists()) {
-  const superData = superSnap.data();
-
-  const isEmail =
-    formData.emailOrUsername === superData.email;
-
-  let isPasswordCorrect = false;
-
-  // Password compare only if email matches
-  if (isEmail) {
-    isPasswordCorrect = await bcrypt.compare(
-      formData.password,
-      superData.password
-    );
-  }
-
-  // ✅ SUPER ADMIN SUCCESS
-  if (isEmail && isPasswordCorrect) {
-    console.log("✅ Super Admin login successful");
-
-    onClose();
-    navigate("/super-admin-dashboard");
-    return; // ⛔ STOP HERE (VERY IMPORTANT)
-  }
-}
-
-  const url = "http://localhost:5000/company-login";
-    const body = { username: formData.emailOrUsername, password: formData.password };
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-
-    const data = await res.json();
-
-    if (res.ok) {
-      const companyName = data.name;
-      const companyId = data.companyId;
-
-      // 🔍 Check company status in Firestore
-      const companyRef = doc(db, "companies", companyName);
-      const companySnap = await getDoc(companyRef);
-
-      if (companySnap.exists()) {
-        const companyData = companySnap.data();
-
-        if (companyData.status === "active") {
-          // ✅ Company is active → proceed to dashboard
+        if (role === "SUPER_ADMIN" && formData.emailOrUsername === superEmail) {
+          await signInWithEmailAndPassword(auth, superEmail, formData.password);
+          console.log("✅ Super admin logged in");
           onClose();
-          navigate("/company-dashboard", {
-            state: { companyId, companyName },
-          });
-        } else {
-          // ⚠ Company suspended → show modal
-          alert(
-            `Your company "${companyName}" is suspended. Please contact trainmate@gmail.com for further queries.`
-          );
+          navigate("/super-admin-dashboard");
+          setLoading(false);
+          return;
         }
-      } else {
-        // ⚠ Company not found in Firestore
-        alert(`Company "${companyName}" not found in the system.`);
       }
-    } else {
-      setError(data.message || "Login failed");
+
+      // 2️⃣ Company Admin
+      const companiesSnap = await getDocs(collection(db, "companies"));
+      let companyData = null;
+      let companyId = null;
+
+      for (const companyDoc of companiesSnap.docs) {
+        const data = companyDoc.data();
+        if (data.email === formData.emailOrUsername) {
+          companyData = data;
+          companyId = companyDoc.id;
+          break;
+        }
+      }
+
+      if (!companyData) {
+        setError("Invalid company email");
+        setLoading(false);
+        console.warn("❌ Company admin not found:", formData.emailOrUsername);
+        return;
+      }
+
+      // Firebase Auth login
+      await signInWithEmailAndPassword(auth, companyData.email, formData.password);
+      console.log("✅ Company admin auth successful:", companyData.name);
+
+      if (companyData.status !== "active") {
+        setError("Your company is suspended");
+        setLoading(false);
+        console.warn("❌ Company suspended:", companyData.name);
+        return;
+      }
+
+      onClose();
+      navigate("/company-dashboard", {
+        state: {
+          companyId,
+          companyName: companyData.name,
+        },
+      });
+
+      setLoading(false);
+      console.log("✅ Navigated to company dashboard:", companyData.name);
     }
-  } }
-  catch (err) {
-    console.error("🔥 Login error:", err);
-    setError("Invalid credentials or server error");
-  } finally {
+  } catch (error) {
+    console.error("❌ Login failed:", error);
+    setError("Invalid credentials");
     setLoading(false);
   }
 };

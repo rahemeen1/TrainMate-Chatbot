@@ -1,0 +1,224 @@
+import { useLocation } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { doc, getDoc, setDoc } from "firebase/firestore";
+import { db, auth } from "../../firebase";
+import { jsPDF } from "jspdf";
+import { FresherSideMenu } from "./FresherSideMenu";
+import { PencilIcon, CheckIcon } from "@heroicons/react/24/solid";
+import { reauthenticateWithCredential, EmailAuthProvider, updatePassword, updateEmail } from "firebase/auth";
+
+export default function FresherSettings() {
+  const location = useLocation();
+  const { userId, companyId, deptId, companyName } = location.state || {};
+
+  const [loading, setLoading] = useState(true);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [editMode, setEditMode] = useState({ name: false, email: false, password: false });
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [error, setError] = useState("");
+  const [showDownload, setShowDownload] = useState(false);
+  const [passwordStrength, setPasswordStrength] = useState("");
+
+  const currentUser = auth.currentUser;
+
+  useEffect(() => {
+    console.log("Received props: ", { userId, companyId, deptId });
+
+    const fetchUser = async () => {
+      try {
+        const userRef = doc(db, "companies", companyId, "departments", deptId, "users", userId);
+        const snap = await getDoc(userRef);
+        if (snap.exists()) {
+          const u = snap.data();
+          setName(u.name || "");
+          setEmail(u.email || "");
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (userId && companyId && deptId) fetchUser();
+    else setLoading(false);
+  }, [userId, companyId, deptId]);
+
+  const checkPasswordStrength = (pwd) => {
+    if (pwd.length < 6) return "Weak";
+    if (pwd.match(/[a-z]/) && pwd.match(/[A-Z]/) && pwd.match(/[0-9]/) && pwd.length >= 8) return "Strong";
+    return "Medium";
+  };
+
+  const saveField = async (field) => {
+    setError("");
+    try {
+      const userRef = doc(db, "companies", companyId, "departments", deptId, "users", userId);
+
+      if (field === "password") {
+        if (!oldPassword || !newPassword) {
+          setError("Enter both old and new passwords");
+          return;
+        }
+        if (!currentUser) throw new Error("No authenticated user");
+
+        const credential = EmailAuthProvider.credential(currentUser.email, oldPassword);
+        await reauthenticateWithCredential(currentUser, credential);
+        await updatePassword(currentUser, newPassword);
+        await setDoc(userRef, { lastPasswordChange: new Date() }, { merge: true });
+
+        setOldPassword("");
+        setShowDownload(true);
+      } else if (field === "email") {
+        if (!currentUser) throw new Error("No authenticated user");
+        await updateEmail(currentUser, email);
+        await setDoc(userRef, { email }, { merge: true });
+      } else if (field === "name") {
+        await setDoc(userRef, { name }, { merge: true });
+      }
+
+      setEditMode({ ...editMode, [field]: false });
+    } catch (err) {
+      console.error(err);
+      setError(err.message);
+    }
+  };
+
+  const downloadPDF = () => {
+    const docPDF = new jsPDF();
+    docPDF.text(`User Credentials`, 10, 10);
+    docPDF.text(`UserID: ${userId}`, 10, 20);
+    docPDF.text(`Name: ${name}`, 10, 30);
+    docPDF.text(`Email: ${email}`, 10, 40);
+    docPDF.text(`Password: ${newPassword || "(Updated)"}`, 10, 50); // new password if available
+    docPDF.save(`${userId}_credentials.pdf`);
+  };
+
+  if (loading) return <p className="text-white text-left mt-20 ml-10">Loading...</p>;
+
+  return (
+    <div className="flex min-h-screen bg-[#031C3A] text-white">
+      {/* Side Menu */}
+      <div className="w-64 bg-[#021B36]/90 p-4">
+        <FresherSideMenu userId={userId} companyId={companyId} deptId={deptId} companyName={companyName} />
+      </div>
+
+      {/* Main Content */}
+      <div className="flex-1 p-10">
+        <h1 className="text-2xl text-[#00FFFF] font-bold mb-6">Fresher Settings</h1>
+
+        <div className="max-w-3xl space-y-6 text-left">
+          {/* User ID */}
+          <div className="flex flex-col py-2">
+            <p className="text-[#AFCBE3] text-sm">User ID</p>
+            <p className="text-white font-medium">{userId}</p>
+          </div>
+
+          {/* Name */}
+          <div className="flex items-center justify-between border-b border-[#00FFFF30] py-2">
+            <div className="flex-1">
+              <p className="text-[#AFCBE3] text-sm">Name</p>
+              {editMode.name ? (
+                <input
+                  className="text-black w-full px-2 py-1 rounded"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                />
+              ) : (
+                <p className="text-white font-medium">{name}</p>
+              )}
+            </div>
+            <button
+              onClick={() => (editMode.name ? saveField("name") : setEditMode({ ...editMode, name: true }))}
+              className="ml-3 p-2 bg-[#00FFFF] text-[#031C3A] rounded-full"
+            >
+              {editMode.name ? <CheckIcon className="w-5 h-5" /> : <PencilIcon className="w-5 h-5" />}
+            </button>
+          </div>
+
+          {/* Email */}
+          <div className="flex items-center justify-between border-b border-[#00FFFF30] py-2">
+            <div className="flex-1">
+              <p className="text-[#AFCBE3] text-sm">Email</p>
+              {editMode.email ? (
+                <input
+                  className="text-black w-full px-2 py-1 rounded"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              ) : (
+                <p className="text-white font-medium">{email}</p>
+              )}
+            </div>
+            <button
+              onClick={() => (editMode.email ? saveField("email") : setEditMode({ ...editMode, email: true }))}
+              className="ml-3 p-2 bg-[#00FFFF] text-[#031C3A] rounded-full"
+            >
+              {editMode.email ? <CheckIcon className="w-5 h-5" /> : <PencilIcon className="w-5 h-5" />}
+            </button>
+          </div>
+
+          {/* Password */}
+          <div className="flex flex-col border-b border-[#00FFFF30] py-2">
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <p className="text-[#AFCBE3] text-sm">Password</p>
+                {editMode.password ? (
+                  <div className="flex flex-col gap-2 mt-1">
+                    <input
+                      type="password"
+                      placeholder="Old Password"
+                      className="text-black w-full px-2 py-1 rounded"
+                      value={oldPassword}
+                      onChange={(e) => setOldPassword(e.target.value)}
+                    />
+                    <input
+                      type="password"
+                      placeholder="New Password"
+                      className="text-black w-full px-2 py-1 rounded"
+                      value={newPassword}
+                      onChange={(e) => {
+                        setNewPassword(e.target.value);
+                        setPasswordStrength(checkPasswordStrength(e.target.value));
+                      }}
+                    />
+                    {newPassword && (
+                      <p className={`text-sm ${
+                        passwordStrength === "Weak" ? "text-red-500" :
+                        passwordStrength === "Medium" ? "text-yellow-400" :
+                        "text-green-400"
+                      }`}>
+                        Strength: {passwordStrength}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-white font-medium">********</p>
+                )}
+              </div>
+              <button
+                onClick={() => (editMode.password ? saveField("password") : setEditMode({ ...editMode, password: true }))}
+                className="ml-3 p-2 bg-[#00FFFF] text-[#031C3A] rounded-full"
+              >
+                {editMode.password ? <CheckIcon className="w-5 h-5" /> : <PencilIcon className="w-5 h-5" />}
+              </button>
+            </div>
+
+            {showDownload && (
+              <button
+                onClick={downloadPDF}
+                className="mt-3 px-3 py-1 bg-[#00FFFF] text-[#031C3A] rounded font-semibold w-48"
+              >
+                Download Credentials PDF
+              </button>
+            )}
+          </div>
+
+          {error && <p className="text-red-500">{error}</p>}
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -8,9 +8,9 @@ export default function AddCompanyForm() {
   const [address, setAddress] = useState("");
   const [message, setMessage] = useState("");
   const [createdUser, setCreatedUser] = useState(null);
+  const [status] = useState("active");
 
   /* ================= PDF GENERATOR ================= */
-
   const downloadPDF = () => {
     const doc = new jsPDF();
 
@@ -18,56 +18,84 @@ export default function AddCompanyForm() {
     doc.text("Company Login Credentials", 20, 20);
 
     doc.setFontSize(12);
-    doc.text(`Username: ${createdUser.username}`, 20, 40);
-    doc.text(`Password: ${createdUser.password}`, 20, 55);
+    doc.text(`User ID (Email): ${createdUser.email}`, 20, 40);
+    doc.text(`Username: ${createdUser.username}`, 20, 55);
+    doc.text(`Password: ${createdUser.password}`, 20, 70);
 
     doc.setFontSize(10);
     doc.text(
-      " Please store these credentials securely. Password is shown once only.",
+      "Please store these credentials securely. Password is shown once only.",
       20,
-      75
+      90
     );
 
     doc.save(`${createdUser.username}_credentials.pdf`);
   };
 
   /* ================= FORM SUBMIT ================= */
+ const handleSubmit = async (e) => {
+  e.preventDefault();
+  setMessage("");
+  setCreatedUser(null);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setMessage("");
-    setCreatedUser(null);
+  // ✅ Regex validation
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const phoneRegex = /^\d{11}$/;
 
-    try {
-      const res = await fetch("http://localhost:5000/add-company", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, phone, address }),
-      });
+  if (!name.trim() || !email.trim() || !phone.trim() || !address.trim()) {
+    setMessage("❌ All fields are mandatory");
+    return;
+  }
 
-      const data = await res.json();
+  if (!emailRegex.test(email)) {
+    setMessage("❌ Invalid email format");
+    return;
+  }
 
-      if (!res.ok) {
-        setMessage(`❌ ${data.message}`);
-        return;
-      }
+  if (!phoneRegex.test(phone)) {
+    setMessage("❌ Phone must be exactly 11 digits");
+    return;
+  }
 
-      setMessage("✅ Company added successfully");
+  try {
+    const res = await fetch("http://localhost:5000/add-company", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name,
+        email,
+        phone,
+        address,
+        status: "active",
+        createdAt: new Date(),
+      }),
+    });
 
-      setCreatedUser({
-        username: data.username,
-        password: data.password, // shown once
-      });
+    const data = await res.json();
 
-      setName("");
-      setEmail("");
-      setPhone("");
-      setAddress("");
-    } catch (err) {
-      console.error(err);
-      setMessage("❌ Server error");
+    if (!res.ok) {
+      setMessage(`❌ ${data.message}`);
+      return;
     }
-  };
+
+    setMessage("✅ Company added successfully");
+
+    setCreatedUser({
+      username: data.username,
+      email: data.email,
+      password: data.password, // for PDF only
+    });
+
+    setName("");
+    setEmail("");
+    setPhone("");
+    setAddress("");
+  } catch (err) {
+    console.error(err);
+    setMessage("❌ Server error");
+  }
+};
+
 
   return (
     <div className="flex gap-6">
@@ -95,7 +123,7 @@ export default function AddCompanyForm() {
             required
           />
           <input
-            placeholder="Phone"
+            placeholder="Phone (11 digits)"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             className="w-full p-2 bg-[#021B36] text-white rounded"
@@ -108,6 +136,9 @@ export default function AddCompanyForm() {
             className="w-full p-2 bg-[#021B36] text-white rounded"
             required
           />
+          <p className="text-sm text-green-400 font-semibold">
+            Status: ACTIVE
+          </p>
 
           <button className="w-full py-2 bg-[#00FFFF] text-black rounded">
             Add Company

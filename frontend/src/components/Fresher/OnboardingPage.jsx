@@ -1,20 +1,23 @@
 import { useEffect, useState } from "react";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc,setDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "../../firebase";
 import { FresherSideMenu } from "./FresherSideMenu";
 
 export default function OnboardingPage({
   userId,
-  companyId,
-  deptId,
+  companyId: propCompanyId,
+  deptId: propDeptId,
   onFinish,
+  companyName: propCompanyName, // optional from login
 }) {
   const [loading, setLoading] = useState(true);
 
   // 🔹 Firebase data
   const [userName, setUserName] = useState("");
-  const [companyName, setCompanyName] = useState("");
+  const [companyName, setCompanyName] = useState(propCompanyName || "Company");
   const [trainingOn, setTrainingOn] = useState("");
+  const [companyId, setCompanyId] = useState(propCompanyId);
+  const [deptId, setDeptId] = useState(propDeptId);
 
   // 🔹 Onboarding states
   const [step, setStep] = useState(1);
@@ -22,34 +25,34 @@ export default function OnboardingPage({
   const [expertise, setExpertise] = useState(null);
   const [level, setLevel] = useState("");
 
-  // 🔹 FETCH DATA
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchUser = async () => {
       try {
-        // USER
-        const userRef = doc(
-          db,
-          "companies",
-          companyId,
-          "departments",
-          deptId,
-          "users",
-          userId
-        );
-        const userSnap = await getDoc(userRef);
-
-        if (userSnap.exists()) {
-          const u = userSnap.data();
-          setUserName(u.name || "Fresher");
-          setTrainingOn(u.trainingOn || "your training");
+        if (!userId) {
+          console.error("No userId provided to OnboardingPage");
+          setLoading(false);
+          return;
         }
 
-        // COMPANY
-        const companyRef = doc(db, "companies", companyId);
-        const companySnap = await getDoc(companyRef);
+        // 🔹 Fetch fresher from `freshers` collection
+        const fresherRef = doc(db, "freshers", userId);
+        const fresherSnap = await getDoc(fresherRef);
 
-        if (companySnap.exists()) {
-          setCompanyName(companySnap.data().name || "Company");
+        if (!fresherSnap.exists()) {
+          console.error("Fresher not found in freshers collection");
+          setLoading(false);
+          return;
+        }
+
+        const fresherData = fresherSnap.data();
+
+        setUserName(fresherData.name || "Fresher");
+        setTrainingOn(fresherData.trainingOn || "your training");
+        setCompanyId(fresherData.companyId || propCompanyId);
+        setDeptId(fresherData.deptId || propDeptId);
+
+        if (!propCompanyName && fresherData.companyName) {
+          setCompanyName(fresherData.companyName);
         }
 
         setLoading(false);
@@ -59,36 +62,31 @@ export default function OnboardingPage({
       }
     };
 
-    fetchData();
-  }, [userId, companyId, deptId]);
+    fetchUser();
+  }, [userId, propCompanyId, propDeptId, propCompanyName]);
 
-  // 🔹 SAVE
   const saveAndContinue = async () => {
-    const userRef = doc(
-      db,
-      "companies",
-      companyId,
-      "departments",
-      deptId,
-      "users",
-      userId
-    );
+    try {
+      const userRef = doc(db, "freshers", userId);
 
-    await setDoc(
-      userRef,
-      {
-        onboarding: {
-          cvUploaded,
-          expertise,
-          level,
-          onboardingCompleted: true,
-          completedAt: new Date(),
+      await setDoc(
+        userRef,
+        {
+          onboarding: {
+            cvUploaded,
+            expertise,
+            level,
+            onboardingCompleted: true,
+            completedAt: new Date(),
+          },
         },
-      },
-      { merge: true }
-    );
+        { merge: true }
+      );
 
-    if (onFinish) onFinish();
+      if (onFinish) onFinish();
+    } catch (err) {
+      console.error("Error saving onboarding:", err);
+    }
   };
 
   if (loading) {
@@ -103,24 +101,21 @@ export default function OnboardingPage({
     <div className="flex min-h-screen bg-[#031C3A] text-white">
       {/* SIDEBAR */}
       <div className="w-64 bg-[#021B36]/90 p-4">
-        <FresherSideMenu companyId={companyId} />
+        <FresherSideMenu companyName={companyName} />
       </div>
 
       {/* MAIN */}
       <div className="flex-1 p-10">
-  {/* TOP LEFT TEXT */}
-  <div className="text-left mb-10">
-    <h1 className="text-2xl font-bold text-[#00FFFF]">
-      Welcome {userName}!
-    </h1>
+        <div className="text-left mb-10">
+          <h1 className="text-2xl font-bold text-[#00FFFF]">
+            Welcome {userName}!
+          </h1>
 
-    <p className="text-[#AFCBE3] max-w-1xl mt-2 text-base">
-      To get started off the training program with {companyId}, answer a few questions which can help customise your roadmap.
-    </p>
-  </div>
+          <p className="text-[#AFCBE3] max-w-1xl mt-2 text-base">
+            To get started off the training program with {companyName}, answer a few questions which can help customise your roadmap.
+          </p>
+        </div>
 
-
-        {/* CARD */}
         <div className="max-w-4xl mx-auto bg-[#021B36]/80 border border-[#00FFFF40] rounded-2xl p-8 shadow-[0_0_30px_rgba(0,255,255,0.25)]">
           {/* PROGRESS */}
           <div className="mb-6">
@@ -147,10 +142,9 @@ export default function OnboardingPage({
               >
                 Upload CV
               </button>
-             <p className="text-sm text-[#AFCBE3] mt-2 italic opacity-80">
-  Mandatory for personalized training recommendations.
-</p>
-
+              <p className="text-sm text-[#AFCBE3] mt-2 italic opacity-80">
+                Mandatory for personalized training recommendations.
+              </p>
             </>
           )}
 
@@ -219,7 +213,7 @@ export default function OnboardingPage({
                 onClick={() => setStep(step + 1)}
                 className="ml-auto px-6 py-2 bg-[#00FFFF] text-[#031C3A] rounded-lg font-semibold"
               >
-                Continue →
+                Continue → 
               </button>
             )}
 
@@ -234,19 +228,18 @@ export default function OnboardingPage({
           </div>
 
           {step === 3 && (
-           <p className="text-xs text-[#AFCBE3] mt-4">
-  By clicking continue, you agree to our{" "}
-  <a
-    href="https://drive.google.com/file/d/1jf2VVUd1zLdrVnkgcf-7jQaUJT_Jd53N/view?usp=sharing"
-    target="_blank"
-    rel="noopener noreferrer"
-    className="text-[#00FFFF] underline"
-  >
-    Terms & Conditions
-  </a>{" "}
-  of Trainmate.
-</p>
-
+            <p className="text-xs text-[#AFCBE3] mt-4">
+              By clicking continue, you agree to our{" "}
+              <a
+                href="https://drive.google.com/file/d/1jf2VVUd1zLdrVnkgcf-7jQaUJT_Jd53N/view?usp=sharing"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[#00FFFF] underline"
+              >
+                Terms & Conditions
+              </a>{" "}
+              of TrainMate.
+            </p>
           )}
         </div>
       </div>
