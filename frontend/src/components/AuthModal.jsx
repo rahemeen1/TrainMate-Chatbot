@@ -3,7 +3,7 @@ import { X, Eye, EyeOff, Mail, Lock, Briefcase, User } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "../firebase";
-import { doc, getDoc, getDocs, collection } from "firebase/firestore";
+import { doc, getDoc, getDocs, collection,collectionGroup, } from "firebase/firestore";
 import Fresherdashboard from "../components/Fresher/FresherDashboard";
 import { db } from "../firebase";
 import { 
@@ -39,150 +39,6 @@ export default function AuthModal({ isOpen, mode: initialMode, onClose }) {
   if (!isOpen) return null;
   const isLogin = mode === "login";
 
- 
-// const handleSubmit = async (e) => {
-//   e.preventDefault();
-//   if (!userType) return;
-
-//   setError("");
-//   setLoading(true);
-
- 
-//   if (userType === "fresher") {
-//   const email = formData.emailOrUsername?.trim();
-//   const password = formData.password;
-
-//   if (!email || !password) {
-//     setError("Enter your email and password");
-//     setLoading(false);
-//     return;
-//   }
-
-//   try {
-    
-//     // 2️⃣ Look up fresher in the freshers collection
-//    await signInWithEmailAndPassword(auth, email, password);
-
-//    const fresherRef = collection(db, "freshers");
-//     const q = query(fresherRef, where("email", "==", email));
-//     const snap = await getDocs(q);
-
-//     if (snap.empty) {
-//       setError("User not found in freshers");
-//       setLoading(false);
-//       return;
-//     }
-//     const fresherDoc = snap.docs[0];
-//     const fresherData = fresherDoc.data();
-//     const userId = fresherDoc.id;
-
-//     // 3️⃣ Check company status
-//     const companySnap = await getDoc(doc(db, "companies", fresherData.companyId));
-//     if (!companySnap.exists() || companySnap.data().status !== "active") {
-//       alert("Company suspended");
-//       setLoading(false);
-//       return;
-//     }
-    
-//     // 4️⃣ Successful login, navigate to fresher dashboard
-//     onClose();
-//     navigate("/fresher-dashboard", {
-//       state: {
-//         email,
-//         companyId: fresherData.companyId,
-//         deptId: fresherData.deptId,
-//         companyName: companySnap.data().name,
-//       },
-//     });
-//     setLoading(false);
-
-//   } catch (err) {
-//     console.error("❌ Fresher login failed:", err);
-//     setError("Invalid credentials");
-//     setLoading(false);
-//   }
-
-
-
-//     // =====================================================
-// // 🔹 ADMIN LOGIN
-// // =====================================================
-// else if (userType === "admin") {
-
-//   // 1️⃣ Super Admin (AS-IT-IS)
-//   const superAdminRef = doc(db, "super_admins", "1");
-//   const superSnap = await getDoc(superAdminRef);
-
-//   if (superSnap.exists()) {
-//     const { email, role } = superSnap.data();
-
-//     if (role === "SUPER_ADMIN" && formData.emailOrUsername === email) {
-//       await signInWithEmailAndPassword(auth, email, formData.password);
-//       onClose();
-//       navigate("/super-admin-dashboard");
-//       setLoading(false);
-//       return;
-//     }
-//   }
-
-//   // =====================================================
-//   // 2️⃣ COMPANY ADMIN  ✅ FIXED
-//   // =====================================================
-//   const companiesSnap = await getDocs(collection(db, "companies"));
-
-//   let companyData = null;
-//   let companyId = null;
-
-//   for (const companyDoc of companiesSnap.docs) {
-//     const data = companyDoc.data();
-
-//     // 🔑 email match
-//     if (data.email === formData.emailOrUsername) {
-//       companyData = data;
-//       companyId = companyDoc.id;
-//       break;
-//     }
-//   }
-
-//   if (!companyData) {
-//     setError("Invalid company email");
-//     setLoading(false);
-//     return;
-//   }
-
-//   // 🔐 Firebase Auth login using COMPANY EMAIL
-//   await signInWithEmailAndPassword(
-//     auth,
-//     companyData.email,
-//     formData.password
-//   );
-
-//   if (companyData.status !== "active") {
-//     setError("Your company is suspended");
-//     setLoading(false);
-//     return;
-//   }
-
-//   console.log("✅ Company Admin Logged In");
-
-//   onClose();
-//   navigate("/company-dashboard", {
-//     state: {
-//       companyId,
-//       companyName: companyData.name,
-//     },
-//   });
-
-//   setLoading(false);
-// }
-
-//   } catch (error) {
-//     console.error("❌ Login Failed:", error.message);
-//     setError("Invalid credentials");
-//     setLoading(false);
-//   }
-// };
-
 const handleSubmit = async (e) => {
   e.preventDefault();
   if (!userType) return;
@@ -191,85 +47,131 @@ const handleSubmit = async (e) => {
   setLoading(true);
 
   try {
-    // =====================================================
-    // 🔹 FRESHER LOGIN
-    // =====================================================
-    if (userType === "fresher") {
-      const email = formData.emailOrUsername?.trim();
-      const password = formData.password;
+// =====================================================
+// FRESHER LOGIN
+// =====================================================
+try {
+ try {
+  if (userType === "fresher") {
+    const email = formData.emailOrUsername?.trim();
+    const password = formData.password;
 
-      if (!email || !password) {
-        setError("Enter your email and password");
-        setLoading(false);
-        return;
-      }
-
-      console.log("🔹 Fresher login attempt:", email);
-
-      // Firebase Auth
-      await signInWithEmailAndPassword(auth, email, password);
-      console.log("✅ Firebase auth successful for fresher");
-
-      // Look up fresher in the freshers collection
-      const fresherRef = collection(db, "freshers");
-      const q = query(fresherRef, where("email", "==", email));
-      const snap = await getDocs(q);
-
-      if (snap.empty) {
-        setError("User not found in freshers");
-        setLoading(false);
-        console.warn("❌ Fresher not found in database:", email);
-        return;
-      }
-
-      const fresherDoc = snap.docs[0];
-      const fresherData = fresherDoc.data();
-      const userId = fresherDoc.id;
-      console.log("✅ Fresher data fetched:", fresherData);
-
-      // Check company status
-      const companySnap = await getDoc(doc(db, "companies", fresherData.companyId));
-      if (!companySnap.exists() || companySnap.data().status !== "active") {
-        alert("Company suspended");
-        setLoading(false);
-        console.warn("❌ Fresher's company is suspended or missing:", fresherData.companyId);
-        return;
-      }
-
-      console.log("✅ Company is active:", companySnap.data().name);
-
-      // Navigate to Fresher Dashboard
-      onClose();
-      navigate("/fresher-dashboard", {
-        state: {
-          email,
-          userId,
-          companyId: fresherData.companyId,
-          deptId: fresherData.deptId,
-          companyName: companySnap.data().name,
-        },
-      });
-
+    if (!email || !password) {
+      setError("Enter your email and password");
       setLoading(false);
-      console.log("✅ Navigated to fresher dashboard");
+      return;
     }
 
-    // =====================================================
-    // 🔹 ADMIN LOGIN
-    // =====================================================
-    else if (userType === "admin") {
-      console.log("🔹 Admin login attempt:", formData.emailOrUsername);
+    console.log("🔹 Fresher login attempt:", email);
 
-      // 1️⃣ Super Admin
-      const superAdminRef = doc(db, "super_admins", "1");
-      const superSnap = await getDoc(superAdminRef);
+    // Firebase Auth
+    await signInWithEmailAndPassword(auth, email, password);
+    console.log("✅ Firebase auth successful for fresher");
+
+    // Extract userId from email
+    const userId = email.split("@")[0];
+    console.log("🔍 Extracted userId:", userId);
+
+    // Split userId to get DeptShort and CompanyShort
+    const parts = userId.split("-");
+    if (parts.length < 4) {
+      setError("Invalid fresher email format");
+      setLoading(false);
+      return;
+    }
+
+    const deptShort = parts[1]; // e.g., "HR"
+    const companyShort = parts[2]; // e.g., "SL"
+
+    // 1️⃣ Find company by matching short code
+    const companiesRef = collection(db, "companies");
+    const companiesSnap = await getDocs(companiesRef);
+
+    let companyId = null;
+    let companyName = null;
+
+    companiesSnap.forEach(doc => {
+      const cData = doc.data();
+      const cShort = cData.name
+        .split(" ")
+        .map(w => w[0])
+        .join("")
+        .toUpperCase();
+      if (cShort === companyShort) {
+        companyId = doc.id;
+        companyName = cData.name;
+      }
+    });
+
+    if (!companyId) {
+      setError("Company not found");
+      setLoading(false);
+      return;
+    }
+
+    console.log("✅ Company found:", companyName, companyId);
+
+    // 2️⃣ Fetch fresher doc under company -> dept -> users
+    const userRef = doc(db, "freshers", companyId, "departments", deptShort, "users", userId);
+    const userSnap = await getDoc(userRef);
+
+    if (!userSnap.exists()) {
+      console.log("❌ Fresher not found:", userId);
+      setError("Fresher not found");
+      setLoading(false);
+      return;
+    }
+
+    const fresherData = userSnap.data();
+    console.log("✅ Fresher data fetched:", fresherData);
+
+    // Check company status
+    const companySnap = await getDoc(doc(db, "companies", companyId));
+    if (!companySnap.exists() || companySnap.data().status !== "active") {
+      alert("Company suspended");
+      setLoading(false);
+      return;
+    }
+
+    // Navigate to Fresher Dashboard
+    onClose();
+    navigate("/fresher-dashboard", {
+      state: {
+        email,
+        userId,
+        companyId,
+        deptId: deptShort,
+        companyName,
+      },
+    });
+
+    setLoading(false);
+    console.log("✅ Navigated to fresher dashboard");
+  }
+} catch (err) {
+  console.error("❌ Fresher login error:", err);
+  setError("Login failed");
+  setLoading(false);
+}
+
+} catch (err) {
+  console.error("❌ Fresher login error:", err);
+  setError("Login failed");
+  setLoading(false);
+}
+
+    // =====================================================
+    // ADMIN LOGIN
+    // =====================================================
+    if (userType === "admin") {
+      // 1️⃣ SUPER ADMIN
+      const superSnap = await getDoc(doc(db, "super_admins", "1"));
 
       if (superSnap.exists()) {
-        const { email: superEmail, role } = superSnap.data();
+        const { email, role } = superSnap.data();
 
-        if (role === "SUPER_ADMIN" && formData.emailOrUsername === superEmail) {
-          await signInWithEmailAndPassword(auth, superEmail, formData.password);
-          console.log("✅ Super admin logged in");
+        if (role === "SUPER_ADMIN" && email === formData.emailOrUsername) {
+          await signInWithEmailAndPassword(auth, email, formData.password);
           onClose();
           navigate("/super-admin-dashboard");
           setLoading(false);
@@ -277,8 +179,9 @@ const handleSubmit = async (e) => {
         }
       }
 
-      // 2️⃣ Company Admin
+      // 2️⃣ COMPANY ADMIN
       const companiesSnap = await getDocs(collection(db, "companies"));
+
       let companyData = null;
       let companyId = null;
 
@@ -294,18 +197,18 @@ const handleSubmit = async (e) => {
       if (!companyData) {
         setError("Invalid company email");
         setLoading(false);
-        console.warn("❌ Company admin not found:", formData.emailOrUsername);
         return;
       }
 
-      // Firebase Auth login
-      await signInWithEmailAndPassword(auth, companyData.email, formData.password);
-      console.log("✅ Company admin auth successful:", companyData.name);
+      await signInWithEmailAndPassword(
+        auth,
+        companyData.email,
+        formData.password
+      );
 
       if (companyData.status !== "active") {
         setError("Your company is suspended");
         setLoading(false);
-        console.warn("❌ Company suspended:", companyData.name);
         return;
       }
 
@@ -318,14 +221,14 @@ const handleSubmit = async (e) => {
       });
 
       setLoading(false);
-      console.log("✅ Navigated to company dashboard:", companyData.name);
     }
-  } catch (error) {
-    console.error("❌ Login failed:", error);
+  } catch (err) {
+    console.error("❌ Login failed:", err);
     setError("Invalid credentials");
     setLoading(false);
   }
 };
+
 
 
   const SelectCard = ({ type, icon: Icon, label }) => (

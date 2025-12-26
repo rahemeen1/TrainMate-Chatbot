@@ -1,14 +1,15 @@
 import { useEffect, useState } from "react";
-import { doc, getDoc,setDoc, collection, query, where, getDocs } from "firebase/firestore";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db } from "../../firebase";
 import { FresherSideMenu } from "./FresherSideMenu";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 export default function OnboardingPage({
   userId,
   companyId: propCompanyId,
   deptId: propDeptId,
   onFinish,
-  companyName: propCompanyName, // optional from login
+  companyName: propCompanyName,
 }) {
   const [loading, setLoading] = useState(true);
 
@@ -21,38 +22,50 @@ export default function OnboardingPage({
 
   // 🔹 Onboarding states
   const [step, setStep] = useState(1);
+  const [cvFile, setCvFile] = useState(null);
   const [cvUploaded, setCvUploaded] = useState(false);
   const [expertise, setExpertise] = useState(null);
   const [level, setLevel] = useState("");
 
+  const storage = getStorage();
+
+  // =====================================================
+  // 🔹 FETCH USER
+  // =====================================================
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        if (!userId) {
-          console.error("No userId provided to OnboardingPage");
+        if (!userId || !companyId || !deptId) {
+          console.error("Missing IDs for onboarding");
           setLoading(false);
           return;
         }
 
-        // 🔹 Fetch fresher from `freshers` collection
-        const fresherRef = doc(db, "freshers", userId);
-        const fresherSnap = await getDoc(fresherRef);
+        const userRef = doc(
+          db,
+          "freshers",
+          companyId,
+          "departments",
+          deptId,
+          "users",
+          userId
+        );
 
-        if (!fresherSnap.exists()) {
-          console.error("Fresher not found in freshers collection");
+        const snap = await getDoc(userRef);
+
+        if (!snap.exists()) {
+          console.error("User not found in onboarding");
           setLoading(false);
           return;
         }
 
-        const fresherData = fresherSnap.data();
+        const data = snap.data();
 
-        setUserName(fresherData.name || "Fresher");
-        setTrainingOn(fresherData.trainingOn || "your training");
-        setCompanyId(fresherData.companyId || propCompanyId);
-        setDeptId(fresherData.deptId || propDeptId);
+        setUserName(data.name || "Fresher");
+        setTrainingOn(data.trainingOn || "your training");
 
-        if (!propCompanyName && fresherData.companyName) {
-          setCompanyName(fresherData.companyName);
+        if (!propCompanyName && data.companyName) {
+          setCompanyName(data.companyName);
         }
 
         setLoading(false);
@@ -63,32 +76,62 @@ export default function OnboardingPage({
     };
 
     fetchUser();
-  }, [userId, propCompanyId, propDeptId, propCompanyName]);
+  }, [userId, companyId, deptId, propCompanyName]);
 
+  // =====================================================
+  // 🔹 SAVE ONBOARDING WITH CV UPLOAD
+  // =====================================================
   const saveAndContinue = async () => {
     try {
-      const userRef = doc(db, "freshers", userId);
+      let cvUrl = "";
+
+      // Upload CV if selected
+      if (cvFile) {
+        const extension = cvFile.name.split(".").pop();
+        const storageRef = ref(storage, `cvs/${companyId}/${deptId}/${userId}.${extension}`);
+        console.log("⬆️ Uploading CV to Storage:", storageRef.fullPath);
+        await uploadBytes(storageRef, cvFile);
+        cvUrl = await getDownloadURL(storageRef);
+        console.log("✅ CV uploaded. URL:", cvUrl);
+        setCvUploaded(true);
+      }
+
+      // Save onboarding info + CV URL
+      const userRef = doc(
+        db,
+        "freshers",
+        companyId,
+        "departments",
+        deptId,
+        "users",
+        userId
+      );
 
       await setDoc(
         userRef,
         {
           onboarding: {
-            cvUploaded,
+            cvUploaded: !!cvUrl,
             expertise,
             level,
             onboardingCompleted: true,
             completedAt: new Date(),
           },
+          cvUrl: cvUrl || null,
         },
         { merge: true }
       );
 
+      console.log("📄 Onboarding saved for user:", userId);
       if (onFinish) onFinish();
     } catch (err) {
       console.error("Error saving onboarding:", err);
     }
   };
 
+  // =====================================================
+  // 🔹 LOADING
+  // =====================================================
   if (loading) {
     return (
       <div className="min-h-screen bg-[#031C3A] flex items-center justify-center text-white">
@@ -97,6 +140,9 @@ export default function OnboardingPage({
     );
   }
 
+  // =====================================================
+  // 🔹 UI
+  // =====================================================
   return (
     <div className="flex min-h-screen bg-[#031C3A] text-white">
       {/* SIDEBAR */}
@@ -110,13 +156,13 @@ export default function OnboardingPage({
           <h1 className="text-2xl font-bold text-[#00FFFF]">
             Welcome {userName}!
           </h1>
-
-          <p className="text-[#AFCBE3] max-w-1xl mt-2 text-base">
-            To get started off the training program with {companyName}, answer a few questions which can help customise your roadmap.
+          <p className="text-[#AFCBE3] max-w-xl mt-2">
+            To get started with {companyName}, answer a few questions to
+            customize your roadmap.
           </p>
         </div>
 
-        <div className="max-w-4xl mx-auto bg-[#021B36]/80 border border-[#00FFFF40] rounded-2xl p-8 shadow-[0_0_30px_rgba(0,255,255,0.25)]">
+        <div className="max-w-4xl mx-auto bg-[#021B36]/80 border border-[#00FFFF40] rounded-2xl p-8">
           {/* PROGRESS */}
           <div className="mb-6">
             <div className="flex justify-between text-sm text-[#AFCBE3] mb-2">
@@ -136,14 +182,43 @@ export default function OnboardingPage({
               <h3 className="text-[#00FFFF] text-lg font-semibold mb-4">
                 Upload your CV
               </h3>
-              <button
-                onClick={() => setCvUploaded(true)}
-                className="px-6 py-3 bg-[#00FFFF] text-[#031C3A] rounded-lg font-semibold"
-              >
-                Upload CV
-              </button>
-              <p className="text-sm text-[#AFCBE3] mt-2 italic opacity-80">
-                Mandatory for personalized training recommendations.
+
+              <label className="inline-flex items-center justify-center px-4 py-2 bg-[#00FFFF] text-[#031C3A] rounded-lg cursor-pointer font-semibold hover:bg-[#00e0e0] transition-colors text-base">
+      {cvFile ? `Selected` : "Choose File"}
+      <input
+                  type="file"
+                  accept=".pdf,.doc,.docx"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+
+                    const validTypes = [
+                      "application/pdf",
+                      "application/msword",
+                      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    ];
+
+                    if (!validTypes.includes(file.type)) {
+                      alert("Only PDF or Word files allowed!");
+                      console.log("❌ Invalid file type:", file.type);
+                      return;
+                    }
+
+                    console.log("✅ Selected file:", file.name, file.type);
+                    setCvFile(file);
+                  }}
+                />
+              </label>
+
+              {cvFile && (
+                <p className="text-green-400 mt-2 font-medium">
+                  Selected: {cvFile.name}
+                </p>
+              )}
+
+              <p className="text-[#AFCBE3] text-sm italic mt-2">
+                Accepted formats: .pdf, .doc, .docx
               </p>
             </>
           )}
@@ -152,14 +227,14 @@ export default function OnboardingPage({
           {step === 2 && (
             <>
               <h3 className="text-[#00FFFF] text-lg font-semibold mb-4">
-                What do you feel about your expertise in {trainingOn}?
+                Your expertise in {trainingOn}?
               </h3>
               <div className="flex gap-3">
                 {[1, 2, 3, 4, 5].map((n) => (
                   <button
                     key={n}
                     onClick={() => setExpertise(n)}
-                    className={`w-12 h-12 rounded-lg font-semibold ${
+                    className={`w-12 h-12 rounded-lg ${
                       expertise === n
                         ? "bg-[#00FFFF] text-[#031C3A]"
                         : "bg-[#021B36] border border-[#00FFFF30]"
@@ -169,7 +244,6 @@ export default function OnboardingPage({
                   </button>
                 ))}
               </div>
-              <p className="text-sm text-[#AFCBE3] mt-2 italic opacity-80">5 is the highest</p>
             </>
           )}
 
@@ -197,7 +271,7 @@ export default function OnboardingPage({
             </>
           )}
 
-          {/* NAV */}
+          {/* NAVIGATION */}
           <div className="flex justify-between mt-10">
             {step > 1 && (
               <button
@@ -211,36 +285,33 @@ export default function OnboardingPage({
             {step < 3 && (
               <button
                 onClick={() => setStep(step + 1)}
-                className="ml-auto px-6 py-2 bg-[#00FFFF] text-[#031C3A] rounded-lg font-semibold"
+                disabled={
+                  (step === 1 && !cvFile) || (step === 2 && expertise === null)
+                }
+                className={`ml-auto px-6 py-2 rounded-lg font-semibold ${
+                  (step === 1 && !cvFile) || (step === 2 && expertise === null)
+                    ? "bg-gray-500 cursor-not-allowed"
+                    : "bg-[#00FFFF] text-[#031C3A] hover:bg-[#00e0e0]"
+                }`}
               >
-                Continue → 
+                Continue →
               </button>
             )}
 
             {step === 3 && (
               <button
                 onClick={saveAndContinue}
-                className="ml-auto px-6 py-2 bg-[#00FFFF] text-[#031C3A] rounded-lg font-semibold"
+                disabled={!level}
+                className={`ml-auto px-6 py-2 rounded-lg font-semibold ${
+                  !level
+                    ? "bg-gray-500 cursor-not-allowed"
+                    : "bg-[#00FFFF] text-[#031C3A] hover:bg-[#00e0e0]"
+                }`}
               >
                 Save & Continue
               </button>
             )}
           </div>
-
-          {step === 3 && (
-            <p className="text-xs text-[#AFCBE3] mt-4">
-              By clicking continue, you agree to our{" "}
-              <a
-                href="https://drive.google.com/file/d/1jf2VVUd1zLdrVnkgcf-7jQaUJT_Jd53N/view?usp=sharing"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[#00FFFF] underline"
-              >
-                Terms & Conditions
-              </a>{" "}
-              of TrainMate.
-            </p>
-          )}
         </div>
       </div>
     </div>
