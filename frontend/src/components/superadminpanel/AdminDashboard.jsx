@@ -17,9 +17,9 @@ export default function AdminDashboard() {
   const navigate = useNavigate();
    const fetchStats = async () => {
     try {
-      const comp = await fetch("http://localhost:5000/stats/companies").then(r => r.json());
+      const comp = await fetch("http://localhost:5000/api/stats/companies").then(r => r.json());
       const users = await fetch("http://localhost:5000/stats/users").then(r => r.json());
-      const admins = await fetch("http://localhost:5000/stats/superadmins").then(r => r.json());
+      const admins = await fetch("http://localhost:5000/api/stats/superadmins").then(r => r.json());
 
       setStats({
         companies: comp.count,

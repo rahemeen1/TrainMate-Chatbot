@@ -7,7 +7,7 @@ export default function ViewCompanies() {
   const fetchCompanies = async () => {
     try {
       console.log("✅ Fetching companies...");
-      const res = await fetch("http://localhost:5000/companies");
+      const res = await fetch("http://localhost:5000/api/companies");
       const data = await res.json();
       console.log("✅ Backend response:", data);
 

@@ -10,7 +10,7 @@ export default function ManageCompanies() {
   const fetchCompanies = async () => {
     console.log("Fetching companies...");
     try {
-      const res = await axios.get("http://localhost:5000/companies");
+      const res = await axios.get("http://localhost:5000/api/companies");
       setCompanies(res.data);
       console.log("Companies fetched:", res.data);
     } catch (err) {
@@ -28,10 +28,14 @@ export default function ManageCompanies() {
     const newStatus = currentStatus === "active" ? "suspended" : "active";
     console.log(`Toggling status for ${id}: ${currentStatus} -> ${newStatus}`);
     try {
-      const res = await axios.put(`http://localhost:5000/companies/${id}/status`, {
-        status: newStatus,
-      });
-      console.log("Toggle response:", res.data);
+    // 🔹 PUT request to backend
+    const { data } = await axios.put(
+      `http://localhost:5000/api/companies/${id}/status`,
+      { status: newStatus }
+    );
+
+    console.log("Toggle response:", data);
+
 
       setCompanies((prev) =>
         prev.map((c) => (c.id === id ? { ...c, status: newStatus } : c))
@@ -56,7 +60,7 @@ export default function ManageCompanies() {
     console.log("Updating company:", selected);
 
     try {
-      const res = await axios.put(`http://localhost:5000/companies/${id}`, {
+      const res = await axios.put(`http://localhost:5000/api/companies/${id}`, {
         name,
         email,
         phone,
@@ -83,7 +87,7 @@ export default function ManageCompanies() {
     console.log("Deleting company:", id);
 
     try {
-      const res = await axios.delete(`http://localhost:5000/companies/${id}`);
+      const res = await axios.delete(`http://localhost:5000/api/companies/${id}`);
       console.log("Delete response:", res.data);
 
       setCompanies((prev) => prev.filter((c) => c.id !== id));

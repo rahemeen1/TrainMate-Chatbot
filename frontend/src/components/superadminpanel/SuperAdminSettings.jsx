@@ -10,7 +10,7 @@ export default function SuperAdminSettings() {
 
   const getAdmins = async () => {
     try {
-      const res = await fetch("http://localhost:5000/superadmins");
+      const res = await fetch("http://localhost:5000/api/superadmins");
       const data = await res.json();
       setAdmins(data.admins || []);
     } catch (err) {
@@ -46,7 +46,7 @@ export default function SuperAdminSettings() {
             newPassword: editData.newPassword,
           };
 
-    const res = await fetch(`http://localhost:5000/superadmins/${id}`, {
+    const res = await fetch(`http://localhost:5000/api/superadmins/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
