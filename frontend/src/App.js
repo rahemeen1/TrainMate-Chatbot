@@ -6,6 +6,7 @@ import ManageDepartments from "./components/CompanySpecific/ManageDepartments";
 import DepartmentDetails from "./components/CompanySpecific/DepartmentDetails";
 import FresherDashboard from "./components/Fresher/FresherDashboard";
 import FresherSettings from "./components/Fresher/FresherSettings";
+import UserProfile from "./components/CompanySpecific/UserProfile";
 
 export default function App() {
   return (
@@ -18,6 +19,8 @@ export default function App() {
         <Route path="/departments/:deptId" element={<DepartmentDetails />} />
         <Route path="/fresher-dashboard" element={<FresherDashboard />} /> 
         <Route path="/fresher-settings" element={<FresherSettings />} />
+        <Route path="/user-profile/:companyId/:deptId/:userId" element={<UserProfile />} />
+
       </Routes>
     </BrowserRouter>
   );

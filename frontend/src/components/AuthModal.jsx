@@ -1,29 +1,22 @@
 import { useState, useEffect } from "react";
 import { X, Eye, EyeOff, Mail, Lock, Briefcase, User } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { signInWithEmailAndPassword } from "firebase/auth";
-import { auth } from "../firebase";
-import { doc, getDoc, getDocs, collection,collectionGroup, } from "firebase/firestore";
-import Fresherdashboard from "../components/Fresher/FresherDashboard";
-import { db } from "../firebase";
-import { 
-  query, 
-  where 
-} from "firebase/firestore";
-
+import { handleLogin } from "../components/services/authHandlers";
 
 export default function AuthModal({ isOpen, mode: initialMode, onClose }) {
+  const navigate = useNavigate();
+
+  const [mode, setMode] = useState(initialMode);
+  const [userType, setUserType] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
   const [formData, setFormData] = useState({
     emailOrUsername: "",
     password: "",
   });
-  const [mode, setMode] = useState(initialMode);
-  const [userType, setUserType] = useState(null); 
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const navigate = useNavigate();
 
   useEffect(() => {
     if (isOpen) {
@@ -37,222 +30,40 @@ export default function AuthModal({ isOpen, mode: initialMode, onClose }) {
   }, [isOpen, initialMode]);
 
   if (!isOpen) return null;
+
   const isLogin = mode === "login";
 
-const handleSubmit = async (e) => {
+ const handleSubmit = async (e) => {
   e.preventDefault();
-  if (!userType) return;
 
-  setError("");
-  setLoading(true);
+  const result = await handleLogin({
+    userType,
+    formData,
+    navigate,
+    onClose,
+  });
 
-  try {
-// =====================================================
-// FRESHER LOGIN
-// =====================================================
-try {
- try {
-  if (userType === "fresher") {
-    const email = formData.emailOrUsername?.trim();
-    const password = formData.password;
-
-    if (!email || !password) {
-      setError("Enter your email and password");
-      setLoading(false);
-      return;
-    }
-
-    console.log("🔹 Fresher login attempt:", email);
-
-    // Firebase Auth
-    await signInWithEmailAndPassword(auth, email, password);
-    console.log("✅ Firebase auth successful for fresher");
-
-    // Extract userId from email
-    const userId = email.split("@")[0];
-    console.log("🔍 Extracted userId:", userId);
-
-    // Split userId to get DeptShort and CompanyShort
-    const parts = userId.split("-");
-    if (parts.length < 4) {
-      setError("Invalid fresher email format");
-      setLoading(false);
-      return;
-    }
-
-    const deptShort = parts[1]; // e.g., "HR"
-    const companyShort = parts[2]; // e.g., "SL"
-
-    // 1️⃣ Find company by matching short code
-    const companiesRef = collection(db, "companies");
-    const companiesSnap = await getDocs(companiesRef);
-
-    let companyId = null;
-    let companyName = null;
-
-    companiesSnap.forEach(doc => {
-      const cData = doc.data();
-      const cShort = cData.name
-        .split(" ")
-        .map(w => w[0])
-        .join("")
-        .toUpperCase();
-      if (cShort === companyShort) {
-        companyId = doc.id;
-        companyName = cData.name;
-      }
-    });
-
-    if (!companyId) {
-      setError("Company not found");
-      setLoading(false);
-      return;
-    }
-
-    console.log("✅ Company found:", companyName, companyId);
-
-    // 2️⃣ Fetch fresher doc under company -> dept -> users
-    const userRef = doc(db, "freshers", companyId, "departments", deptShort, "users", userId);
-    const userSnap = await getDoc(userRef);
-
-    if (!userSnap.exists()) {
-      console.log("❌ Fresher not found:", userId);
-      setError("Fresher not found");
-      setLoading(false);
-      return;
-    }
-
-    const fresherData = userSnap.data();
-    console.log("✅ Fresher data fetched:", fresherData);
-
-    // Check company status
-    const companySnap = await getDoc(doc(db, "companies", companyId));
-    if (!companySnap.exists() || companySnap.data().status !== "active") {
-      alert("Company suspended");
-      setLoading(false);
-      return;
-    }
-
-    // Navigate to Fresher Dashboard
-    onClose();
-    navigate("/fresher-dashboard", {
-      state: {
-        email,
-        userId,
-        companyId,
-        deptId: deptShort,
-        companyName,
-      },
-    });
-
-    setLoading(false);
-    console.log("✅ Navigated to fresher dashboard");
-  }
-} catch (err) {
-  console.error("❌ Fresher login error:", err);
-  setError("Login failed");
-  setLoading(false);
-}
-
-} catch (err) {
-  console.error("❌ Fresher login error:", err);
-  setError("Login failed");
-  setLoading(false);
-}
-
-    // =====================================================
-    // ADMIN LOGIN
-    // =====================================================
-    if (userType === "admin") {
-      // 1️⃣ SUPER ADMIN
-      const superSnap = await getDoc(doc(db, "super_admins", "1"));
-
-      if (superSnap.exists()) {
-        const { email, role } = superSnap.data();
-
-        if (role === "SUPER_ADMIN" && email === formData.emailOrUsername) {
-          await signInWithEmailAndPassword(auth, email, formData.password);
-          onClose();
-          navigate("/super-admin-dashboard");
-          setLoading(false);
-          return;
-        }
-      }
-
-      // 2️⃣ COMPANY ADMIN
-      const companiesSnap = await getDocs(collection(db, "companies"));
-
-      let companyData = null;
-      let companyId = null;
-
-      for (const companyDoc of companiesSnap.docs) {
-        const data = companyDoc.data();
-        if (data.email === formData.emailOrUsername) {
-          companyData = data;
-          companyId = companyDoc.id;
-          break;
-        }
-      }
-
-      if (!companyData) {
-        setError("Invalid company email");
-        setLoading(false);
-        return;
-      }
-
-      await signInWithEmailAndPassword(
-        auth,
-        companyData.email,
-        formData.password
-      );
-
-      if (companyData.status !== "active") {
-        setError("Your company is suspended");
-        setLoading(false);
-        return;
-      }
-
-      onClose();
-      navigate("/company-dashboard", {
-        state: {
-          companyId,
-          companyName: companyData.name,
-        },
-      });
-
-      setLoading(false);
-    }
-  } catch (err) {
-    console.error("❌ Login failed:", err);
-    setError("Invalid credentials");
-    setLoading(false);
-  }
+  if (result?.error) setError(result.error);
 };
-
 
 
   const SelectCard = ({ type, icon: Icon, label }) => (
     <div
       onClick={() => setUserType(type)}
-      className={`cursor-pointer flex flex-col items-center justify-center w-[45%] sm:w-[200px] h-[130px] 
-      rounded-xl border transition-all duration-300 
+      className={`cursor-pointer flex flex-col items-center justify-center w-[45%] sm:w-[200px] h-[130px]
+      rounded-xl border transition-all duration-300
       ${
         userType === type
-          ? "border-[#00FFFF] bg-[#032A4A]/70 shadow-[0_0_25px_rgba(0,255,255,0.3)] scale-105"
-          : "border-[#00FFFF30] bg-[#021B36]/70 hover:border-[#00FFFF60] hover:shadow-[0_0_20px_rgba(0,255,255,0.2)]"
+          ? "border-[#00FFFF] bg-[#032A4A]/70 scale-105"
+          : "border-[#00FFFF30] bg-[#021B36]/70"
       }`}
     >
-      <Icon
-        size={30}
-        className={`mb-3 ${userType === type ? "text-[#00FFFF]" : "text-[#00FFFFB0]"}`}
-      />
-      <p className={`font-semibold ${userType === type ? "text-[#00FFFF]" : "text-[#AFCBE3]"}`}>
-        {label}
-      </p>
+      <Icon size={30} className="mb-3 text-[#00FFFF]" />
+      <p className="font-semibold text-[#AFCBE3]">{label}</p>
     </div>
   );
 
-  return (
+   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-[#02142B]/95 via-[#031C3A]/95 to-[#04354E]/95 backdrop-blur-md animate-fade-in-up">
       <div className="relative w-[95%] sm:w-[480px] md:w-[540px]
         bg-gradient-to-br from-[#031C3A]/95 via-[#021B36]/95 to-[#011627]/95 
@@ -350,7 +161,7 @@ try {
                     onChange={(e) => setRememberMe(e.target.checked)}
                     className="w-4 h-4 accent-[#00FFFF] border-gray-600 rounded focus:ring-[#00FFFF]"
                   />
-                  <span className="text-sm text-[#AFCBE3]">Remember me</span>
+                
                 </label>
               </div>
 

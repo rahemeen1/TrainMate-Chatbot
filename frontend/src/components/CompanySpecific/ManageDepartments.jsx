@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useNavigate, useLocation } from "react-router-dom";
-import CompanySidebar from "../../components/CompanySpecific/CompanySidebar";
+import CompanySidebar from "./CompanySidebar";
 
 
 export default function ManageDepartments() {

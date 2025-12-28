@@ -34,9 +34,6 @@ export default function FresherDashboard() {
     return "from-[#00FFFF] to-green-400";
   };
 
-  // =====================================================
-  // 🔹 FETCH FRESHER (NEW STRUCTURE)
-  // =====================================================
   useEffect(() => {
     if (!email) {
       navigate("/");
@@ -45,9 +42,7 @@ export default function FresherDashboard() {
 
     const fetchUser = async () => {
       try {
-        console.log("🔍 Fresher dashboard lookup:", email);
 
-        // 🔥 SEARCH IN ALL USERS (collectionGroup)
         const q = query(
           collectionGroup(db, "users"),
           where("email", "==", email)
@@ -64,8 +59,7 @@ export default function FresherDashboard() {
         const userDoc = snap.docs[0];
         const data = userDoc.data();
 
-        // 🔑 Extract IDs from path
-        // freshers/{companyId}/departments/{deptId}/users/{userId}
+          // Extract IDs from path
         const pathParts = userDoc.ref.path.split("/");
         const companyIdFromPath = pathParts[1];
         const deptIdFromPath = pathParts[3];
@@ -78,7 +72,7 @@ export default function FresherDashboard() {
         setUserData(data);
         setCompanyName(data.companyName);
 
-        // 🔹 Onboarding check
+        //  Onboarding check
         if (!data.onboarding || !data.onboarding.onboardingCompleted) {
           setShowOnboarding(true);
         }
@@ -94,9 +88,6 @@ export default function FresherDashboard() {
     fetchUser();
   }, [email, navigate]);
 
-  // =====================================================
-  // 🔹 LOADING
-  // =====================================================
   if (loading) {
     return (
       <div className="min-h-screen bg-[#031C3A] flex items-center justify-center text-white">
@@ -105,9 +96,6 @@ export default function FresherDashboard() {
     );
   }
 
-  // =====================================================
-  // 🔹 ONBOARDING
-  // =====================================================
   if (showOnboarding) {
     return (
       <OnboardingPage
@@ -133,9 +121,6 @@ export default function FresherDashboard() {
     );
   }
 
-  // =====================================================
-  // 🔹 DASHBOARD UI
-  // =====================================================
   return (
     <div className="flex min-h-screen bg-[#031C3A] text-white">
       {/* SIDE MENU */}
@@ -204,7 +189,7 @@ export default function FresherDashboard() {
         </button>
 
         <p className="italic text-[#AFCBE3] mt-2">
-          Best of luck with your journey 🤖
+          Best of luck with your journey
         </p>
 
         <p className="text-center text-xs text-[#AFCBE3] mt-10">

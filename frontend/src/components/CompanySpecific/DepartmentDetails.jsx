@@ -1,153 +1,113 @@
-import { useEffect, useState } from "react";
-import CompanySidebar from "../../components/CompanySpecific/CompanySidebar";
-import { collection, getDocs, setDoc, doc, addDoc, serverTimestamp } from "firebase/firestore";
-import { db, auth } from "../../firebase";
+import React, { useEffect, useRef, useState } from "react"; 
 import { useLocation, useNavigate } from "react-router-dom";
-import { createUserWithEmailAndPassword } from "firebase/auth";
-import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import CompanySidebar from "./CompanySidebar";
 import jsPDF from "jspdf";
 
+import {
+  fetchDepartmentUsers,
+  fetchDepartmentDocs,
+  addDepartmentDoc,
+  addFresherUser,
+  deleteDepartmentDoc,
+} from "../services/departmentHandlers";
+
 export default function DepartmentDetails() {
-  const location = useLocation();
+
+  // inside component
+const fileInputRef = useRef(null);
+const [docFile, setDocFile] = useState(null);
+const [docs, setDocs] = useState([]);
+
+  const { state } = useLocation();
   const navigate = useNavigate();
-  const { companyId, companyName, deptId, deptName } = location.state || {};
+
+  const { companyId, companyName, deptId, deptName } = state || {};
 
   const [users, setUsers] = useState([]);
-  const [docs, setDocs] = useState([]);
+  
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [loadingDocs, setLoadingDocs] = useState(true);
   const [showAddUserModal, setShowAddUserModal] = useState(false);
 
-  const [newUser, setNewUser] = useState({ name: "", phone: "", trainingOn: "", cvFile: null });
-  const [newDocName, setNewDocName] = useState("");
+  const [newUser, setNewUser] = useState({
+    name: "",
+    phone: "",
+    trainingOn: "",
+    cvFile: null,
+  });
+
   const [lastAddedUser, setLastAddedUser] = useState(null);
 
-  const storage = getStorage();
-
-  // Safety redirect
+  // Safety
   useEffect(() => {
     if (!companyId || !deptId) navigate(-1);
   }, [companyId, deptId, navigate]);
 
-  // Fetch Users
-  const fetchUsers = async () => {
-    setLoadingUsers(true);
-    const usersRef = collection(db, "freshers", companyId, "departments", deptId, "users");
-    const snap = await getDocs(usersRef);
-    setUsers(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    setLoadingUsers(false);
-  };
-
+  // Load Users
   useEffect(() => {
-    fetchUsers();
+    const load = async () => {
+      setLoadingUsers(true);
+      setUsers(await fetchDepartmentUsers(companyId, deptId));
+      setLoadingUsers(false);
+    };
+    load();
   }, [companyId, deptId]);
 
-  // Fetch Documents
+  // Load Documents
   useEffect(() => {
-    const fetchDocs = async () => {
+    const load = async () => {
       setLoadingDocs(true);
-      const docsRef = collection(db, "companies", companyId, "departments", deptId, "documents");
-      const snap = await getDocs(docsRef);
-      setDocs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setDocs(await fetchDepartmentDocs(companyId, deptId));
       setLoadingDocs(false);
     };
-    fetchDocs();
+    load();
   }, [companyId, deptId]);
-
-  // Add Document
-  const handleAddDoc = async () => {
-    if (!newDocName) return alert("Enter document name");
-    await addDoc(collection(db, "companies", companyId, "departments", deptId, "documents"), {
-      name: newDocName,
-      uploadedAt: serverTimestamp(),
-    });
-    setNewDocName("");
-    const snap = await getDocs(collection(db, "companies", companyId, "departments", deptId, "documents"));
-    setDocs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-  };
-
-  // Password Generator
-  const generatePassword = () => {
-    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789@#!";
-    return Array.from({ length: 8 }, () => chars.charAt(Math.floor(Math.random() * chars.length))).join("");
-  };
 
   // Add User
   const handleAddUser = async () => {
-    const { name, phone, trainingOn, cvFile } = newUser;
-    if (!name || !phone) return alert("Enter name & phone");
-    if (!/^[0-9]{11}$/.test(phone)) return alert("Phone must be 11 digits");
-
-    const firstName = name.split(" ")[0];
-    const deptShort = deptName.replace(/\s+/g, "").toUpperCase();
-    const companyShort = companyName.split(" ").map(w => w[0]).join("").toUpperCase();
-    const randomNum = Math.floor(1000 + Math.random() * 9000);
-    const userId = `${firstName}-${deptShort}-${companyShort}-${randomNum}`;
-    const companyDomain = companyName.toLowerCase().replace(/\s+/g, "") + ".com";
-    const userEmail = `${userId}@${companyDomain}`;
-    const password = generatePassword();
-
     try {
-      const usersRef = collection(db, "freshers", companyId, "departments", deptId, "users");
-      const snap = await getDocs(usersRef);
-      if (snap.docs.some(d => d.data().email.toLowerCase() === userEmail.toLowerCase())) {
-        return alert("Email already exists");
-      }
-
-      // 1️⃣ Firebase Auth
-      await createUserWithEmailAndPassword(auth, userEmail, password);
-
-      // 2️⃣ Upload CV to Firebase Storage
-      let cvUrl = "";
-      if (cvFile) {
-        const storageRef = ref(storage, `cvs/${companyId}/${deptId}/${userId}.pdf`);
-        await uploadBytes(storageRef, cvFile);
-        cvUrl = await getDownloadURL(storageRef);
-      }
-
-      // 3️⃣ Firestore
-      await setDoc(doc(db, "freshers", companyId, "departments", deptId, "users", userId), {
-        userId,
-        name,
-        email: userEmail,
-        phone,
-        trainingOn,
-        progress: 0,
+      const result = await addFresherUser({
         companyId,
         companyName,
         deptId,
         deptName,
-        onboarding: { onboardingCompleted: false },
-        createdAt: serverTimestamp(),
-        cvUrl,
+        newUser,
       });
 
-      await fetchUsers();
-
-      setLastAddedUser({ name, userId, userEmail, password, companyName, deptName, cvUrl });
-
+      setLastAddedUser(result);
       setNewUser({ name: "", phone: "", trainingOn: "", cvFile: null });
+      setUsers(await fetchDepartmentUsers(companyId, deptId));
     } catch (err) {
-      console.error("❌ Add user failed:", err);
-      alert("Failed to add user");
+      alert(err.message);
     }
   };
+const handleAddDoc = async () => {
+  if (!docFile) {
+    alert("Please select a document");
+    return;
+  }
 
-  // Download PDF of credentials
+  try {
+    await addDepartmentDoc({ companyId, deptName, file: docFile });
+    
+    setDocFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    setDocs(await fetchDepartmentDocs(companyId, deptId));
+  } catch (err) {
+    alert(err.message);
+  }
+};
+
+
+
+  // PDF
   const downloadUserPDF = () => {
     if (!lastAddedUser) return;
     const pdf = new jsPDF();
-    pdf.setFontSize(18);
-    pdf.text("User Credentials", 20, 20);
-    pdf.setFontSize(12);
-    pdf.text(`Name: ${lastAddedUser.name}`, 20, 40);
-    pdf.text(`User ID: ${lastAddedUser.userId}`, 20, 50);
-    pdf.text(`Email: ${lastAddedUser.userEmail}`, 20, 60);
-    pdf.text(`Password: ${lastAddedUser.password}`, 20, 70);
-    pdf.text(`Company: ${lastAddedUser.companyName}`, 20, 80);
-    pdf.text(`Department: ${lastAddedUser.deptName}`, 20, 90);
-    if (lastAddedUser.cvUrl) pdf.text(`CV URL: ${lastAddedUser.cvUrl}`, 20, 100);
-    pdf.save(`${lastAddedUser.userId}_credentials.pdf`);
+    pdf.text(`User ID: ${lastAddedUser.userId}`, 20, 30);
+    pdf.text(`Email: ${lastAddedUser.userEmail}`, 20, 40);
+    pdf.text(`Password: ${lastAddedUser.password}`, 20, 50);
+    pdf.save(`${lastAddedUser.userId}.pdf`);
   };
 
   return (
@@ -155,8 +115,92 @@ export default function DepartmentDetails() {
       <CompanySidebar companyId={companyId} companyName={companyName} />
 
       <div className="flex-1 p-6">
-        <button onClick={() => navigate(-1)} className="mb-4 text-[#00FFFF]">← Back</button>
+        <button onClick={() => navigate(-1)} className="mb-4 text-[#00FFFF]">
+          ← Back
+        </button>
         <h1 className="text-3xl font-bold mb-6">{deptName} Department</h1>
+
+        {/* DOCUMENTS */}
+        <div className="mb-10">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold">
+              {deptName} Documents ({docs.length})
+            </h2>
+          </div>
+
+         <div className="flex items-center justify-between gap-3 mb-4">
+            <input
+      type="file"
+      ref={fileInputRef} // attach ref here
+      className="text-sm flex-1"
+      onChange={(e) => setDocFile(e.target.files[0])}
+    />
+
+            <button
+              onClick={handleAddDoc}
+              className="px-4 py-2 bg-[#00FFFF] text-[#031C3A] rounded-lg font-semibold"
+            >
+              Upload Document
+            </button>
+          </div>
+
+          {loadingDocs ? (
+            <p>Loading documents...</p>
+          ) : (
+          <div className="mb-10">
+
+  <table className="w-full border border-[#00FFFF30]">
+    <thead className="bg-[#021B36] text-[#00FFFF]">
+      <tr>
+        <th className="p-2 text-left">Document</th>
+        <th className="p-2 text-center">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {docs.length === 0 && (
+        <tr>
+          <td colSpan="2" className="p-3 text-center text-gray-400">
+            No documents uploaded
+          </td>
+        </tr>
+      )}
+
+      {docs.map((doc) => (
+        <tr key={doc.id} className="border-t border-[#00FFFF20]">
+          <td className="p-2">{doc.name}</td>
+          <td className="p-2 text-center">
+            <div className="flex justify-center items-center gap-2">
+              {/* View button */}
+              <a
+                href={doc.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition"
+              >
+                View
+              </a>
+
+              {/* Delete button */}
+              <button
+                onClick={async () => {
+                  if (window.confirm(`Delete ${doc.name}?`)) {
+                    await deleteDepartmentDoc({ companyId, deptName, docId: doc.id });
+                    setDocs(await fetchDepartmentDocs(companyId, deptId));
+                  }
+                }}
+                className="px-3 py-1 bg-red-600 text-white rounded flex items-center gap-1 hover:bg-red-700 transition"
+              >
+                🗑 Delete
+              </button>
+            </div>
+          </td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+</div>
+          )}
+        </div>
 
         {/* USERS */}
         <div className="mb-8">
@@ -177,23 +221,29 @@ export default function DepartmentDetails() {
               <thead className="bg-[#021B36] text-[#00FFFF]">
                 <tr>
                   <th className="p-2">Name</th>
-                  <th className="p-2">Email</th>
-                  <th className="p-2">Training</th>
-                  <th className="p-2">CV</th>
+                  <th className="p-2 text-center">Training Progress</th>
+                  <th className="p-2 text-center">Action</th>
                 </tr>
               </thead>
               <tbody>
-                {users.map(u => (
+                {users.map((u) => (
                   <tr key={u.id} className="border-t border-[#00FFFF20]">
                     <td className="p-2">{u.name}</td>
-                    <td className="p-2">{u.email}</td>
-                    <td className="p-2">{u.trainingOn}</td>
-                    <td className="p-2">
-                      {u.cvUrl ? (
-                        <a href={u.cvUrl} target="_blank" rel="noopener noreferrer" className="text-[#00FFFF] underline">
-                          View CV
-                        </a>
-                      ) : "No CV"}
+                    <td className="p-2 text-center">
+                      <button className="px-3 py-1 bg-[#00FFFF] text-[#031C3A] rounded">
+                        {u.progress || 0}%
+                      </button>
+                    </td>
+                    <td className="p-2 text-center">
+                      <button
+                        onClick={() =>
+                          console.log(`Navigating to user profile for ${u.userId}`) ||
+                          navigate(`/user-profile/${companyId}/${deptId}/${u.userId}`)
+                        }
+                        className="px-3 py-1 bg-[#00FFFF] text-[#031C3A] rounded"
+                      >
+                        View Details
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -213,25 +263,25 @@ export default function DepartmentDetails() {
               placeholder="Name"
               className="w-full p-2 mb-2 bg-[#031C3A]"
               value={newUser.name}
-              onChange={e => setNewUser({ ...newUser, name: e.target.value })}
+              onChange={(e) =>
+                setNewUser({ ...newUser, name: e.target.value })
+              }
             />
             <input
               placeholder="Phone"
               className="w-full p-2 mb-2 bg-[#031C3A]"
               value={newUser.phone}
-              onChange={e => setNewUser({ ...newUser, phone: e.target.value })}
+              onChange={(e) =>
+                setNewUser({ ...newUser, phone: e.target.value })
+              }
             />
             <input
               placeholder="Training On"
               className="w-full p-2 mb-2 bg-[#031C3A]"
               value={newUser.trainingOn}
-              onChange={e => setNewUser({ ...newUser, trainingOn: e.target.value })}
-            />
-            <input
-              type="file"
-              accept=".pdf,.doc,.docx"
-              className="w-full mb-4"
-              onChange={e => setNewUser({ ...newUser, cvFile: e.target.files[0] })}
+              onChange={(e) =>
+                setNewUser({ ...newUser, trainingOn: e.target.value })
+              }
             />
 
             {lastAddedUser && (

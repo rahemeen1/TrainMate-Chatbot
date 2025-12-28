@@ -1,5 +1,5 @@
 import express from "express";
-import { db } from "./firebase.js";
+import { db } from "../config/firebase.js"; 
 
 const app = express();
 app.use(express.json());
