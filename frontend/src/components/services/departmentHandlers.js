@@ -84,6 +84,18 @@ export const addDepartmentDoc = async ({ companyId, deptName, file }) => {
 
   // Save URL in Firestore doc
   await setDoc(docRef, { url }, { merge: true });
+  await fetch("http://localhost:5000/api/ingest/document", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    fileUrl: url,
+    companyId,
+    deptName,
+    docId: docRef.id,
+    fileName: file.name,
+  }),
+});
+
 };
 
 
