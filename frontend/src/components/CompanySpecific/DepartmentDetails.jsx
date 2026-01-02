@@ -17,6 +17,10 @@ export default function DepartmentDetails() {
 const fileInputRef = useRef(null);
 const [docFile, setDocFile] = useState(null);
 const [docs, setDocs] = useState([]);
+const [uploadingDoc, setUploadingDoc] = useState(false);
+const [addingUser, setAddingUser] = useState(false);
+const [userAddedSuccess, setUserAddedSuccess] = useState(false);
+
 
   const { state } = useLocation();
   const navigate = useNavigate();
@@ -66,6 +70,7 @@ const [docs, setDocs] = useState([]);
   // Add User
   const handleAddUser = async () => {
     try {
+      setAddingUser(true); // 🔵 start
       const result = await addFresherUser({
         companyId,
         companyName,
@@ -75,11 +80,16 @@ const [docs, setDocs] = useState([]);
       });
 
       setLastAddedUser(result);
+      setUserAddedSuccess(true);
       setNewUser({ name: "", phone: "", trainingOn: "", cvFile: null });
       setUsers(await fetchDepartmentUsers(companyId, deptId));
     } catch (err) {
       alert(err.message);
+      
     }
+    finally {
+    setAddingUser(false); // 🟢 stop
+  }
   };
 const handleAddDoc = async () => {
   if (!docFile) {
@@ -88,14 +98,29 @@ const handleAddDoc = async () => {
   }
 
   try {
-    await addDepartmentDoc({ companyId, deptName, file: docFile });
-    
+    setUploadingDoc(true); // 🔵 start uploading
+
+    await addDepartmentDoc({
+      companyId,
+      deptName,
+      file: docFile,
+    });
+
     setDocFile(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
+
     setDocs(await fetchDepartmentDocs(companyId, deptId));
   } catch (err) {
     alert(err.message);
+  } finally {
+    setUploadingDoc(false); // 🟢 stop uploading
   }
+};
+
+const closeAddUserModal = () => {
+  setShowAddUserModal(false);
+  setLastAddedUser(null);       // 🔴 reset PDF data
+  setUserAddedSuccess(false);  // 🔴 reset success
 };
 
 
@@ -136,12 +161,26 @@ const handleAddDoc = async () => {
       onChange={(e) => setDocFile(e.target.files[0])}
     />
 
-            <button
-              onClick={handleAddDoc}
-              className="px-4 py-2 bg-[#00FFFF] text-[#031C3A] rounded-lg font-semibold"
-            >
-              Upload Document
-            </button>
+           <button
+  onClick={handleAddDoc}
+  disabled={uploadingDoc}
+  className={`px-4 py-2 rounded-lg font-semibold transition
+    ${
+      uploadingDoc
+        ? "bg-gray-500 text-white cursor-not-allowed"
+        : "bg-[#00FFFF] text-[#031C3A]"
+    }
+  `}
+>
+  {uploadingDoc ? "Uploading..." : "Upload Document"}
+</button>
+{uploadingDoc && (
+  <p className="text-sm text-[#00FFFF] mt-2 animate-pulse">
+    Uploading document, please wait...
+  </p>
+)}
+
+
           </div>
 
           {loadingDocs ? (
@@ -182,16 +221,22 @@ const handleAddDoc = async () => {
 
               {/* Delete button */}
               <button
-                onClick={async () => {
-                  if (window.confirm(`Delete ${doc.name}?`)) {
-                    await deleteDepartmentDoc({ companyId, deptName, docId: doc.id });
-                    setDocs(await fetchDepartmentDocs(companyId, deptId));
-                  }
-                }}
-                className="px-3 py-1 bg-red-600 text-white rounded flex items-center gap-1 hover:bg-red-700 transition"
-              >
-                🗑 Delete
-              </button>
+  onClick={async () => {
+    if (window.confirm(`Delete ${doc.name}?`)) {
+      console.log("Deleting doc with storagePath:", doc.storagePath); // <-- DEBUG
+      await deleteDepartmentDoc({
+        companyId,
+        deptName,
+        docId: doc.id,
+        storagePath: doc.storagePath, // must exist
+      });
+      setDocs(await fetchDepartmentDocs(companyId, deptId));
+    }
+  }}
+   className="px-3 py-1 bg-red-600 text-white rounded flex items-center gap-1 hover:bg-red-700 transition"
+>
+  🗑 Delete
+</button>
             </div>
           </td>
         </tr>
@@ -219,35 +264,29 @@ const handleAddDoc = async () => {
           ) : (
             <table className="w-full border border-[#00FFFF30]">
               <thead className="bg-[#021B36] text-[#00FFFF]">
-                <tr>
-                  <th className="p-2">Name</th>
-                  <th className="p-2 text-center">Training Progress</th>
-                  <th className="p-2 text-center">Action</th>
-                </tr>
-              </thead>
+  <tr>
+    <th className="p-2 text-center">Name</th>
+    <th className="p-2 text-center">Phone</th>
+    <th className="p-2 text-center">Training On</th>
+  </tr>
+</thead>
+
               <tbody>
-                {users.map((u) => (
-                  <tr key={u.id} className="border-t border-[#00FFFF20]">
-                    <td className="p-2">{u.name}</td>
-                    <td className="p-2 text-center">
-                      <button className="px-3 py-1 bg-[#00FFFF] text-[#031C3A] rounded">
-                        {u.progress || 0}%
-                      </button>
-                    </td>
-                    <td className="p-2 text-center">
-                      <button
-                        onClick={() =>
-                          console.log(`Navigating to user profile for ${u.userId}`) ||
-                          navigate(`/user-profile/${companyId}/${deptId}/${u.userId}`)
-                        }
-                        className="px-3 py-1 bg-[#00FFFF] text-[#031C3A] rounded"
-                      >
-                        View Details
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
+  {users.map((u) => (
+    <tr key={u.id} className="border-t border-[#00FFFF20]">
+      <td className="p-2">{u.name}</td>
+
+      <td className="p-2 text-center">
+        {u.phone || "—"}
+      </td>
+
+      <td className="p-2 text-center capitalize">
+        {u.trainingOn || "—"}
+      </td>
+    </tr>
+  ))}
+</tbody>
+
             </table>
           )}
         </div>
@@ -283,24 +322,44 @@ const handleAddDoc = async () => {
                 setNewUser({ ...newUser, trainingOn: e.target.value })
               }
             />
+{userAddedSuccess && (
+  <div className="mb-4 p-3 bg-green-600/20 border border-green-500 rounded-lg">
+    <p className="text-green-400 font-semibold">
+      ✅ User added successfully
+    </p>
 
-            {lastAddedUser && (
-              <button
-                onClick={downloadUserPDF}
-                className="mb-3 w-full bg-green-500 p-2 rounded"
-              >
-                Download PDF
-              </button>
-            )}
+    <button
+      onClick={downloadUserPDF}
+      className="mt-2 w-full bg-green-500 text-black p-2 rounded font-semibold hover:bg-green-600 transition"
+    >
+      Download Credentials PDF
+    </button>
+  </div>
+)}
 
+            
             <div className="flex justify-end gap-2">
-              <button onClick={() => setShowAddUserModal(false)}>Cancel</button>
+             <button onClick={closeAddUserModal}>Cancel</button>
+
               <button
-                onClick={handleAddUser}
-                className="bg-[#00FFFF] text-[#031C3A] px-4 py-2 rounded font-semibold"
-              >
-                Add
-              </button>
+  onClick={handleAddUser}
+  disabled={addingUser}
+  className={`px-4 py-2 rounded font-semibold transition
+    ${
+      addingUser
+        ? "bg-gray-500 text-white cursor-not-allowed"
+        : "bg-[#00FFFF] text-[#031C3A]"
+    }
+  `}
+>
+  {addingUser ? "Adding user..." : "Add"}
+</button>
+{addingUser && (
+  <p className="text-sm text-[#00FFFF] mb-2 animate-pulse">
+    Creating user account, please wait...
+  </p>
+)}
+
             </div>
           </div>
         </div>

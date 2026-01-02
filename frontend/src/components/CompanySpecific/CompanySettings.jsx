@@ -1,0 +1,222 @@
+// CompanySettings.jsx
+import { useLocation } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { doc, getDoc, setDoc } from "firebase/firestore";
+import { db, auth } from "../../firebase";
+import CompanySidebar from "../../components/CompanySpecific/CompanySidebar";
+import { PencilIcon, CheckIcon } from "@heroicons/react/24/solid";
+import {
+  reauthenticateWithCredential,
+  EmailAuthProvider,
+  updatePassword,
+  updateEmail,
+} from "firebase/auth";
+
+export default function CompanySettings() {
+  const location = useLocation();
+  const { companyId, companyName } = location.state || {};
+
+  const [loading, setLoading] = useState(true);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [editMode, setEditMode] = useState({
+    name: false,
+    email: false,
+    password: false,
+  });
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [error, setError] = useState("");
+
+  const currentUser = auth.currentUser;
+
+  useEffect(() => {
+    const fetchCompany = async () => {
+      try {
+        const ref = doc(db, "companies", companyId);
+        const snap = await getDoc(ref);
+        if (snap.exists()) {
+          const c = snap.data();
+          setName(c.companyName || "");
+          setEmail(c.email || "");
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (companyId) fetchCompany();
+    else setLoading(false);
+  }, [companyId]);
+
+  const saveField = async (field) => {
+    setError("");
+    try {
+      const ref = doc(db, "companies", companyId);
+
+      if (field === "password") {
+        if (!oldPassword || !newPassword)
+          return setError("Enter old & new password");
+        if (!currentUser) throw new Error("No authenticated user");
+
+        const cred = EmailAuthProvider.credential(
+          currentUser.email,
+          oldPassword
+        );
+        await reauthenticateWithCredential(currentUser, cred);
+        await updatePassword(currentUser, newPassword);
+
+        await setDoc(
+          ref,
+          { lastPasswordChange: new Date() },
+          { merge: true }
+        );
+
+        setOldPassword("");
+        setNewPassword("");
+      }
+
+      if (field === "email") {
+        if (!currentUser) throw new Error("No authenticated user");
+        await updateEmail(currentUser, email);
+        await setDoc(ref, { email }, { merge: true });
+      }
+
+      if (field === "name") {
+        await setDoc(ref, { companyName: name }, { merge: true });
+      }
+
+      setEditMode({ ...editMode, [field]: false });
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  if (loading)
+    return <p className="text-white mt-20 ml-10">Loading...</p>;
+
+  return (
+    <div className="flex min-h-screen bg-[#031C3A] text-white">
+      <CompanySidebar companyId={companyId} companyName={companyName} />
+
+      <div className="flex-1 p-10">
+        <h1 className="text-2xl text-[#00FFFF] font-bold mb-6">
+          Company Settings
+        </h1>
+
+        <div className="max-w-3xl space-y-6">
+          {/* Company ID */}
+          <div>
+            <p className="text-[#AFCBE3] text-sm">Company ID</p>
+            <p className="font-medium">{companyId}</p>
+          </div>
+
+          {/* Company Name */}
+          <div className="flex items-center justify-between border-b border-[#00FFFF30] py-2">
+            <div className="flex-1">
+              <p className="text-[#AFCBE3] text-sm">Company Name</p>
+              {editMode.name ? (
+                <input
+                  className="text-black w-full px-2 py-1 rounded"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                />
+              ) : (
+                <p className="font-medium">{name}</p>
+              )}
+            </div>
+            <button
+              onClick={() =>
+                editMode.name
+                  ? saveField("name")
+                  : setEditMode({ ...editMode, name: true })
+              }
+              className="ml-3 p-2 bg-[#00FFFF] text-[#031C3A] rounded-full"
+            >
+              {editMode.name ? (
+                <CheckIcon className="w-5 h-5" />
+              ) : (
+                <PencilIcon className="w-5 h-5" />
+              )}
+            </button>
+          </div>
+
+          {/* Email */}
+          <div className="flex items-center justify-between border-b border-[#00FFFF30] py-2">
+            <div className="flex-1">
+              <p className="text-[#AFCBE3] text-sm">Email</p>
+              {editMode.email ? (
+                <input
+                  className="text-black w-full px-2 py-1 rounded"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              ) : (
+                <p className="font-medium">{email}</p>
+              )}
+            </div>
+            <button
+              onClick={() =>
+                editMode.email
+                  ? saveField("email")
+                  : setEditMode({ ...editMode, email: true })
+              }
+              className="ml-3 p-2 bg-[#00FFFF] text-[#031C3A] rounded-full"
+            >
+              {editMode.email ? (
+                <CheckIcon className="w-5 h-5" />
+              ) : (
+                <PencilIcon className="w-5 h-5" />
+              )}
+            </button>
+          </div>
+
+          {/* Password */}
+          <div className="flex items-center justify-between border-b border-[#00FFFF30] py-2">
+            <div className="flex-1">
+              <p className="text-[#AFCBE3] text-sm">Password</p>
+              {editMode.password ? (
+                <div className="flex flex-col gap-2 mt-1">
+                  <input
+                    type="password"
+                    placeholder="Old Password"
+                    className="text-black px-2 py-1 rounded"
+                    value={oldPassword}
+                    onChange={(e) => setOldPassword(e.target.value)}
+                  />
+                  <input
+                    type="password"
+                    placeholder="New Password"
+                    className="text-black px-2 py-1 rounded"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                  />
+                </div>
+              ) : (
+                <p className="font-medium">********</p>
+              )}
+            </div>
+            <button
+              onClick={() =>
+                editMode.password
+                  ? saveField("password")
+                  : setEditMode({ ...editMode, password: true })
+              }
+              className="ml-3 p-2 bg-[#00FFFF] text-[#031C3A] rounded-full"
+            >
+              {editMode.password ? (
+                <CheckIcon className="w-5 h-5" />
+              ) : (
+                <PencilIcon className="w-5 h-5" />
+              )}
+            </button>
+          </div>
+
+          {error && <p className="text-red-500">{error}</p>}
+        </div>
+      </div>
+    </div>
+  );
+}

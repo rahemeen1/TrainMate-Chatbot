@@ -1,11 +1,16 @@
 import { useNavigate } from "react-router-dom";
 
 const MENU_OPTIONS = [
+  { label: "Dashboard", path: "/CompanySpecific/CompanyDashboard" },
   { label: "Manage Departments", path: "/manage-departments" },
-  { label: "Total Users", path: "/total-users" },
-  { label: "Active Users", path: "/active-users" },
-  { label: "Analytics", path: "/analytics" },
+  {label: "Total Users", path: "/CompanySpecific/TotalUsers" },
+  { label: "Manage Users", path: "/CompanySpecific/Manageuser" },
+  { label: "Active Users", path: "/CompanySpecific/ActiveUsers" },
+  { label: "Analytics", path: "/CompanySpecific/CompanyAnalytics" },
+  { label: "Settings", path: "/CompanySpecific/CompanySettings" },
   { label: "Logout", path: "/" },
+  
+
 ];
 
 export default function CompanySidebar({ companyId, companyName }) {

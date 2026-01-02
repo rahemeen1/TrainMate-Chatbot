@@ -16,16 +16,41 @@ export default function FresherDashboard() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const { email } = location.state || {};
+  //const { email } = location.state || {};
 
   const [loading, setLoading] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
 
   const [userData, setUserData] = useState(null);
-  const [userId, setUserId] = useState(null);
-  const [companyId, setCompanyId] = useState(null);
-  const [deptId, setDeptId] = useState(null);
-  const [companyName, setCompanyName] = useState(null);
+  // const [userId, setUserId] = useState(null);
+  // const [companyId, setCompanyId] = useState(null);
+  // const [deptId, setDeptId] = useState(null);
+  // const [companyName, setCompanyName] = useState(null);
+
+  const state = location.state || {};
+
+// Try to get values from state first, fallback to localStorage
+const [userId, setUserId] = useState(state.userId || localStorage.getItem("userId"));
+const [companyId, setCompanyId] = useState(state.companyId || localStorage.getItem("companyId"));
+const [deptId, setDeptId] = useState(state.deptId || localStorage.getItem("deptId"));
+const [companyName, setCompanyName] = useState(state.companyName || localStorage.getItem("companyName"));
+const [email, setEmail] = useState(state.email || localStorage.getItem("email"));
+
+// Save to localStorage if state exists
+useEffect(() => {
+  if (state.userId) localStorage.setItem("userId", state.userId);
+  if (state.companyId) localStorage.setItem("companyId", state.companyId);
+  if (state.deptId) localStorage.setItem("deptId", state.deptId);
+  if (state.companyName) localStorage.setItem("companyName", state.companyName);
+  if (state.email) localStorage.setItem("email", state.email);
+}, [state]);
+
+// Redirect if essential info missing
+useEffect(() => {
+  if (!userId || !companyId || !deptId) {
+    navigate("/", { replace: true });
+  }
+}, [userId, companyId, deptId, navigate]);
 
   // 🔹 Progress color
   const getProgressColor = (progress = 0) => {

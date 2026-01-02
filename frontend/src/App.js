@@ -7,6 +7,13 @@ import DepartmentDetails from "./components/CompanySpecific/DepartmentDetails";
 import FresherDashboard from "./components/Fresher/FresherDashboard";
 import FresherSettings from "./components/Fresher/FresherSettings";
 import UserProfile from "./components/CompanySpecific/UserProfile";
+import Manageuser from "./components/CompanySpecific/Manageuser";
+import ActiveUsers from "./components/CompanySpecific/ActiveUsers";
+import CompanySettings from "./components/CompanySpecific/CompanySettings";
+import CompanyAnalytics from "./components/CompanySpecific/CompanyAnalytics";
+import FresherTraining from "./components/Fresher/FresherTraining";
+import FresherProgress from "./components/Fresher/FresherProgress";
+import TotalUsers from "./components/CompanySpecific/TotalUsers";
 
 export default function App() {
   return (
@@ -20,8 +27,16 @@ export default function App() {
         <Route path="/fresher-dashboard" element={<FresherDashboard />} /> 
         <Route path="/fresher-settings" element={<FresherSettings />} />
         <Route path="/user-profile/:companyId/:deptId/:userId" element={<UserProfile />} />
-
+        <Route path="/CompanySpecific/Manageuser" element={<Manageuser />} />
+        <Route path="/CompanySpecific/ActiveUsers" element={<ActiveUsers />} />
+        <Route path="/CompanySpecific/CompanyDashboard" element={<CompanyDashboard />} />
+        <Route path="/CompanySpecific/CompanySettings" element={<CompanySettings />} />
+        <Route path="/CompanySpecific/CompanyAnalytics" element={<CompanyAnalytics />} />
+        <Route path="/fresher-training" element={<FresherTraining />} />
+        <Route path="/fresher-progress" element={<FresherProgress />} />
+        <Route path="/CompanySpecific/TotalUsers" element={<TotalUsers />} />
       </Routes>
+
     </BrowserRouter>
   );
 }

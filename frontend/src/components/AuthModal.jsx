@@ -36,6 +36,7 @@ export default function AuthModal({ isOpen, mode: initialMode, onClose }) {
  const handleSubmit = async (e) => {
   e.preventDefault();
 
+  setLoading(true);   
   const result = await handleLogin({
     userType,
     formData,
@@ -44,6 +45,7 @@ export default function AuthModal({ isOpen, mode: initialMode, onClose }) {
   });
 
   if (result?.error) setError(result.error);
+   setLoading(false);
 };
 
 
@@ -88,10 +90,23 @@ export default function AuthModal({ isOpen, mode: initialMode, onClose }) {
               {isLogin ? "Welcome Back" : "Create Account"}
             </h2>
             <p className="text-[#AFCBE3] text-sm">
-              {isLogin
-                ? "Sign in to continue your learning journey"
-                : "Start your learning journey with TrainMate"}
-            </p>
+  {isLogin
+    ? "Sign in to continue your learning journey"
+    : "Start your learning journey with TrainMate"}
+</p>
+
+{!isLogin && (
+  <p className="text-[#AFCBE3] text-xs mt-2">
+    Contact:{" "}
+    <a
+      href="mailto:trainmate01@gmail.com"
+      className="text-[#00FFFF] hover:underline"
+    >
+      trainmate01@gmail.com
+    </a>
+  </p>
+)}
+
           </div>
 
           {isLogin && !userType && (

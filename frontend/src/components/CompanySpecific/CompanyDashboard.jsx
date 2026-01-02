@@ -29,6 +29,9 @@ export default function CompanyDashboard() {
   const [selectedDepts, setSelectedDepts] = useState([]);
   const [answers, setAnswers] = useState({});
   const [hasDepartments, setHasDepartments] = useState(false); // checks if onboarding is needed
+  const [totalUsers, setTotalUsers] = useState(0);
+  const [activeUsers, setActiveUsers] = useState(0);
+  
 
   useEffect(() => {
     if (companyId) {
@@ -77,6 +80,51 @@ console.log("companyId:", companyId);
 
   const handleNextStep = () => setStep(prev => prev + 1);
   const handlePrevStep = () => setStep(prev => (prev > 1 ? prev - 1 : prev));
+
+  // Fetch total users
+useEffect(() => {
+  const fetchUserCounts = async () => {
+    if (!companyId) return;
+
+    try {
+      let total = 0;
+      let active = 0;
+
+      const departments = selectedDepts.length
+        ? selectedDepts
+        : ["IT", "HR", "Finance", "Marketing"];
+
+      for (const dept of departments) {
+        const usersRef = collection(
+          db,
+          "freshers",
+          companyId,
+          "departments",
+          dept,
+          "users"
+        );
+
+        const snap = await getDocs(usersRef);
+
+        total += snap.size;
+
+        snap.forEach(doc => {
+          if (doc.data().status === "active") active++;
+        });
+      }
+
+      setTotalUsers(total);
+      setActiveUsers(active);
+    } catch (err) {
+      console.error("User count error:", err);
+    }
+  };
+
+  if (hasDepartments) fetchUserCounts();
+}, [companyId, hasDepartments, selectedDepts]);
+
+
+
 
   // Save answers and departments
   const saveAnswersToDB = async () => {
@@ -200,11 +248,11 @@ console.log("companyId:", companyId);
               </div>
               <div className="p-6 bg-[#021B36]/70 rounded-xl border border-[#00FFFF30] shadow-lg hover:scale-105 transition-all">
                 <h3 className="text-[#00FFFF] font-semibold mb-2">Total Users</h3>
-                <p className="text-xl font-bold">—</p>
+                <p className="text-xl font-bold">{totalUsers}</p>
               </div>
               <div className="p-6 bg-[#021B36]/70 rounded-xl border border-[#00FFFF30] shadow-lg hover:scale-105 transition-all">
                 <h3 className="text-[#00FFFF] font-semibold mb-2">Active Users</h3>
-                <p className="text-xl font-bold">—</p>
+                <p className="text-xl font-bold">{activeUsers}</p>
               </div>
               <div className="p-6 bg-[#021B36]/70 rounded-xl border border-[#00FFFF30] shadow-lg hover:scale-105 transition-all">
                 <h3 className="text-[#00FFFF] font-semibold mb-2">Progress</h3>

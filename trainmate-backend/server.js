@@ -25,6 +25,7 @@ async function startServer() {
     app.use("/api", superAdminRoutes);
     app.use("/api", companyRoutes);
     app.use("/api", ingestRoutes);
+  
 
     app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);

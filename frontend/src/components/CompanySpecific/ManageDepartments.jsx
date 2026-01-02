@@ -28,7 +28,7 @@ export default function ManageDepartments() {
 
   // 🔹 departments fetch
   useEffect(() => {
-    if (!companyId) return; // ⛔ wait until available
+    if (!companyId) return; 
 
     const fetchDepartments = async () => {
       try {
@@ -46,13 +46,14 @@ export default function ManageDepartments() {
         const deptData = await Promise.all(
           snapshot.docs.map(async (deptDoc) => {
             const usersRef = collection(
-              db,
-              "companies",
-              companyId,
-              "departments",
-              deptDoc.id,
-              "users"
-            );
+  db,
+  "freshers",
+  companyId,
+  "departments",
+  deptDoc.id,
+  "users"
+);
+
 
             const usersSnap = await getDocs(usersRef);
 
@@ -108,10 +109,10 @@ export default function ManageDepartments() {
         {/* Header */}
         <div className="flex justify-between items-center mb-6">
           <div>
-            <h1 className="text-3xl font-bold text-[#00FFFF]">
+            <h1 className="text-3xl font-bold text-[#00FFFF] ">
               Manage Departments
             </h1>
-            <p className="text-[#AFCBE3] mt-1">
+            <p className="text-[#AFCBE3] mt-1 ">
               {companyName} — Departments Overview
             </p>
           </div>

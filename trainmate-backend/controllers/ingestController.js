@@ -28,7 +28,6 @@ export const ingestDocumentController = async (req, res) => {
 
     console.log("🚀 [INGEST] Starting background ingestion...");
 
-    // 🔥 Background ingest (non-blocking)
     ingestDocAsync({
       fileUrl,
       companyId,

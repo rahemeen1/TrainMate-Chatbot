@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { doc, getDoc } from "firebase/firestore";
-import { db } from "../../firebase"; // adjust the path
-import CompanySidebar from "./CompanySidebar"; // optional, if you want sidebar
+import { db } from "../../firebase"; 
+import CompanySidebar from "./CompanySidebar"; 
 
 
 export default function UserProfile() {
@@ -10,12 +10,9 @@ export default function UserProfile() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  console.log("URL Params:", { companyId, deptId, userId }); // log params
-
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        console.log("Fetching user from Firestore...");
         const userRef = doc(db, "freshers", companyId, "departments", deptId, "users", userId);
         const snap = await getDoc(userRef);
 
@@ -61,10 +58,23 @@ export default function UserProfile() {
           </div>
 
           <div className="flex-1 bg-[#021B36] p-6 rounded-xl shadow-lg">
-            <div className="mb-4">
-              <h2 className="text-xl font-semibold text-[#00FFFF]">Name</h2>
-              <p className="text-white">{user.name}</p>
-            </div>
+            <div className="mb-4 flex items-center justify-between">
+  <div>
+    <h2 className="text-xl font-semibold text-[#00FFFF]">Name</h2>
+    <p className="text-white">{user.name}</p>
+  </div>
+
+  {user.cvUrl && (
+    <a
+      href={user.cvUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="px-3 py-1 bg-[#00FFFF] text-[#031C3A] rounded font-semibold hover:bg-[#00e5e5] transition"
+    >
+      View CV
+    </a>
+  )}
+</div>
 
             <div className="mb-4">
               <h2 className="text-xl font-semibold text-[#00FFFF]">Email</h2>
