@@ -1,14 +1,13 @@
 import { getCohereClient } from "../config/cohere.js";
 import { getPineconeIndex } from "../config/pinecone.js";
 import { chunkText } from "../utils/chunkText.js";
-import { extractPdfText } from "../utils/pdfTextExtractor.js";
+import { extractFileText } from "../utils/TextExtractor.js";
 
 const normalizeValues = (vals) => {
-  // Accept arrays, typed arrays, or objects with .toJSON() etc.
   if (Array.isArray(vals)) return vals.map(Number);
   if (ArrayBuffer.isView(vals)) return Array.from(vals).map(Number);
   if (typeof vals === "object" && vals !== null && Array.isArray(vals.data)) return vals.data.map(Number);
-  // fallback: try to coerce
+
   try {
     return Array.from(vals).map(Number);
   } catch (e) {
@@ -27,8 +26,9 @@ export const ingestDocAsync = async ({
   const cohereClient = getCohereClient();
 
   try {
-    const pdfBuffer = await fetch(fileUrl).then(r => r.arrayBuffer());
-    const text = await extractPdfText(pdfBuffer);
+    const fileBuffer = await fetch(fileUrl).then(r => r.arrayBuffer());
+    const fileType = fileName.split(".").pop().toLowerCase();
+    const text = await extractFileText(fileBuffer, fileType);
 
     const chunks = chunkText(text, 500);
     const records = [];
@@ -39,10 +39,6 @@ export const ingestDocAsync = async ({
         input_type: "search_document",
         texts: [chunk],
       });
-
-      // --- DIAGNOSTIC: what does the embed response look like?
-      // console.log(JSON.stringify(embeddingResponse).slice(0, 1000));
-
       const raw = embeddingResponse?.embeddings?.[0] ?? embeddingResponse?.embedding ?? null;
       const values = normalizeValues(raw);
 
@@ -63,40 +59,23 @@ export const ingestDocAsync = async ({
       });
     }
 
-    // DEBUG: inspect records shape before upsert
-    console.log("🔎 [INGEST] records.length:", records.length);
-    if (records.length > 0) {
-      console.log("🔎 [INGEST] sample record keys:", Object.keys(records[0]));
-      console.log("🔎 [INGEST] sample id:", records[0].id);
-      console.log("🔎 [INGEST] sample values length:", Array.isArray(records[0].values) ? records[0].values.length : typeof records[0].values);
-    }
-
     // Try the expected upsert signature for your SDK
     await pineconeIndex
   .namespace(`company-${companyId}`)
   .upsert(records);
 
 
-    console.log(`✅ Document ${fileName} ingested successfully`);
   } catch (err) {
     // extra debug info
-    console.error("❌ [INGEST] Background ingest failed:");
+    console.error(" [INGEST] Background ingest failed:");
     console.error(err && err.stack ? err.stack : err);
 
     // If the error is Pinecone complaining about 'records', dump more info
     if (err && /records is not iterable|records is not iterable/i.test(String(err))) {
-      console.error("👉 Diagnosing payload:");
-      try {
-        // show only structural summary (avoid giant logs)
-        console.log("Type of records:", typeof records);
-        console.log("Is Array:", Array.isArray(records));
-        console.log("First item (typeof):", records?.[0] ? typeof records[0] : "no-record");
-        console.log("First item keys:", records?.[0] ? Object.keys(records[0]) : "no-record");
-      } catch (ex) {
-        console.error("Failed to print records diagnostic:", ex);
-      }
+      console.error("👉 Record is not iterable");
+      console.error("Records type:", typeof records);  
     }
 
-    throw err; // rethrow so caller sees failure
+    throw err; 
   }
 };
