@@ -16,16 +16,11 @@ export default function FresherDashboard() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  //const { email } = location.state || {};
-
   const [loading, setLoading] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
 
   const [userData, setUserData] = useState(null);
-  // const [userId, setUserId] = useState(null);
-  // const [companyId, setCompanyId] = useState(null);
-  // const [deptId, setDeptId] = useState(null);
-  // const [companyName, setCompanyName] = useState(null);
+  
 
   const state = location.state || {};
 
@@ -202,16 +197,13 @@ useEffect(() => {
           </p>
         </div>
 
-        <button
-          onClick={() =>
-            navigate("/fresher-roadmap", {
-              state: { userId, companyId, deptId },
-            })
-          }
-          className="px-5 py-2 rounded-lg bg-[#00FFFF] text-[#031C3A] font-semibold mb-4"
-        >
-          View Your Roadmap →
-        </button>
+       <button
+  onClick={() => navigate(`/fresher/roadmap/${companyId}/${deptId}/${userId}`)}
+  className="px-4 py-2 bg-[#00FFFF] text-[#031C3A] rounded"
+>
+  View Roadmap
+</button>
+
 
         <p className="italic text-[#AFCBE3] mt-2">
           Best of luck with your journey

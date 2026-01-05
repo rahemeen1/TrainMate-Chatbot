@@ -87,6 +87,7 @@ export default function OnboardingPage({
 
       // Upload CV if selected
       if (cvFile) {
+        
         const extension = cvFile.name.split(".").pop();
         const storageRef = ref(storage, `cvs/${companyId}/${deptId}/${userId}.${extension}`);
         console.log("⬆️ Uploading CV to Storage:", storageRef.fullPath);
@@ -116,6 +117,7 @@ export default function OnboardingPage({
             level,
             onboardingCompleted: true,
             completedAt: new Date(),
+          
           },
           cvUrl: cvUrl || null,
         },
