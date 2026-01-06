@@ -1,16 +1,9 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, collection, getDocs } from "firebase/firestore";
 import { db } from "../../firebase";
 import { FresherSideMenu } from "./FresherSideMenu";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
 export default function FresherProgress() {
   const location = useLocation();
@@ -20,6 +13,7 @@ export default function FresherProgress() {
   const [loading, setLoading] = useState(true);
   const [userData, setUserData] = useState(null);
   const [phaseProgress, setPhaseProgress] = useState([]);
+  const [overallProgress, setOverallProgress] = useState(0);
 
   useEffect(() => {
     if (!userId || !companyId || !deptId) {
@@ -27,17 +21,10 @@ export default function FresherProgress() {
       return;
     }
 
-    const fetchUser = async () => {
+    const fetchProgress = async () => {
       try {
-        const userRef = doc(
-          db,
-          "freshers",
-          companyId,
-          "departments",
-          deptId,
-          "users",
-          userId
-        );
+        // ✅ Get fresher data
+        const userRef = doc(db, "freshers", companyId, "departments", deptId, "users", userId);
         const snap = await getDoc(userRef);
         if (!snap.exists()) {
           alert("Fresher data not found!");
@@ -48,82 +35,70 @@ export default function FresherProgress() {
         const data = snap.data();
         setUserData(data);
 
-        // Generate phase progress dynamically
-        const totalMonths = data.trainingPeriod || 1;
-        const phaseCount = 3;
-        const phaseLength = totalMonths / phaseCount;
+        // ✅ Get all modules
+        const roadmapRef = collection(db, "freshers", companyId, "departments", deptId, "users", userId, "roadmap");
+        const roadmapSnap = await getDocs(roadmapRef);
+        const modules = roadmapSnap.docs.map((doc) => doc.data());
 
-        const phases = Array.from({ length: phaseCount }, (_, i) => ({
-          name: `Phase ${i + 1}`,
-          progress:
-            data.progress >= ((i + 1) / phaseCount) * 100
-              ? 100
-              : Math.max(
-                  0,
-                  ((data.progress - (i / phaseCount) * 100) / (100 / phaseCount)) *
-                    100
-                ),
-        }));
+        const totalModules = modules.length;
+        const completedModules = modules.filter((m) => m.completed).length;
+
+        const overallPercent = Math.round((completedModules / totalModules) * 100) || 0;
+        setOverallProgress(overallPercent);
+
+        // ✅ Phase-wise progress
+        const phaseCount = 3;
+        const modulesPerPhase = Math.ceil(totalModules / phaseCount);
+        const phases = Array.from({ length: phaseCount }, (_, i) => {
+          const start = i * modulesPerPhase;
+          const end = start + modulesPerPhase;
+          const phaseModules = modules.slice(start, end);
+          const completedPhase = phaseModules.filter((m) => m.completed).length;
+          const percent = phaseModules.length > 0 ? Math.round((completedPhase / phaseModules.length) * 100) : 0;
+          return { name: `Phase ${i + 1}`, progress: percent };
+        });
 
         setPhaseProgress(phases);
       } catch (err) {
         console.error(err);
-        alert("Error fetching fresher data");
+        alert("Error fetching fresher progress");
       } finally {
         setLoading(false);
       }
     };
 
-    fetchUser();
+    fetchProgress();
   }, [userId, companyId, deptId, navigate]);
 
-  if (loading)
-    return <p className="text-white p-10">Loading fresher progress...</p>;
+  if (loading) return <p className="text-white p-10">Loading fresher progress...</p>;
   if (!userData) return <p className="text-white p-10">No data available.</p>;
 
   return (
     <div className="flex min-h-screen bg-[#031C3A] text-white">
-      {/* Sidebar */}
       <div className="w-64 bg-[#021B36]/90 p-4">
-        <FresherSideMenu
-          userId={userId}
-          companyId={companyId}
-          deptId={deptId}
-          companyName={companyName}
-        />
+        <FresherSideMenu userId={userId} companyId={companyId} deptId={deptId} companyName={companyName} />
       </div>
 
-      {/* Main Content */}
       <div className="flex-1 p-10">
         <div className="mb-6">
-          <h1 className="text-3xl font-bold text-[#00FFFF]">
-            {userData.name}'s Progress
-          </h1>
+          <h1 className="text-3xl font-bold text-[#00FFFF]">{userData.name}'s Progress</h1>
           <p className="text-[#AFCBE3] mt-1">
-            Department: {userData.deptName} | Level: {userData.level} | Expertise:{" "}
-            {userData.expertise}
+            Department: {userData.deptName} | Level: {userData.onboarding?.level} | Expertise: {userData.onboarding?.expertise}
           </p>
         </div>
 
         {/* Overall Progress */}
         <div className="bg-[#021B36]/80 p-6 rounded-xl border border-[#00FFFF30] mb-6">
-          <h2 className="text-xl text-[#00FFFF] font-semibold mb-2">
-            Overall Training Progress
-          </h2>
+          <h2 className="text-xl text-[#00FFFF] font-semibold mb-2">Overall Training Progress</h2>
           <div className="w-full h-6 bg-[#031C3A] rounded-full overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-[#00FFFF] to-green-400"
-              style={{ width: `${userData.progress || 0}%` }}
-            />
+            <div className="h-full bg-gradient-to-r from-[#00FFFF] to-green-400" style={{ width: `${overallProgress}%` }} />
           </div>
-          <p className="mt-2 text-[#AFCBE3]">{userData.progress || 0}% completed</p>
+          <p className="mt-2 text-[#AFCBE3]">{overallProgress}% completed</p>
         </div>
 
-        {/* Phase-wise Progress Chart */}
+        {/* Phase-wise Chart */}
         <div className="bg-[#021B36]/80 p-6 rounded-xl border border-[#00FFFF30] mb-6">
-          <h2 className="text-xl text-[#00FFFF] font-semibold mb-4">
-            Phase-wise Progress
-          </h2>
+          <h2 className="text-xl text-[#00FFFF] font-semibold mb-4">Phase-wise Progress</h2>
           <ResponsiveContainer width="100%" height={250}>
             <BarChart data={phaseProgress}>
               <XAxis dataKey="name" stroke="#ffffffff" />
@@ -134,9 +109,7 @@ export default function FresherProgress() {
           </ResponsiveContainer>
         </div>
 
-        <p className="text-center text-xs text-[#AFCBE3] mt-10">
-          Powered by TrainMate
-        </p>
+        <p className="text-center text-xs text-[#AFCBE3] mt-10">Powered by TrainMate</p>
       </div>
     </div>
   );

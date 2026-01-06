@@ -1,3 +1,4 @@
+//FresherDashboard.jsx
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
@@ -198,7 +199,7 @@ useEffect(() => {
         </div>
 
        <button
-  onClick={() => navigate(`/fresher/roadmap/${companyId}/${deptId}/${userId}`)}
+  onClick={() => navigate("/fresher-training", { state: { userId, companyId, deptId, companyName } })}
   className="px-4 py-2 bg-[#00FFFF] text-[#031C3A] rounded"
 >
   View Roadmap

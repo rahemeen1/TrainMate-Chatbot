@@ -36,7 +36,7 @@ export default function App() {
         <Route path="/fresher-training" element={<FresherTraining />} />
         <Route path="/fresher-progress" element={<FresherProgress />} />
         <Route path="/CompanySpecific/TotalUsers" element={<TotalUsers />} />
-        <Route path="/fresher/roadmap/:companyId/:deptId/:userId" element={<Roadmap />} />  
+        <Route path="/roadmap/:companyId/:deptId/:userId" element={<Roadmap />} /> 
 
       </Routes>
 

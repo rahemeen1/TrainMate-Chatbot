@@ -4,44 +4,99 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-// 1️⃣ Init Pinecone client
+/* ---------------------------------
+   INIT PINECONE CLIENT
+---------------------------------- */
+
+console.log("🔥 pineconeService.js loaded");
+
+if (!process.env.PINECONE_API_KEY) {
+  throw new Error("❌ PINECONE_API_KEY missing");
+}
+
+if (!process.env.PINECONE_INDEX_NAME) {
+  throw new Error("❌ PINECONE_INDEX_NAME missing");
+}
+
 const pinecone = new Pinecone({
-  apiKey: process.env.PINECONE_API_KEY
+  apiKey: process.env.PINECONE_API_KEY,
 });
 
-// 2️⃣ Select index
-const index = pinecone.index(process.env.PINECONE_INDEX_NAME);
+/* ---------------------------------
+   QUERY FUNCTION
+---------------------------------- */
 
-/**
- * Query Pinecone using metadata filters for department
- */
-export const queryPinecone = async ({ companyId, deptName }) => {
-  console.log("📡 Pinecone query started");
-  console.log("🔎 Filters:", { companyId, deptName });
+export const queryPinecone = async ({
+  companyId,
+  deptName,
+  trainingOn,
+}) => {
+  console.log("📡 queryPinecone started");
+
+  console.log("🔎 Filters received:", {
+    companyId,
+    deptName,
+    trainingOn,
+  });
 
   try {
+    /* ---------------------------------
+       CONNECT TO INDEX (SAFE)
+    ---------------------------------- */
+    const index = await pinecone.index(
+      process.env.PINECONE_INDEX_NAME
+    );
+    console.log("✅ Pinecone index connected");
+
+    /* ---------------------------------
+       VECTOR (MATCHES INDEX DIMENSION)
+    ---------------------------------- */
+    const VECTOR_DIMENSION = 1024;
+    const dummyVector = Array(VECTOR_DIMENSION).fill(0);
+
+    /* ---------------------------------
+       QUERY PINECONE
+    ---------------------------------- */
     const response = await index.query({
+      vector: dummyVector,
       topK: 10,
+      namespace: "train-mate15",
       includeMetadata: true,
       filter: {
         companyId: { $eq: companyId },
-        deptName: { $eq: deptName }
-      }
+        deptName: { $eq: deptName },
+        trainingOn: { $eq: trainingOn },
+      },
     });
 
-    console.log("📦 Pinecone raw matches count:", response.matches?.length || 0);
+    console.log(
+      "📦 Pinecone matches count:",
+      response.matches?.length || 0
+    );
 
-    const chunks = response.matches.map((match, i) => ({
-      text: `[Refer to file: ${match.metadata?.fileName || "unknown"}]`,
-      fileName: match.metadata?.fileName,
-      chunkIndex: match.metadata?.chunkIndex ?? i
-    }));
+    /* ---------------------------------
+       EXTRACT TEXT CHUNKS
+    ---------------------------------- */
+    const chunks = (response.matches || []).map(
+      (match, idx) => ({
+        text: match.metadata?.text || "",
+        fileName: match.metadata?.fileName || null,
+        chunkIndex: match.metadata?.chunkIndex ?? idx,
+      })
+    );
 
-    console.log("📚 Extracted Pinecone chunks:", chunks.length);
+    console.log("📚 Extracted chunks:", chunks.length);
+
+    if (chunks.length === 0) {
+      console.warn(
+        "⚠️ No Pinecone data found for given filters"
+      );
+    }
+
     return chunks;
-  } catch (err) {
-    console.error("🔥 Pinecone query failed:", err);
-    return [];
+
+  } catch (error) {
+    console.error("🔥 Pinecone query failed:", error);
+    throw error;
   }
 };
-

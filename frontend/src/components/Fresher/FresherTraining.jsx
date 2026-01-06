@@ -1,3 +1,4 @@
+//FresherTraining.jsx
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { doc, getDoc } from "firebase/firestore";
@@ -153,7 +154,7 @@ if (answersSnap.exists()) {
                   <li key={i}>{task}</li>
                 ))}
               </ul>
-              <button
+              {/* <button
             onClick={() =>
               navigate("/roadmap", {
                 state: {
@@ -167,7 +168,23 @@ if (answersSnap.exists()) {
             className="px-5 py-2 bg-[#00FFFF] text-[#031C3A] rounded font-semibold hover:bg-white"
           >
             View Module Details
-          </button>
+          </button> */}
+
+          <button
+  onClick={() =>
+    navigate(
+      `/roadmap/${companyId}/${deptId}/${userId}`,
+      {
+        state: {
+          phase: idx + 1,
+        },
+      }
+    )
+  }
+  className="px-5 py-2 bg-[#00FFFF] text-[#031C3A] rounded font-semibold hover:bg-white"
+>
+  View Module Details
+</button>
             </div>
             
           ))}
