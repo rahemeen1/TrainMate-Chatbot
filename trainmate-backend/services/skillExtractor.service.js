@@ -1,37 +1,26 @@
-export const extractSkillsFromText = async (cvText) => {
-  console.log("[SKILLS] Skill extraction started");
+// skillExtractor.js
 
-  if (!cvText) {
-    console.warn("[SKILLS][WARN] Empty CV text received");
-    return {};
+export const extractSkillsFromText = (text) => {
+  if (!text || typeof text !== "string" || text.trim() === "") {
+    console.warn("[SKILLS][WARN] Empty text received");
+    return [];
   }
 
-  // TEMP SIMPLE LOGIC (later LLM)
-  const skills = [];
+  console.log("[SKILLS] Skill extraction started");
 
-  const knownSkills = [
-    "javascript",
-    "react",
-    "node",
-    "express",
-    "mongodb",
-    "html",
-    "css",
-    "git"
+  const predefinedSkills = [
+    "javascript", "react", "node", "mongodb",
+    "html", "css", "python", "django", "sql",
+    "recruitment", "onboarding", "payroll",
+    "interviewing", "training", "hr policies",
+    "employee engagement", "performance review"
   ];
 
-  const lowerText = cvText.toLowerCase();
+  const foundSkills = predefinedSkills.filter(skill =>
+    text.toLowerCase().includes(skill.toLowerCase())
+  );
 
-  knownSkills.forEach(skill => {
-    if (lowerText.includes(skill)) {
-      skills.push(skill);
-    }
-  });
+  console.log("[SKILLS] Skills detected:", foundSkills);
 
-  console.log("[SKILLS] Skills detected:", skills);
-
-  return {
-    skills,
-    level: "Medium" // placeholder
-  };
+  return foundSkills;
 };

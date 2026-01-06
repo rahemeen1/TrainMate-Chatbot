@@ -81,7 +81,7 @@ JSON FORMAT:
 ]
 `;
 
-    console.log("📨 Sending prompt to Gemini (No Pinecone)");
+    console.log("📨 Sending prompt to Gemini");
 
     const result = await model.generateContent(prompt);
     const response = await result.response;
