@@ -94,8 +94,8 @@ export default function FresherChatbot() {
         {/* Header with neon/glass style */}
         <div className="bg-[#021B36]/90 p-4 border-b border-[#00FFFF50] flex flex-col md:flex-row justify-between items-start md:items-center gap-2 md:gap-0 shadow-lg">
           <div>
-            <h2 className="text-2xl font-bold text-[#00FFFF] drop-shadow-[0_0_5px_cyan]">
-              TrainMate Bot
+            <h2 className="text-2xl font-bold text-[#00FFFF]">
+              Welcome to TrainMate Chatbot!
             </h2>
             <p className="text-[#AFCBE3] text-sm mt-1">
               {userData?.name || "Fresher"} | <span className="text-[#00FFFF]">{userData?.deptName}</span> | <span className="text-[#00FFFF]">{userData?.companyName}</span>
@@ -110,37 +110,53 @@ export default function FresherChatbot() {
         </div>
 
         {/* Chat History */}
-        <div className="flex-1 p-6 overflow-y-auto space-y-4 bg-[#031C3A]">
-          {messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`flex ${msg.from === "user" ? "justify-end" : "justify-start"}`}
-            >
-              <div
-                className={`px-4 py-2 rounded-xl max-w-[70%] animate-fadeIn 
-                  ${msg.from === "user"
-                    ? "bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] rounded-br-none shadow-lg"
-                    : "bg-[#031C3A]/80 text-[#00FFFF] rounded-bl-none border border-[#00FFFF30] shadow-md"
-                  }`}
-              >
-                {msg.text}
-              </div>
-            </div>
-          ))}
-
-          {/* Typing indicator */}
-          {typing && (
-            <div className="flex justify-start">
-              <div className="px-4 py-2 rounded-xl bg-[#031C3A]/80 text-[#00FFFF] rounded-bl-none flex gap-1 items-center border border-[#00FFFF50] shadow-md">
-                <span className="animate-bounce">•</span>
-                <span className="animate-bounce delay-150">•</span>
-                <span className="animate-bounce delay-300">•</span>
-              </div>
-            </div>
-          )}
-
-          <div ref={chatEndRef} />
+          <div className="flex-1 px-8 py-6 overflow-y-auto bg-gradient-to-b from-[#021B36] to-[#031C3A] space-y-6">
+  {messages.map((msg) => (
+    <div
+      key={msg.id}
+      className={`flex items-end gap-3 ${
+        msg.from === "user" ? "justify-end" : "justify-start"
+      }`}
+    >
+      {/* Bot Avatar */}
+      {msg.from === "bot" && (
+        <div className="w-9 h-9 rounded-full bg-[#00FFFF20] flex items-center justify-center border border-[#00FFFF40] shadow-md">
+          💬
         </div>
+      )}
+
+      {/* Message Bubble */}
+      <div
+        className={`px-5 py-3 max-w-[65%] text-sm leading-relaxed backdrop-blur-md
+        ${
+          msg.from === "user"
+            ? "bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] rounded-2xl rounded-br-md shadow-lg"
+            : "bg-[#031C3A]/70 text-[#AFCBE3] rounded-2xl rounded-bl-md border border-[#00FFFF30] shadow-md"
+        }`}
+      >
+        {msg.text}
+      </div>
+    </div>
+  ))}
+
+  {/* Typing Indicator */}
+  {typing && (
+    <div className="flex items-center gap-3">
+      <div className="w-9 h-9 rounded-full bg-[#00FFFF20] flex items-center justify-center border border-[#00FFFF40] shadow-md">
+        💬
+      </div>
+
+      <div className="px-4 py-2 rounded-2xl bg-[#031C3A]/70 border border-[#00FFFF30] flex gap-1 shadow-md">
+        <span className="animate-bounce">•</span>
+        <span className="animate-bounce delay-150">•</span>
+        <span className="animate-bounce delay-300">•</span>
+      </div>
+    </div>
+  )}
+
+  <div ref={chatEndRef} />
+</div>
+
 
         {/* Input Box */}
         <div className="bg-[#021B36]/90 p-4 border-t border-[#00FFFF50] flex gap-2 items-center">
