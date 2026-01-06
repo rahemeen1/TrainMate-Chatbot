@@ -3,50 +3,64 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-// Initialize Gemini
+if (!process.env.GEMINI_API_KEY) {
+  throw new Error("❌ GEMINI_API_KEY missing");
+}
+
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-/**
- * Generates a personalized roadmap using CV + company knowledge via Gemini
- */
 export const generateRoadmap = async ({
-  cvText,
-  pineconeContext,
+  cvText = "",
   trainingOn,
   expertise,
   level,
-  trainingDuration
+  trainingDuration,
 }) => {
-  console.log("🧠 Gemini LLM roadmap generation started");
+  console.log("🧠 Gemini LLM roadmap generation started (No Pinecone)");
+
+  /* -------------------------
+     SAFETY FALLBACKS
+  ------------------------- */
+  const safeTrainingOn = trainingOn || "General";
+  const safeExpertise = expertise ?? 1;
+  const safeLevel = level || "Beginner";
+  const safeDuration = trainingDuration || "1 month";
+
+  console.log("🧪 Gemini Inputs:", {
+    safeTrainingOn,
+    safeExpertise,
+    safeLevel,
+    safeDuration,
+  });
 
   try {
-    // 1️⃣ Prepare company context
-    const companyDocsText = pineconeContext
-      .map((c, i) => `(${i + 1}) ${c.text}`)
-      .join("\n");
-
-    // 2️⃣ Expertise guidance
+    /* -------------------------
+       Expertise Instructions
+    ------------------------- */
     const expertiseInstruction =
-      expertise <= 2
-        ? "User is beginner. Start from fundamentals."
-        : expertise === 3
-        ? "User is intermediate. Brief fundamentals then advance."
-        : "User is experienced. Skip basics, focus on practical & advanced topics.";
+      safeExpertise <= 2
+        ? "User is a beginner. Start from fundamentals with simple examples."
+        : safeExpertise === 3
+        ? "User is intermediate. Brief fundamentals then move to applied concepts."
+        : "User is experienced. Skip basics and focus on advanced, real-world practices.";
 
-    // 3️⃣ Initialize Model with System Instruction
+    /* -------------------------
+       Gemini Model
+    ------------------------- */
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash", // Use "gemini-1.5-pro" for complex reasoning
+      model: "gemini-2.5-flash",
       generationConfig: {
-        responseMimeType: "application/json", // Forces JSON output
+        responseMimeType: "application/json",
       },
-      systemInstruction: "You are an AI training architect. You must return ONLY valid JSON in the requested format.",
+      systemInstruction:
+        "You are an AI training architect. Respond ONLY with valid JSON. No explanations.",
     });
 
     const prompt = `
 User Profile:
-- Training Domain: ${trainingOn}
-- Expertise Level: ${expertise} (${level})
-- Training Duration: ${trainingDuration || "not specified"}
+- Training Domain: ${safeTrainingOn}
+- Expertise Level: ${safeExpertise} (${safeLevel})
+- Training Duration: ${safeDuration}
 
 Guidance:
 ${expertiseInstruction}
@@ -54,12 +68,8 @@ ${expertiseInstruction}
 User CV:
 ${cvText}
 
-Company Knowledge Base:
-${companyDocsText}
-
 TASK:
-Create a personalized learning roadmap focusing ONLY on "${trainingOn}".
-Consider company practices from the provided documents.
+Create a personalized training roadmap focused ONLY on "${safeTrainingOn}".
 
 JSON FORMAT:
 [
@@ -71,25 +81,39 @@ JSON FORMAT:
 ]
 `;
 
-    console.log("📨 Sending prompt to Gemini");
+    console.log("📨 Sending prompt to Gemini (No Pinecone)");
 
-    // 4️⃣ Call Gemini API
     const result = await model.generateContent(prompt);
     const response = await result.response;
-    const rawResponse = response.text();
+    const rawResponse = await response.text();
 
-    console.log("📩 Gemini response received");
+    console.log("📩 Gemini raw response received");
 
-    // 5️⃣ Parse response safely
+    /* -------------------------
+       Strict JSON Parsing
+    ------------------------- */
     let roadmap;
     try {
       roadmap = JSON.parse(rawResponse);
     } catch (err) {
-      console.error("❌ Failed to parse Gemini JSON", rawResponse);
-      throw new Error("Invalid Gemini JSON output");
+      console.error("❌ Invalid Gemini JSON:", rawResponse);
+      throw new Error("Gemini returned invalid JSON");
     }
 
-    console.log("🧩 Parsed roadmap modules:", roadmap.length);
+    if (!Array.isArray(roadmap)) {
+      throw new Error("Gemini response is not an array");
+    }
+
+    /* -------------------------
+       Validate each module
+    ------------------------- */
+    roadmap = roadmap.map((module, idx) => ({
+      moduleTitle: module.moduleTitle ?? `Module ${idx + 1}`,
+      description: module.description ?? "No description provided",
+      estimatedDays: module.estimatedDays ?? 1,
+    }));
+
+    console.log("🧩 Roadmap modules generated:", roadmap.length);
     return roadmap;
 
   } catch (error) {

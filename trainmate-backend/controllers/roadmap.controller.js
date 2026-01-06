@@ -9,10 +9,21 @@ export const generateUserRoadmap = async (req, res) => {
   console.log("🚀 Roadmap generation request received");
 
   try {
-    const { companyId, deptId, userId } = req.body;
-    console.log("📥 Input:", { companyId, deptId, userId });
+    const {
+      companyId,
+      deptId,
+      userId,
+      trainingTime,
+      expertiseScore,
+      expertiseLevel,
+      trainingOn: trainingOnFromClient,
+    } = req.body;
 
-    // ✅ ADMIN SDK FIRESTORE
+    console.log("📥 Input:", req.body);
+
+    /* -------------------------
+       1️⃣ Fetch User
+    ------------------------- */
     const userRef = db
       .collection("freshers")
       .doc(companyId)
@@ -31,45 +42,117 @@ export const generateUserRoadmap = async (req, res) => {
     console.log("✅ User fetched:", user.name);
 
     if (!user.onboarding?.onboardingCompleted || !user.cvUrl) {
-      return res.status(400).json({ error: "Onboarding incomplete" });
+      return res.status(400).json({
+        error: "Onboarding incomplete or CV missing",
+      });
     }
 
-    const { trainingOn, expertise, level, cvUrl } = user;
+    /* -------------------------
+       2️⃣ Prevent Duplicate Roadmap
+    ------------------------- */
+    const roadmapSnap = await userRef
+      .collection("roadmap")
+      .limit(1)
+      .get();
 
-    // 🔽 CV DOWNLOAD
-    const cvResponse = await axios.get(cvUrl, {
+    if (!roadmapSnap.empty) {
+      console.warn("⚠ Roadmap already exists. Skipping generation.");
+
+      return res.json({
+        success: true,
+        skipped: true,
+        message: "Roadmap already exists",
+      });
+    }
+
+    /* -------------------------
+       3️⃣ Normalize Inputs (FINAL)
+    ------------------------- */
+    const trainingOn =
+      trainingOnFromClient ||
+      user.trainingOn ||
+      "General";
+
+    const expertise =
+      expertiseScore ??
+      user.onboarding?.expertise ??
+      1;
+
+    const level =
+      expertiseLevel ||
+      user.onboarding?.level ||
+      "Beginner";
+
+    const finalTrainingDuration =
+      trainingTime || "1 month";
+
+    console.log("🎯 FINAL VALUES USED:", {
+      trainingOn,
+      expertise,
+      level,
+      finalTrainingDuration,
+    });
+
+    /* -------------------------
+       4️⃣ Download & Extract CV
+    ------------------------- */
+    const cvResponse = await axios.get(user.cvUrl, {
       responseType: "arraybuffer",
     });
 
-    const fileType = cvUrl.endsWith(".pdf") ? "pdf" : "docx";
-    const cvText = await extractFileText(cvResponse.data, fileType);
+    const fileType = user.cvUrl.endsWith(".pdf")
+      ? "pdf"
+      : "docx";
 
-    // 🔍 PINECONE
+    const cvText = await extractFileText(
+      cvResponse.data,
+      fileType
+    );
+
+    /* -------------------------
+       5️⃣ Pinecone Context
+    ------------------------- */
     const pineconeContext = await queryPinecone({
       companyId,
       deptName: deptId,
     });
 
-    // 🧠 LLM
+    /* -------------------------
+       6️⃣ Generate Roadmap (LLM)
+    ------------------------- */
     const roadmapModules = await generateRoadmap({
       cvText,
       pineconeContext,
       trainingOn,
       expertise,
       level,
+      trainingDuration: finalTrainingDuration,
     });
 
-    // 💾 SAVE ROADMAP
+    if (!Array.isArray(roadmapModules) || !roadmapModules.length) {
+      throw new Error("LLM returned empty roadmap");
+    }
+
+    /* -------------------------
+       7️⃣ Save Roadmap (ORDERED)
+    ------------------------- */
     const roadmapCollection = userRef.collection("roadmap");
 
-    for (let i = 0; i < roadmapModules.length; i++) {
-      await roadmapCollection.add({
-        ...roadmapModules[i],
-        order: i + 1,
+    const batch = db.batch();
+
+    roadmapModules.forEach((module, index) => {
+      const docRef = roadmapCollection.doc();
+      batch.set(docRef, {
+        ...module,
+        order: index + 1,
         status: "pending",
         createdAt: new Date(),
       });
-    }
+    });
+
+    await batch.commit();
+
+    console.log("✅ Roadmap saved successfully");
 
     return res.json({
       success: true,
@@ -77,7 +160,8 @@ export const generateUserRoadmap = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("🔥 Roadmap generation failed:", error.stack);
+    console.error("🔥 Roadmap generation failed:", error);
+
     return res.status(500).json({
       error: error.message || "Roadmap generation failed",
     });

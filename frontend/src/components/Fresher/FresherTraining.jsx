@@ -41,23 +41,46 @@ export default function FresherTraining() {
 
         const data = snap.data();
         setUserData(data);
+        // Fetch onboarding answers
+const answersRef = doc(
+  db,
+  "companies",
+  companyId,
+  "onboardingAnswers",
+  `${userId}answers` // 👈 same ID you showed
+);
 
-        // Determine training duration (you can get this from DB if stored)
-        const totalMonths = data.trainingPeriod || 1; // fallback 1 month
+const answersSnap = await getDoc(answersRef);
+
+let totalMonths = 1; // default fallback
+
+if (answersSnap.exists()) {
+  const answersData = answersSnap.data();
+
+  // Question 1 = training duration (e.g. "3 months")
+  const periodStr = answersData[1]; // "3 months"
+
+  if (periodStr) {
+    totalMonths = parseInt(periodStr); // → 3
+  }
+}
+
         const phaseCount = 3; // divide into 3 phases
-        const phaseLength = totalMonths / phaseCount;
+       const phaseLength = Math.ceil(totalMonths / phaseCount);
+
 
         // Generate roadmap phases dynamically
         const phaseArr = Array.from({ length: phaseCount }, (_, i) => ({
           title: `Phase ${i + 1}`,
-          duration: `${(i * phaseLength + 1).toFixed(0)} - ${(
-            (i + 1) * phaseLength
-          ).toFixed(0)} month`,
-          tasks: [
-            `Complete module ${i * 3 + 1}`,
-            `Complete module ${i * 3 + 2}`,
-            `Complete module ${i * 3 + 3}`,
-          ],
+           duration: `Month ${i * phaseLength + 1} - ${Math.min(
+              (i + 1) * phaseLength,
+              totalMonths
+            )}`,
+            tasks: [
+              `Complete module ${i * 3 + 1}`,
+              `Complete module ${i * 3 + 2}`,
+              `Complete module ${i * 3 + 3}`,
+            ],
         }));
 
         setPhases(phaseArr);
@@ -122,13 +145,31 @@ export default function FresherTraining() {
               <h2 className="text-xl font-semibold text-[#00FFFF] mb-2">
                 {phase.title}
               </h2>
+
               <p className="text-[#AFCBE3] mb-2">Duration: {phase.duration}</p>
+              
               <ul className="list-disc list-inside text-[#AFCBE3] space-y-1">
                 {phase.tasks.map((task, i) => (
                   <li key={i}>{task}</li>
                 ))}
               </ul>
+              <button
+            onClick={() =>
+              navigate("/roadmap", {
+                state: {
+                  userId,
+                  companyId,
+                  deptId,
+                  phase: idx + 1,
+                },
+              })
+            }
+            className="px-5 py-2 bg-[#00FFFF] text-[#031C3A] rounded font-semibold hover:bg-white"
+          >
+            View Module Details
+          </button>
             </div>
+            
           ))}
         </div>
 
