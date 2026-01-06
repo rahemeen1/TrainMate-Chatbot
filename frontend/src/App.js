@@ -15,6 +15,7 @@ import FresherTraining from "./components/Fresher/FresherTraining";
 import FresherProgress from "./components/Fresher/FresherProgress";
 import TotalUsers from "./components/CompanySpecific/TotalUsers";
 import Roadmap from "./components/Fresher/Roadmap";
+import Chatbot from "./components/Fresher/Chatbot";
 
 export default function App() {
   return (
@@ -37,6 +38,7 @@ export default function App() {
         <Route path="/fresher-progress" element={<FresherProgress />} />
         <Route path="/CompanySpecific/TotalUsers" element={<TotalUsers />} />
         <Route path="/roadmap/:companyId/:deptId/:userId" element={<Roadmap />} /> 
+        <Route path="/chatbot" element={<Chatbot />} />
 
       </Routes>
 

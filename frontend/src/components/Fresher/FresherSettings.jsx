@@ -1,4 +1,5 @@
-import { useLocation } from "react-router-dom";
+// FresherSettings.jsx
+import { useLocation, useParams, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db, auth } from "../../firebase";
@@ -9,6 +10,7 @@ import { reauthenticateWithCredential, EmailAuthProvider, updatePassword, update
 
 export default function FresherSettings() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { userId, companyId, deptId, companyName } = location.state || {};
 
   const [loading, setLoading] = useState(true);
@@ -96,7 +98,59 @@ export default function FresherSettings() {
     docPDF.save(`${userId}_credentials.pdf`);
   };
 
-  if (loading) return <p className="text-white text-left mt-20 ml-10">Loading...</p>;
+  // if (loading) return <p className="text-white text-left mt-20 ml-10">Loading...</p>;
+  if (loading) {
+  return (
+    <div className="flex min-h-screen bg-[#031C3A] text-white">
+      {/* Sidebar */}
+      <div className="w-64 bg-[#021B36]/90 p-4">
+        <FresherSideMenu
+          userId={userId}
+          companyId={companyId}
+          deptId={deptId}
+          companyName={companyName}
+        />
+      </div>
+
+      {/* Center Loader */}
+      <div className="flex-1 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          
+          {/* ⏳ Hourglass Loader */}
+          <div className="hourglass-loader" />
+
+          <p className="text-[#00FFFF] tracking-wide text-sm">
+            Preparing your workspace...
+          </p>
+        </div>
+      </div>
+
+      {/* Loader Styles */}
+      <style>
+        {`
+          .hourglass-loader {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #00FFFF30;
+            border-top: 3px solid #00FFFF;
+            border-bottom: 3px solid #00FFFF;
+            border-radius: 50%;
+            animation: hourglassSpin 1.2s linear infinite;
+            box-shadow: 0 0 12px #00FFFF40;
+          }
+
+          @keyframes hourglassSpin {
+            0% { transform: rotate(0deg); }
+            50% { transform: rotate(180deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}
+      </style>
+    </div>
+  );
+}
+
+
 
   return (
     <div className="flex min-h-screen bg-[#031C3A] text-white">

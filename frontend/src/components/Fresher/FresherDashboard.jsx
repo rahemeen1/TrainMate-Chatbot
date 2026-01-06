@@ -109,13 +109,50 @@ useEffect(() => {
     fetchUser();
   }, [email, navigate]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#031C3A] flex items-center justify-center text-white">
-        Loading...
+if (loading) {
+  return (
+    <div className="flex min-h-screen bg-[#031C3A] text-white">
+      {/* Sidebar */}
+      <div className="w-64 bg-[#021B36]/90 p-4">
+        <FresherSideMenu userId={userId} companyId={companyId} deptId={deptId} companyName={companyName} />
       </div>
-    );
-  }
+      {/* Center Loader */}
+      <div className="flex-1 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          
+          {/* ⏳ Hourglass Loader */}
+          <div className="hourglass-loader" />
+
+          <p className="text-[#00FFFF] tracking-wide text-sm">
+            Preparing your workspace...
+          </p>
+        </div>
+      </div>
+
+      {/* Loader Styles */}
+      <style>
+        {`
+          .hourglass-loader {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #00FFFF30;
+            border-top: 3px solid #00FFFF;
+            border-bottom: 3px solid #00FFFF;
+            border-radius: 50%;
+            animation: hourglassSpin 1.2s linear infinite;
+            box-shadow: 0 0 12px #00FFFF40;
+          }
+
+          @keyframes hourglassSpin {
+            0% { transform: rotate(0deg); }
+            50% { transform: rotate(180deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}
+      </style>
+    </div>
+  );
+}
 
   if (showOnboarding) {
     return (
@@ -197,16 +234,24 @@ useEffect(() => {
             {userData?.progress || 0}% completed
           </p>
         </div>
+           <div className="flex gap-4 mt-4">
+  {/* View Roadmap Button */}
+  <button
+    onClick={() => navigate(`/roadmap/${companyId}/${deptId}/${userId}`)}
+    className="px-6 py-3 bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] font-semibold rounded-xl shadow-lg hover:scale-105 hover:shadow-2xl transition-transform duration-200"
+  >
+    View Roadmap
+  </button>
 
-      <button
-      
-  onClick={() => navigate(`/roadmap/${companyId}/${deptId}/${userId}`)}
-  className="px-4 py-2 bg-[#00FFFF] text-[#031C3A] rounded"
->
-  View Roadmap
-</button>
-
-        <p className="italic text-[#AFCBE3] mt-2">
+  {/* Chat with Bot Button */}
+  <button
+    onClick={() => navigate("/chatbot", { state: { userId, companyId, deptId, companyName, email } })}
+    className="px-6 py-3 bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] font-semibold rounded-xl shadow-lg hover:scale-105 hover:shadow-2xl transition-transform duration-200 flex items-center gap-2"
+  >
+    💬 Chat with Bot
+  </button>
+</div>
+       <p className="italic text-[#AFCBE3] mt-2">
           Best of luck with your journey
         </p>
 

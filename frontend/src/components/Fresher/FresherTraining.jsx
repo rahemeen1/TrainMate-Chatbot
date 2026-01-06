@@ -11,6 +11,8 @@ export default function FresherTraining() {
   const location = useLocation();
   const navigate = useNavigate();
   const selectedModuleId = location.state?.moduleId || null;
+  const companyName = location.state?.companyName || "";
+
 
   const [roadmap, setRoadmap] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -112,32 +114,61 @@ export default function FresherTraining() {
   // ⏳ Skeleton Loader
   // ===============================
   if (loading) {
-    return (
-      <div className="flex min-h-screen bg-[#031C3A] text-white">
-        <div className="w-64 bg-[#021B36]" />
-        <div className="flex-1 p-10 space-y-4 animate-pulse">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-24 bg-[#021B36] rounded-xl" />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="flex min-h-screen bg-[#031C3A] text-white">
       {/* Sidebar */}
-      <div className="w-64 sticky top-0 h-screen">
-        <FresherSideMenu
-          companyId={companyId}
-          deptId={deptId}
-          userId={userId}
-        />
+      <div className="w-64 flex-shrink-0 bg-[#021B36]/90 p-4">
+        <FresherSideMenu userId={userId} companyId={companyId} deptId={deptId} companyName={companyName} />
+      </div>
+      {/* Center Loader */}
+      <div className="flex-1 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          
+          {/* ⏳ Hourglass Loader */}
+          <div className="hourglass-loader" />
+
+          <p className="text-[#00FFFF] tracking-wide text-sm">
+            Preparing your workspace...
+          </p>
+        </div>
       </div>
 
+      {/* Loader Styles */}
+      <style>
+        {`
+          .hourglass-loader {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #00FFFF30;
+            border-top: 3px solid #00FFFF;
+            border-bottom: 3px solid #00FFFF;
+            border-radius: 50%;
+            animation: hourglassSpin 1.2s linear infinite;
+            box-shadow: 0 0 12px #00FFFF40;
+          }
+
+          @keyframes hourglassSpin {
+            0% { transform: rotate(0deg); }
+            50% { transform: rotate(180deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}
+      </style>
+    </div>
+  );
+}
+  return (
+
+    <div className="flex h-screen bg-[#031C3A] text-white overflow-hidden">
+      {/* Sidebar */}
+      <div className="w-64 h-screen flex-shrink-0 bg-[#021B36]/90 p-4">
+        <FresherSideMenu userId={userId} companyId={companyId} deptId={deptId} companyName={companyName} />
+      </div>
       {/* Main Content */}
       <div className="flex-1 p-8 space-y-8 overflow-y-auto">
-
+        <h1 className="text-3xl font-bold text-[#00FFFF]">
+          {selectedModule ? "Module Details" : "Your Learning Roadmap"}
+        </h1>
         {/* 🔹 Progress Bar */}
         <div>
           <div className="flex justify-between text-sm mb-2">
@@ -259,7 +290,7 @@ export default function FresherTraining() {
                 </span>
               )}
 
-              <button
+              {/* <button
                 onClick={() =>
                   navigate(
                     `/mentor/${companyId}/${deptId}/${userId}/${selectedModule.id}`
@@ -270,7 +301,21 @@ export default function FresherTraining() {
                 rounded-lg text-white font-semibold hover:scale-105 transition"
               >
                 🤖 Start AI Mentor Session
-              </button>
+              </button> */}
+              {/* New Chatbot Navigation Button */}
+<button
+  onClick={() =>
+    navigate("/chatbot", {
+      state: { userId, companyId, deptId, companyName },
+    })
+  }
+  className="flex items-center justify-center gap-2 px-6 py-3
+  bg-gradient-to-r from-cyan-400 to-blue-500
+  rounded-lg text-white font-semibold hover:scale-105 transition"
+>
+  🤖 Chat with AI Assistant
+</button>
+
 
               <button
                 onClick={() => navigate(-1)}
@@ -280,8 +325,10 @@ export default function FresherTraining() {
               </button>
             </div>
           </div>
+          
         )}
       </div>
     </div>
+    
   );
 }
