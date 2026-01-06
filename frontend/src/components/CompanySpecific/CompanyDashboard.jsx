@@ -6,7 +6,7 @@ import { doc, setDoc } from "firebase/firestore";
 import CompanySidebar from "../../components/CompanySpecific/CompanySidebar";
 
 
-const DEPARTMENT_OPTIONS = ["HR", "Software Development", "AI", "Accounting", "Marketing", "Operations", "Data Science","IT"];
+const DEPARTMENT_OPTIONS = ["HR", "SOFTWAREDEVELOPMENT", "AI", "ACCOUNTING", "MARKETING", "OPERATIONS", "DATASCIENCE","IT"];
 
 const QUESTIONS = [
   { text: "Select your departments", type: "multi-select", options: DEPARTMENT_OPTIONS },

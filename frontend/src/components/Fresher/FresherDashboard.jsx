@@ -198,13 +198,13 @@ useEffect(() => {
           </p>
         </div>
 
-       <button
-  onClick={() => navigate("/fresher-training", { state: { userId, companyId, deptId, companyName } })}
+      <button
+      
+  onClick={() => navigate(`/roadmap/${companyId}/${deptId}/${userId}`)}
   className="px-4 py-2 bg-[#00FFFF] text-[#031C3A] rounded"
 >
   View Roadmap
 </button>
-
 
         <p className="italic text-[#AFCBE3] mt-2">
           Best of luck with your journey

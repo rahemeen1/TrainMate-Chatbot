@@ -1,7 +1,11 @@
 import axios from "axios";
 import { db } from "../config/firebase.js";
 import { extractFileText } from "../utils/TextExtractor.js";
-import { queryPinecone } from "../services/pineconeService.js";
+import {
+  semanticSearch,
+  loadDepartmentDocs
+} from "../services/pineconeService.js";
+
 import { generateRoadmap } from "../services/llmService.js";
 import { extractSkillsFromText } from "../services/skillExtractor.service.js"; // new utility
 
@@ -69,7 +73,11 @@ export const generateUserRoadmap = async (req, res) => {
     /* -------------------------
        5️⃣ Fetch company docs from Pinecone
     ------------------------- */
-    const pineconeContext = await queryPinecone({ companyId, deptName: deptId });
+const pineconeContext = await loadDepartmentDocs({
+  companyId,
+  deptName: deptId,
+});
+
     const companyDocsText = pineconeContext.map((c, i) => c.text).join("\n");
     const companySkills = extractSkillsFromText(companyDocsText);
     console.log(`📚 Pinecone skills for ${deptId}:`, companySkills);

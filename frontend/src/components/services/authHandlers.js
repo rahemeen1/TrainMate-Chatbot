@@ -63,9 +63,9 @@ export const handleLogin = async ({
         "users",
         userId
       );
-
+console.log("Fresher Ref:", fresherRef.path);
       const fresherSnap = await getDoc(fresherRef);
-
+console.log("Fresher Snap:", fresherSnap.exists());
       if (!fresherSnap.exists()) {
         return { error: "Fresher record not found" };
       }

@@ -33,7 +33,7 @@ export default function App() {
         <Route path="/CompanySpecific/CompanyDashboard" element={<CompanyDashboard />} />
         <Route path="/CompanySpecific/CompanySettings" element={<CompanySettings />} />
         <Route path="/CompanySpecific/CompanyAnalytics" element={<CompanyAnalytics />} />
-        <Route path="/fresher-training" element={<FresherTraining />} />
+        <Route path="/fresher-training/:companyId/:deptId/:userId" element={<FresherTraining />}  />
         <Route path="/fresher-progress" element={<FresherProgress />} />
         <Route path="/CompanySpecific/TotalUsers" element={<TotalUsers />} />
         <Route path="/roadmap/:companyId/:deptId/:userId" element={<Roadmap />} /> 

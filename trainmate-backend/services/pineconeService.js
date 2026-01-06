@@ -4,10 +4,6 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-/* ---------------------------------
-   INIT PINECONE CLIENT
----------------------------------- */
-
 console.log("🔥 pineconeService.js loaded");
 
 if (!process.env.PINECONE_API_KEY) {
@@ -22,27 +18,19 @@ const pinecone = new Pinecone({
   apiKey: process.env.PINECONE_API_KEY,
 });
 
-/* ---------------------------------
-   QUERY FUNCTION
----------------------------------- */
-
 export const queryPinecone = async ({
   companyId,
   deptName,
-  trainingOn,
 }) => {
   console.log("📡 queryPinecone started");
 
   console.log("🔎 Filters received:", {
     companyId,
     deptName,
-    trainingOn,
   });
 
   try {
-    /* ---------------------------------
-       CONNECT TO INDEX (SAFE)
-    ---------------------------------- */
+ 
     const index = await pinecone.index(
       process.env.PINECONE_INDEX_NAME
     );
