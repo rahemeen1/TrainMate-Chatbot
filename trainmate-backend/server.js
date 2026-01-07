@@ -10,6 +10,7 @@ import superAdminRoutes from "./routes/superAdminRoutes.js";
 import { initPinecone } from "./config/pinecone.js";
 import ingestRoutes from "./routes/ingestroutes.js";
 import roadmapRoutes from "./routes/roadmapRoutes.js";
+import chatRoutes from "./routes/chatRoutes.js";
 
 
 const app = express();
@@ -26,6 +27,7 @@ async function startServer() {
     app.use("/api", companyRoutes);
     app.use("/api", ingestRoutes);
     app.use("/api/roadmap", roadmapRoutes);
+    app.use("/api/chat", chatRoutes);
   
 
     app.listen(PORT, () => {

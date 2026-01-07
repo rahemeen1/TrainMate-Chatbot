@@ -1,16 +1,13 @@
 import axios from "axios";
 import { db } from "../config/firebase.js";
 import { extractFileText } from "../utils/TextExtractor.js";
-import {
-  semanticSearch,
-  loadDepartmentDocs
-} from "../services/pineconeService.js";
-
+import { retrieveDeptDocsFromPinecone } from "../services/pineconeService.js";
 import { generateRoadmap } from "../services/llmService.js";
-import { extractSkillsFromText } from "../services/skillExtractor.service.js"; // new utility
+import { extractSkillsFromText } from "../services/skillExtractor.service.js";
 
 export const generateUserRoadmap = async (req, res) => {
   console.log("🚀 Roadmap generation request received");
+  console.log("📦 Request body:", req.body);
 
   try {
     const {
@@ -18,16 +15,13 @@ export const generateUserRoadmap = async (req, res) => {
       deptId,
       userId,
       trainingTime,
+      trainingOn: trainingOnFromClient,
       expertiseScore,
       expertiseLevel,
-      trainingOn: trainingOnFromClient,
     } = req.body;
 
-    console.log("📦 Request body:", req.body);
+    console.log("👤 Fetching user from Firestore...");
 
-    /* -------------------------
-       1️⃣ Fetch User
-    ------------------------- */
     const userRef = db
       .collection("freshers")
       .doc(companyId)
@@ -37,74 +31,139 @@ export const generateUserRoadmap = async (req, res) => {
       .doc(userId);
 
     const userSnap = await userRef.get();
-    if (!userSnap.exists) return res.status(404).json({ error: "User not found" });
+
+    if (!userSnap.exists) {
+      console.error("❌ User not found");
+      return res.status(404).json({ error: "User not found" });
+    }
+
     const user = userSnap.data();
     console.log("✅ User fetched:", user.name);
 
     if (!user.onboarding?.onboardingCompleted || !user.cvUrl) {
+      console.warn("⚠️ Onboarding incomplete or CV missing");
       return res.status(400).json({ error: "Onboarding incomplete" });
     }
 
-    /* -------------------------
-       2️⃣ Normalize Inputs
-    ------------------------- */
+      const onboardingRef = db
+      .collection("companies")
+      .doc(companyId)
+      .collection("onboardingAnswers")
+      .doc(userId); // adjust if the doc ID is different
+
+    const onboardingSnap = await onboardingRef.get();
+   let trainingDurationFromOnboarding = "1 month";
+
+if (onboardingSnap.exists) {
+  const answers = onboardingSnap.data();
+  if (answers && typeof answers === "object") {
+    const firstAnswerKey = Object.keys(answers)[0]; // first key, usually "1"
+    trainingDurationFromOnboarding = answers[firstAnswerKey] || "1 month";
+  }
+}
+
+console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboarding);
+
+    
     const trainingOn = trainingOnFromClient || user.trainingOn || "General";
     const expertise = expertiseScore ?? user.expertise ?? 1;
     const level = expertiseLevel || user.level || "Beginner";
-    const finalTrainingDuration = trainingTime || "1 month";
+     const finalTrainingDuration = trainingDurationFromOnboarding;
 
-    console.log("🎯 FINAL VALUES USED:", { trainingOn, expertise, level, finalTrainingDuration });
-
-    /* -------------------------
-       3️⃣ Download & Extract CV
-    ------------------------- */
-    console.log("[FILE-PARSE] Downloading CV:", user.cvUrl);
-    const cvResponse = await axios.get(user.cvUrl, { responseType: "arraybuffer" });
-    const fileType = user.cvUrl.endsWith(".pdf") ? "pdf" : "docx";
-    const cvText = await extractFileText(cvResponse.data, fileType);
-    console.log("[FILE-PARSE] CV text extracted, length:", cvText.length);
-
-    /* -------------------------
-       4️⃣ Extract skills from CV
-    ------------------------- */
-    const cvSkills = extractSkillsFromText(cvText);
-    console.log("📄 Skills extracted from CV:", cvSkills);
-
-    /* -------------------------
-       5️⃣ Fetch company docs from Pinecone
-    ------------------------- */
-const pineconeContext = await loadDepartmentDocs({
-  companyId,
-  deptName: deptId,
-});
-
-    const companyDocsText = pineconeContext.map((c, i) => c.text).join("\n");
-    const companySkills = extractSkillsFromText(companyDocsText);
-    console.log(`📚 Pinecone skills for ${deptId}:`, companySkills);
-
-    /* -------------------------
-       6️⃣ Identify skill gap
-    ------------------------- */
-    const skillGap = companySkills.filter(s => !cvSkills.includes(s));
-    console.log("⚡ Skill gap identified:", skillGap);
-
-    /* -------------------------
-       7️⃣ Generate roadmap via LLM
-    ------------------------- */
-    const roadmapModules = await generateRoadmap({
-      cvText,
-      pineconeContext, // optional
+    console.log("🎯 FINAL VALUES USED:", {
       trainingOn,
       expertise,
       level,
       trainingDuration: finalTrainingDuration,
-      skillGap, // pass skill gaps to LLM
     });
 
-    /* -------------------------
-       8️⃣ Save roadmap to Firestore
-    ------------------------- */
+    /* --------------------------------------------------
+       3️⃣ Download & Extract CV
+    -------------------------------------------------- */
+    console.log("📄 Downloading CV:", user.cvUrl);
+
+    const cvResponse = await axios.get(user.cvUrl, {
+      responseType: "arraybuffer",
+    });
+
+    const fileType = user.cvUrl.toLowerCase().endsWith(".pdf")
+      ? "pdf"
+      : "docx";
+
+    const cvText = await extractFileText(cvResponse.data, fileType);
+
+    if (!cvText || typeof cvText !== "string") {
+      throw new Error("❌ CV text extraction failed");
+    }
+
+    console.log("✅ CV text extracted, length:", cvText.length);
+
+    /* --------------------------------------------------
+       4️⃣ Extract Skills from CV
+    -------------------------------------------------- */
+    console.log("🧠 Extracting skills from CV...");
+    const cvSkills = extractSkillsFromText(cvText);
+    console.log("📄 Skills extracted from CV:", cvSkills);
+
+    /* --------------------------------------------------
+       5️⃣ Fetch Department Docs from Pinecone
+    -------------------------------------------------- */
+    console.log("🔎 Fetching Pinecone documents...");
+
+    const pineconeContext = await retrieveDeptDocsFromPinecone({
+      queryText: cvText,        // ✅ always string
+      companyId,
+      deptName: deptId,         // ✅ FIXED (no undefined)
+    });
+
+    if (!Array.isArray(pineconeContext)) {
+      console.warn("⚠️ Pinecone returned empty or invalid context");
+    }
+
+    const companyDocsText = Array.isArray(pineconeContext)
+      ? pineconeContext.map((c) => c.text || "").join("\n")
+      : "";
+
+    /* --------------------------------------------------
+       6️⃣ Extract Company Skills + Skill Gap
+    -------------------------------------------------- */
+    const companySkills = extractSkillsFromText(companyDocsText);
+    console.log(`📚 Pinecone skills for ${deptId}:`, companySkills);
+
+    const skillGap = companySkills.filter(
+      (skill) => !cvSkills.includes(skill)
+    );
+
+    console.log("⚡ Skill gap identified:", skillGap);
+
+    /* --------------------------------------------------
+       7️⃣ Generate Roadmap via LLM
+    -------------------------------------------------- */
+    console.log("🤖 Generating roadmap via LLM...");
+
+    const roadmapModules = await generateRoadmap({
+      cvText,
+      pineconeContext,
+      expertise,
+      trainingOn, 
+      level,
+      trainingDuration: finalTrainingDuration,
+      skillGap,
+    });
+
+    if (!Array.isArray(roadmapModules)) {
+      throw new Error("❌ LLM did not return roadmap modules");
+    }
+
+    console.log("✅ Roadmap generated, modules:", roadmapModules.length);
+
+    /* --------------------------------------------------
+       8️⃣ Save Roadmap to Firestore
+    -------------------------------------------------- */
+    console.log("💾 Saving roadmap to Firestore...");
+
     const roadmapCollection = userRef.collection("roadmap");
+
     for (let i = 0; i < roadmapModules.length; i++) {
       await roadmapCollection.add({
         ...roadmapModules[i],
@@ -115,11 +174,18 @@ const pineconeContext = await loadDepartmentDocs({
       });
     }
 
-    console.log("✅ Roadmap saved to Firestore, modules:", roadmapModules.length);
-    return res.json({ success: true, modules: roadmapModules });
+    console.log("🎉 Roadmap saved successfully");
+
+    return res.json({
+      success: true,
+      modules: roadmapModules,
+    });
 
   } catch (error) {
-    console.error("🔥 Roadmap generation failed:", error.stack);
-    return res.status(500).json({ error: error.message || "Roadmap generation failed" });
+    console.error("🔥 Roadmap generation failed:");
+    console.error(error);
+    return res.status(500).json({
+      error: error.message || "Roadmap generation failed",
+    });
   }
 };

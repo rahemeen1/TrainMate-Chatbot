@@ -1,90 +1,82 @@
-// pineconeService.js
 import { Pinecone } from "@pinecone-database/pinecone";
+import { CohereClient } from "cohere-ai";
 import dotenv from "dotenv";
 
-dotenv.config();
+dotenv.config(); // ✅ must be first
 
-console.log("🔥 pineconeService.js loaded");
-
-if (!process.env.PINECONE_API_KEY) {
-  throw new Error("❌ PINECONE_API_KEY missing");
+/* ---------------- ENV VARIABLES ---------------- */
+const INDEX_NAME = process.env.PINECONE_INDEX;
+if (!INDEX_NAME) {
+  throw new Error("❌ PINECONE_INDEX missing in environment variables");
 }
+console.log("🧪 PINECONE_INDEX →", INDEX_NAME);
 
-if (!process.env.PINECONE_INDEX_NAME) {
-  throw new Error("❌ PINECONE_INDEX_NAME missing");
-}
-
+/* ---------------- INIT CLIENTS ---------------- */
 const pinecone = new Pinecone({
   apiKey: process.env.PINECONE_API_KEY,
 });
 
-export const queryPinecone = async ({
+const cohere = new CohereClient({
+  token: process.env.COHERE_API_KEY,
+});
+
+/* --------------------------------------------------
+   Retrieve department documents
+-------------------------------------------------- */
+export const retrieveDeptDocsFromPinecone = async ({
+  queryText,
   companyId,
   deptName,
 }) => {
-  console.log("📡 queryPinecone started");
+  console.log("\n================ PINECONE DEBUG START ================");
 
-  console.log("🔎 Filters received:", {
-    companyId,
-    deptName,
+  console.log("🧪 Input values received:");
+  console.log("   companyId →", companyId);
+  console.log("   deptName  →", deptName);
+  console.log("   queryText length →", queryText?.length);
+
+  if (!queryText || typeof queryText !== "string") {
+    throw new Error("❌ queryText missing or invalid");
+  }
+
+  const normalizedDept = deptName.toUpperCase();
+
+  /* ---------------- 1️⃣ Embedding ---------------- */
+  console.log("🔎 Generating Cohere embedding...");
+  const embed = await cohere.embed({
+    texts: [queryText],
+    model: "embed-english-v3.0",
+    inputType: "search_query",
   });
 
-  try {
- 
-    const index = await pinecone.index(
-      process.env.PINECONE_INDEX_NAME
-    );
-    console.log("✅ Pinecone index connected");
+  const vector = embed.embeddings[0];
+  console.log("📐 Embedding vector length →", vector.length);
 
-    /* ---------------------------------
-       VECTOR (MATCHES INDEX DIMENSION)
-    ---------------------------------- */
-    const VECTOR_DIMENSION = 1024;
-    const dummyVector = Array(VECTOR_DIMENSION).fill(0);
+  /* ---------------- 2️⃣ Index + Namespace ---------------- */
+  const namespace = `company-${companyId}`;
 
-    /* ---------------------------------
-       QUERY PINECONE
-    ---------------------------------- */
-    const response = await index.query({
-      vector: dummyVector,
-      topK: 10,
-      namespace: "train-mate15",
-      includeMetadata: true,
-      filter: {
-        companyId: { $eq: companyId },
-        deptName: { $eq: deptName },
-        trainingOn: { $eq: trainingOn },
-      },
-    });
+  console.log("✅ Pinecone index connected");
+  console.log("🧪 Namespace used →", namespace);
+  console.log("🧪 Index name used →", INDEX_NAME);
 
-    console.log(
-      "📦 Pinecone matches count:",
-      response.matches?.length || 0
-    );
+  const index = pinecone
+    .Index(INDEX_NAME)     // ✅ always use top-level constant
+    .namespace(namespace);
 
-    /* ---------------------------------
-       EXTRACT TEXT CHUNKS
-    ---------------------------------- */
-    const chunks = (response.matches || []).map(
-      (match, idx) => ({
-        text: match.metadata?.text || "",
-        fileName: match.metadata?.fileName || null,
-        chunkIndex: match.metadata?.chunkIndex ?? idx,
-      })
-    );
+  /* ---------------- 3️⃣ Query ---------------- */
+  console.log("🔍 Querying Pinecone...");
+  const response = await index.query({
+    vector,
+    topK: 5,
+    filter: { deptName: { $eq: normalizedDept } },
+    includeMetadata: true,
+  });
 
-    console.log("📚 Extracted chunks:", chunks.length);
+  console.log("✅ Pinecone matches →", response.matches?.length || 0);
+  console.log("================ PINECONE DEBUG END ================\n");
 
-    if (chunks.length === 0) {
-      console.warn(
-        "⚠️ No Pinecone data found for given filters"
-      );
-    }
-
-    return chunks;
-
-  } catch (error) {
-    console.error("🔥 Pinecone query failed:", error);
-    throw error;
-  }
+  return (response.matches || []).map((m) => ({
+    text: m.metadata?.text || "",
+    score: m.score,
+  }));
 };

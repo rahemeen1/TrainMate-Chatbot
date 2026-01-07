@@ -16,27 +16,42 @@ export const generateRoadmap = async ({
   level,
   trainingDuration,
 }) => {
-  console.log("🧠 Gemini LLM roadmap generation started (No Pinecone)");
+  console.log("\n================ GEMINI ROADMAP START ================");
 
-  /* -------------------------
-     SAFETY FALLBACKS
-  ------------------------- */
+  console.log("🧠 Gemini roadmap generation started");
+
+  /* ---------------------------------
+     1️⃣ RAW INPUT DEBUG
+  ---------------------------------- */
+  console.log("🧪 Raw inputs received:");
+  console.log("   trainingOn       →", trainingOn);
+  console.log("   expertise        →", expertise);
+  console.log("   level            →", level);
+  console.log("   trainingDuration →", trainingDuration);
+  console.log("   cvText length    →", cvText?.length);
+
+  if (!cvText || cvText.trim().length < 50) {
+    console.warn("⚠️ CV text is very small or empty");
+  }
+
+  /* ---------------------------------
+     2️⃣ SAFETY FALLBACKS
+  ---------------------------------- */
   const safeTrainingOn = trainingOn || "General";
   const safeExpertise = expertise ?? 1;
   const safeLevel = level || "Beginner";
   const safeDuration = trainingDuration || "1 month";
 
-  console.log("🧪 Gemini Inputs:", {
-    safeTrainingOn,
-    safeExpertise,
-    safeLevel,
-    safeDuration,
-  });
+  console.log("🧪 Normalized inputs:");
+  console.log("   safeTrainingOn →", safeTrainingOn);
+  console.log("   safeExpertise  →", safeExpertise);
+  console.log("   safeLevel      →", safeLevel);
+  console.log("   safeDuration   →", safeDuration);
 
   try {
-    /* -------------------------
-       Expertise Instructions
-    ------------------------- */
+    /* ---------------------------------
+       3️⃣ EXPERTISE INSTRUCTION
+    ---------------------------------- */
     const expertiseInstruction =
       safeExpertise <= 2
         ? "User is a beginner. Start from fundamentals with simple examples."
@@ -44,23 +59,45 @@ export const generateRoadmap = async ({
         ? "User is intermediate. Brief fundamentals then move to applied concepts."
         : "User is experienced. Skip basics and focus on advanced, real-world practices.";
 
-    /* -------------------------
-       Gemini Model
-    ------------------------- */
+    console.log("🧭 Expertise instruction selected");
+
+    /* ---------------------------------
+       4️⃣ GEMINI MODEL INIT
+    ---------------------------------- */
     const model = genAI.getGenerativeModel({
       model: "gemini-2.5-flash",
       generationConfig: {
         responseMimeType: "application/json",
       },
-      systemInstruction:
-        "You are an AI training architect. Respond ONLY with valid JSON. No explanations.",
+      systemInstruction: `You are a Senior AI Training Architect specializing in curriculum design. 
+Your goal is to generate high-precision, personalized learning roadmaps.
+
+STRICT RULES:
+1. OUTPUT: Respond ONLY with a valid JSON array. 
+2. NO PROSE: Do not include introductory text, markdown formatting (like \`\`\`json), or concluding remarks.
+3. LOGIC: Ensure 'estimatedDays' is an integer and titles are professional.
+4. QUALITY: Descriptions must be actionable and specific to the user's expertise level.
+5. SCHEMA: Adhere strictly to the requested JSON structure provided in the prompt.`,
     });
 
+    console.log("✅ Gemini model initialized");
+
+    /* ---------------------------------
+       5️⃣ PROMPT BUILD
+    ---------------------------------- */
     const prompt = `
 User Profile:
-- Training Domain: ${safeTrainingOn}
-- Expertise Level: ${safeExpertise} (${safeLevel})
-- Training Duration: ${safeDuration}
+- **Target Domain:** ${safeTrainingOn}
+- **Current Expertise:** ${safeExpertise} (${safeLevel})
+- **Time Constraint:** ${safeDuration}
+- **User Background (CV):** ${cvText}
+- **Specific Pedagogical Instructions:** ${expertiseInstruction}
+
+### CRITICAL CONSTRAINTS
+1. **Gap Analysis:** Analyze the User CV against the Target Domain. DO NOT include foundational concepts the user already demonstrates mastery of in their CV.
+2. **Scoping:** The sum of "estimatedDays" must logically fit within the total duration of ${safeDuration}.
+3. **Progression:** Modules must follow a Bloom's Taxonomy progression (from understanding to application/synthesis).
+4. **Specificity:** "description" must include 2-3 specific sub-topics or tools to be mastered.
 
 Guidance:
 ${expertiseInstruction}
@@ -69,7 +106,7 @@ User CV:
 ${cvText}
 
 TASK:
-Create a personalized training roadmap focused ONLY on "${safeTrainingOn}".
+Generate the roadmap for "${safeTrainingOn}" now.
 
 JSON FORMAT:
 [
@@ -81,32 +118,41 @@ JSON FORMAT:
 ]
 `;
 
-    console.log("📨 Sending prompt to Gemini");
+    console.log("📨 Prompt built");
+    console.log("🧪 Prompt size (chars):", prompt.length);
 
+    /* ---------------------------------
+       6️⃣ GEMINI CALL
+    ---------------------------------- */
+    console.log("🚀 Sending prompt to Gemini...");
     const result = await model.generateContent(prompt);
+
     const response = await result.response;
     const rawResponse = await response.text();
 
     console.log("📩 Gemini raw response received");
+    console.log("🧾 Raw response (first 500 chars):");
+    console.log(rawResponse.slice(0, 500));
 
-    /* -------------------------
-       Strict JSON Parsing
-    ------------------------- */
+    /* ---------------------------------
+       7️⃣ STRICT JSON PARSE
+    ---------------------------------- */
     let roadmap;
     try {
       roadmap = JSON.parse(rawResponse);
     } catch (err) {
-      console.error("❌ Invalid Gemini JSON:", rawResponse);
+      console.error("❌ Gemini returned INVALID JSON");
+      console.error(rawResponse);
       throw new Error("Gemini returned invalid JSON");
     }
 
     if (!Array.isArray(roadmap)) {
-      throw new Error("Gemini response is not an array");
+      throw new Error("❌ Gemini response is not an array");
     }
 
-    /* -------------------------
-       Validate each module
-    ------------------------- */
+    /* ---------------------------------
+       8️⃣ SANITIZE MODULES
+    ---------------------------------- */
     roadmap = roadmap.map((module, idx) => ({
       moduleTitle: module.moduleTitle ?? `Module ${idx + 1}`,
       description: module.description ?? "No description provided",
@@ -114,6 +160,9 @@ JSON FORMAT:
     }));
 
     console.log("🧩 Roadmap modules generated:", roadmap.length);
+
+    console.log("================ GEMINI ROADMAP END ==================\n");
+
     return roadmap;
 
   } catch (error) {

@@ -54,26 +54,41 @@ export default function FresherChatbot() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, typing]);
+const handleSend = async () => {
+  if (!input.trim()) return;
 
-  const handleSend = () => {
-    if (!input.trim()) return;
+  const userMessage = { from: "user", text: input, id: Date.now() };
+  setMessages([...messages, userMessage]);
+  setInput("");
+  setTyping(true);
 
-    const userMessage = { from: "user", text: input, id: Date.now() };
-    setMessages([...messages, userMessage]);
-    setInput("");
+  try {
+    const res = await fetch("http://localhost:5000/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId,
+        companyId,
+        deptId,
+        messageHistory: messages.map(m => m.text),
+        newMessage: input,
+      }),
+    });
 
-    // Bot typing simulation
-    setTyping(true);
-    setTimeout(() => {
-      const botMessage = {
-        from: "bot",
-        text: "Thanks for your message! I'm learning to assist you better.",
-        id: Date.now() + 1,
-      };
-      setMessages((prev) => [...prev, botMessage]);
-      setTyping(false);
-    }, 1500);
-  };
+    const { reply } = await res.json();
+    const botMessage = { from: "bot", text: reply, id: Date.now() + 1 };
+    setMessages(prev => [...prev, botMessage]);
+  } catch (err) {
+    console.error(err);
+    setMessages(prev => [
+      ...prev,
+      { from: "bot", text: "Oops, something went wrong!", id: Date.now() + 1 },
+    ]);
+  } finally {
+    setTyping(false);
+  }
+};
+
 
   return (
     <div className="flex min-h-screen bg-[#031C3A] text-white">
