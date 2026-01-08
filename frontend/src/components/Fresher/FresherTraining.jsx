@@ -1,5 +1,4 @@
-// Roadmap.jsx – Enhanced Fresher Training View
-
+// FresherTraining.jsx
 import { useEffect, useState } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { db } from "../../firebase";
@@ -16,6 +15,7 @@ export default function FresherTraining() {
 
   const [roadmap, setRoadmap] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingModuleId, setLoadingModuleId] = useState(null);
   const [selectedModule, setSelectedModule] = useState(null);
 
   // ===============================
@@ -79,7 +79,8 @@ export default function FresherTraining() {
   // ✅ Mark Module Done
   // ===============================
   const markDone = async (moduleId) => {
-    try {
+     try {
+    setLoadingModuleId(moduleId); // 👈 start loader
       const moduleRef = doc(
         db,
         "freshers",
@@ -107,6 +108,9 @@ export default function FresherTraining() {
       await updateProgress();
     } catch (err) {
       console.error("❌ Error marking module done:", err);
+    }
+    finally {
+    setLoadingModuleId(null); // 👈 stop loader
     }
   };
 
@@ -157,178 +161,119 @@ export default function FresherTraining() {
     </div>
   );
 }
-  return (
+return (
+  <div className="flex h-screen bg-[#031C3A] text-white overflow-hidden">
+    {/* ===== Sidebar (FIXED WIDTH) ===== */}
+    <div className="w-64 h-screen flex-shrink-0 bg-[#021B36]/90 p-4">
+      <FresherSideMenu
+        userId={userId}
+        companyId={companyId}
+        deptId={deptId}
+        companyName={companyName}
+      />
+    </div>
 
-    <div className="flex h-screen bg-[#031C3A] text-white overflow-hidden">
-      {/* Sidebar */}
-      <div className="w-64 h-screen flex-shrink-0 bg-[#021B36]/90 p-4">
-        <FresherSideMenu userId={userId} companyId={companyId} deptId={deptId} companyName={companyName} />
-      </div>
-      {/* Main Content */}
-      <div className="flex-1 p-8 space-y-8 overflow-y-auto">
-        <h1 className="text-3xl font-bold text-[#00FFFF]">
-          {selectedModule ? "Module Details" : "Your Learning Roadmap"}
-        </h1>
-        {/* 🔹 Progress Bar */}
-        <div>
-          <div className="flex justify-between text-sm mb-2">
-            <span>Learning Progress</span>
-            <span>{progressPercent}%</span>
-          </div>
-          <div className="w-full bg-[#012244] rounded-full h-3">
-            <div
-              className="bg-[#00FFFF] h-3 rounded-full transition-all duration-500"
-              style={{ width: `${progressPercent}%` }}
-            />
-          </div>
+    {/* ===== Main Content ===== */}
+    <div className="flex-1 p-8 space-y-8 overflow-y-auto">
+      <h1 className="text-3xl font-bold text-[#00FFFF]">
+        Module Details
+      </h1>
+
+      {/* ===== Progress Bar ===== */}
+      <div>
+        <div className="flex justify-between text-sm mb-2 text-[#AFCBE3]">
+          <span>Learning Progress</span>
+          <span>{progressPercent}%</span>
         </div>
 
-        {/* ===============================
-            📦 MODULE LIST VIEW
-        =============================== */}
-        {!selectedModule ? (
-          <div className="space-y-6">
-            {roadmap.map((module) => (
-              <div
-                key={module.id}
-                className={`relative bg-[#021B36]/80 border border-[#00FFFF30]
-                rounded-xl p-6 shadow-md transition hover:scale-[1.02]
-                ${module.completed ? "opacity-60" : ""}`}
-              >
-                {/* Status Badge */}
-                <span
-                  className={`absolute top-4 right-4 px-3 py-1 rounded-full text-xs font-semibold
-                  ${
-                    module.completed
-                      ? "bg-green-500/20 text-green-400"
-                      : "bg-yellow-500/20 text-yellow-400"
-                  }`}
-                >
-                  {module.completed ? "Completed" : "Pending"}
-                </span>
-
-                <h3 className="text-xl font-semibold text-[#00FFFF] mb-2">
-                  {module.moduleTitle}
-                </h3>
-                <p className="text-[#AFCBE3] mb-2">{module.description}</p>
-                <p className="text-xs text-[#AFCBE3]">
-                  ⏱ {module.estimatedDays} days
-                </p>
-
-                <div className="flex gap-3 mt-4">
-                  {!module.completed && (
-                    <button
-                      onClick={() => markDone(module.id)}
-                      className="px-4 py-2 bg-[#00FFFF] text-[#031C3A]
-                      rounded font-semibold hover:bg-white"
-                    >
-                      Mark Done
-                    </button>
-                  )}
-
-                  <button
-                    onClick={() =>
-                      navigate(
-                        `/roadmap/${companyId}/${deptId}/${userId}`,
-                        { state: { moduleId: module.id } }
-                      )
-                    }
-                    className="px-4 py-2 border border-[#00FFFF]
-                    text-[#00FFFF] rounded hover:bg-[#00FFFF]
-                    hover:text-[#031C3A] font-semibold"
-                  >
-                    View Details
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          /* ===============================
-              📘 MODULE DETAIL VIEW
-          =============================== */
-          <div className="bg-[#021B36]/90 border border-[#00FFFF30]
-          rounded-xl p-8 shadow-lg space-y-6">
-
-            <h2 className="text-3xl font-bold text-[#00FFFF]">
-              {selectedModule.moduleTitle}
-            </h2>
-
-            <p className="text-[#AFCBE3]">
-              {selectedModule.description}
-            </p>
-
-            <p className="text-sm text-[#AFCBE3]">
-              ⏱ Estimated Days: {selectedModule.estimatedDays}
-            </p>
-
-            {/* Learning Outcomes */}
-            <div className="border border-[#00FFFF20] rounded-lg p-5">
-              <h4 className="text-lg text-[#00FFFF] font-semibold mb-2">
-                What you will learn
-              </h4>
-              <ul className="list-disc list-inside text-[#AFCBE3] text-sm space-y-1">
-                <li>Core fundamentals</li>
-                <li>Hands-on understanding</li>
-                <li>Industry best practices</li>
-              </ul>
-            </div>
-
-            {/* Actions */}
-            <div className="flex flex-col gap-4">
-              {!selectedModule.completed ? (
-                <button
-                  onClick={() => markDone(selectedModule.id)}
-                  className="px-6 py-3 bg-[#00FFFF]
-                  text-[#031C3A] rounded-lg font-semibold hover:bg-white"
-                >
-                  Mark Module Completed
-                </button>
-              ) : (
-                <span className="text-green-400 font-semibold">
-                  ✅ Module Completed
-                </span>
-              )}
-
-              {/* <button
-                onClick={() =>
-                  navigate(
-                    `/mentor/${companyId}/${deptId}/${userId}/${selectedModule.id}`
-                  )
-                }
-                className="flex items-center justify-center gap-2 px-6 py-3
-                bg-gradient-to-r from-pink-500 to-red-500
-                rounded-lg text-white font-semibold hover:scale-105 transition"
-              >
-                🤖 Start AI Mentor Session
-              </button> */}
-              {/* New Chatbot Navigation Button */}
-<button
-  onClick={() =>
-    navigate("/chatbot", {
-      state: { userId, companyId, deptId, companyName },
-    })
-  }
-  className="flex items-center justify-center gap-2 px-6 py-3
-  bg-gradient-to-r from-cyan-400 to-blue-500
-  rounded-lg text-white font-semibold hover:scale-105 transition"
->
-  🤖 Chat with AI Assistant
-</button>
-
-
-              <button
-                onClick={() => navigate(-1)}
-                className="text-sm text-[#00FFFF] underline"
-              >
-                ← Back to roadmap
-              </button>
-            </div>
-          </div>
-          
-        )}
+        <div className="w-full bg-[#012244] rounded-full h-3">
+          <div
+            className="bg-[#00FFFF] h-3 rounded-full transition-all duration-500"
+            style={{ width: `${progressPercent}%` }}
+          />
+        </div>
       </div>
+
+      {/* ===== Module Details Card ===== */}
+      {selectedModule && (
+        <div className="bg-[#021B36]/90 border border-[#00FFFF30]
+          rounded-xl p-8 shadow-lg space-y-6"
+        >
+          <h2 className="text-3xl font-bold text-[#00FFFF]">
+            {selectedModule.moduleTitle}
+          </h2>
+
+          <p className="text-[#AFCBE3]">
+            {selectedModule.description}
+          </p>
+
+          <p className="text-sm text-[#AFCBE3]">
+            ⏱ Estimated Days: {selectedModule.estimatedDays}
+          </p>
+
+          {/* Learning Outcomes */}
+          <div className="border border-[#00FFFF20] rounded-lg p-5">
+            <h4 className="text-lg text-[#00FFFF] font-semibold mb-2">
+              What you will learn
+            </h4>
+            <ul className="list-disc list-inside text-[#AFCBE3] text-sm space-y-1">
+              <li>Core fundamentals</li>
+              <li>Hands-on understanding</li>
+              <li>Industry best practices</li>
+            </ul>
+          </div>
+
+          {/* Actions */}
+          <div className="flex flex-col gap-4">
+            {!selectedModule.completed ? (
+              <button
+                onClick={() => markDone(selectedModule.id)}
+                disabled={loadingModuleId === selectedModule.id}
+                className="px-4 py-2 bg-[#00FFFF] text-[#031C3A]
+                  rounded font-semibold flex items-center justify-center gap-2
+                  disabled:opacity-60"
+              >
+                {loadingModuleId === selectedModule.id ? (
+                  <>
+                    <span className="h-4 w-4 border-2 border-[#031C3A]
+                      border-t-transparent rounded-full animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  "Mark Module Done"
+                )}
+              </button>
+            ) : (
+              <span className="text-green-400 font-semibold">
+                ✅ Module Completed
+              </span>
+            )}
+
+            {/* Chatbot Button */}
+            <button
+              onClick={() =>
+                navigate("/chatbot", {
+                  state: { userId, companyId, deptId, companyName },
+                })
+              }
+              className="flex items-center justify-center gap-2 px-6 py-3
+                bg-gradient-to-r from-cyan-400 to-blue-500
+                rounded-lg text-white font-semibold hover:scale-105 transition"
+            >
+              🤖 Chat with AI Assistant
+            </button>
+
+            <button
+              onClick={() => navigate(-1)}
+              className="text-sm text-[#00FFFF] underline"
+            >
+              ← Back to roadmap
+            </button>
+          </div>
+        </div>
+      )}
     </div>
-    
-  );
+  </div>
+);
+  // ===============================
 }

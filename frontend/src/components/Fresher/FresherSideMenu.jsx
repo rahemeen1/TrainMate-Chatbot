@@ -34,7 +34,7 @@ export function FresherSideMenu({ userId, companyId, deptId, companyName }) {
 
       <button
         onClick={() =>
-          navigate(`/fresher-training/${companyId}/${deptId}/${userId}`, { state: { companyName } })
+          navigate(`/roadmap/${companyId}/${deptId}/${userId}/${companyName}`)
         }
         className="text-left px-4 py-2 rounded-lg hover:bg-[#00FFFF]/20 transition font-medium"
       >

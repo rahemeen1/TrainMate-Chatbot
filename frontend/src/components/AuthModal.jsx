@@ -17,17 +17,36 @@ export default function AuthModal({ isOpen, mode: initialMode, onClose }) {
     emailOrUsername: "",
     password: "",
   });
+  const handleClose = () => {
+  resetForm();
+  onClose();
+};
 
+
+  // useEffect(() => {
+  //   if (isOpen) {
+  //     setMode(initialMode);
+  //     setUserType(null);
+  //     setFormData({ emailOrUsername: "", password: "" });
+  //     setShowPassword(false);
+  //     setRememberMe(false);
+  //     setError("");
+  //   }
+  // }, [isOpen, initialMode]);
   useEffect(() => {
-    if (isOpen) {
-      setMode(initialMode);
-      setUserType(null);
-      setFormData({ emailOrUsername: "", password: "" });
-      setShowPassword(false);
-      setRememberMe(false);
-      setError("");
-    }
-  }, [isOpen, initialMode]);
+  if (isOpen) {
+    resetForm();
+  }
+}, [isOpen, initialMode]);
+
+const resetForm = () => {
+  setMode(initialMode);
+  setUserType(null);
+  setFormData({ emailOrUsername: "", password: "" });
+  setShowPassword(false);
+  setRememberMe(false);
+  setError("");
+};
 
   if (!isOpen) return null;
 
@@ -75,11 +94,12 @@ export default function AuthModal({ isOpen, mode: initialMode, onClose }) {
         transition-all duration-500 ease-in-out animate-scale-in overflow-hidden"
       >
         <button
-          onClick={onClose}
+          onClick={handleClose}
           className="absolute top-4 right-4 p-2 bg-[#021B36]/80 hover:bg-[#04354E] rounded-full transition-colors z-10 shadow-md border border-[#00FFFF30]"
         >
           <X size={18} className="text-[#00FFFF]" />
         </button>
+
 
         <div className="relative px-8 py-8">
           <div className="flex flex-col items-center text-center mb-6 animate-fade-in">
@@ -168,7 +188,7 @@ export default function AuthModal({ isOpen, mode: initialMode, onClose }) {
 
               {error && <p className="text-red-500 text-sm">{error}</p>}
 
-              <div className="flex items-center justify-between">
+              {/* <div className="flex items-center justify-between">
                 <label className="flex items-center space-x-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -176,9 +196,20 @@ export default function AuthModal({ isOpen, mode: initialMode, onClose }) {
                     onChange={(e) => setRememberMe(e.target.checked)}
                     className="w-4 h-4 accent-[#00FFFF] border-gray-600 rounded focus:ring-[#00FFFF]"
                   />
-                
                 </label>
-              </div>
+              </div> */}
+              <div className="flex items-center mt-2">
+  <label className="flex items-center space-x-2 cursor-pointer text-[#AFCBE3] text-sm">
+    <input
+      type="checkbox"
+      checked={rememberMe}
+      onChange={(e) => setRememberMe(e.target.checked)}
+      className="w-4 h-4 accent-[#00FFFF] border-gray-600 rounded focus:ring-[#00FFFF]"
+    />
+    <span>Remember Me</span>
+  </label>
+</div>
+
 
               <button
                 type="submit"
@@ -190,7 +221,7 @@ export default function AuthModal({ isOpen, mode: initialMode, onClose }) {
 
               <button
                 type="button"
-                onClick={() => setUserType(null)}
+                onClick={() => resetForm()} //setUserType(null)}
                 className="text-sm text-[#6B94B8] hover:text-[#00FFFF] block mx-auto mt-3"
               >
                 ← Back to selection

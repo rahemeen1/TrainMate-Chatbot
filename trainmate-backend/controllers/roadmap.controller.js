@@ -52,17 +52,29 @@ export const generateUserRoadmap = async (req, res) => {
       .doc(userId); // adjust if the doc ID is different
 
     const onboardingSnap = await onboardingRef.get();
-   let trainingDurationFromOnboarding = "1 month";
+   //let trainingDurationFromOnboarding = "1 month";
+
+// if (onboardingSnap.exists) {
+//   const answers = onboardingSnap.data();
+//   if (answers && typeof answers === "object") {
+//     const firstAnswerKey = Object.keys(answers)[0]; // first key, usually "1"
+//     trainingDurationFromOnboarding = answers[firstAnswerKey] || "1 month";
+//   }
+let trainingDurationFromOnboarding = "1 month";
 
 if (onboardingSnap.exists) {
-  const answers = onboardingSnap.data();
-  if (answers && typeof answers === "object") {
-    const firstAnswerKey = Object.keys(answers)[0]; // first key, usually "1"
-    trainingDurationFromOnboarding = answers[firstAnswerKey] || "1 month";
+  const data = onboardingSnap.data();
+
+  if (data?.answers?.["1"]) {
+    trainingDurationFromOnboarding = data.answers["1"];
   }
 }
 
 console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboarding);
+
+// }
+
+// console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboarding);
 
     
     const trainingOn = trainingOnFromClient || user.trainingOn || "General";
@@ -169,6 +181,7 @@ console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboa
         ...roadmapModules[i],
         skillsCovered: roadmapModules[i].skillsCovered || [],
         order: i + 1,
+        completed: false, 
         status: "pending",
         createdAt: new Date(),
       });

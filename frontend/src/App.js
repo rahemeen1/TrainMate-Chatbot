@@ -37,7 +37,7 @@ export default function App() {
         <Route path="/fresher-training/:companyId/:deptId/:userId" element={<FresherTraining />}  />
         <Route path="/fresher-progress" element={<FresherProgress />} />
         <Route path="/CompanySpecific/TotalUsers" element={<TotalUsers />} />
-        <Route path="/roadmap/:companyId/:deptId/:userId" element={<Roadmap />} /> 
+        <Route path="/roadmap/:companyId/:deptId/:userId/:companyName" element={<Roadmap />} /> 
         <Route path="/chatbot" element={<Chatbot />} />
 
       </Routes>
