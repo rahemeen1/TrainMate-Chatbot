@@ -7,7 +7,7 @@ import { FresherSideMenu } from "./FresherSideMenu";
 
 export default function FresherTraining() {
   const { companyId, deptId, userId } = useParams();
-  const location = useLocation();
+  const location = useLocation(); 
   const navigate = useNavigate();
   const selectedModuleId = location.state?.moduleId || null;
   const companyName = location.state?.companyName || "";
@@ -78,41 +78,88 @@ export default function FresherTraining() {
   // ===============================
   // ✅ Mark Module Done
   // ===============================
+  // const markDone = async (moduleId) => {
+  //    try {
+  //   setLoadingModuleId(moduleId); // 👈 start loader
+  //     const moduleRef = doc(
+  //       db,
+  //       "freshers",
+  //       companyId,
+  //       "departments",
+  //       deptId,
+  //       "users",
+  //       userId,
+  //       "roadmap",
+  //       moduleId
+  //     );
+
+  //     await updateDoc(moduleRef, { completed: true });
+
+  //     setRoadmap((prev) =>
+  //       prev.map((m) =>
+  //         m.id === moduleId ? { ...m, completed: true } : m
+  //       )
+  //     );
+
+  //     if (selectedModule?.id === moduleId) {
+  //       setSelectedModule({ ...selectedModule, completed: true });
+  //     }
+
+  //     await updateProgress();
+  //   } catch (err) {
+  //     console.error("❌ Error marking module done:", err);
+  //   }
+  //   finally {
+  //   setLoadingModuleId(null); // 👈 stop loader
+  //   }
+  // };
   const markDone = async (moduleId) => {
-     try {
-    setLoadingModuleId(moduleId); // 👈 start loader
-      const moduleRef = doc(
-        db,
-        "freshers",
-        companyId,
-        "departments",
-        deptId,
-        "users",
-        userId,
-        "roadmap",
-        moduleId
-      );
+  try {
+    setLoadingModuleId(moduleId);
 
-      await updateDoc(moduleRef, { completed: true });
+    const moduleRef = doc(
+      db,
+      "freshers",
+      companyId,
+      "departments",
+      deptId,
+      "users",
+      userId,
+      "roadmap",
+      moduleId
+    );
 
-      setRoadmap((prev) =>
-        prev.map((m) =>
-          m.id === moduleId ? { ...m, completed: true } : m
-        )
-      );
+    // ✅ UPDATE BOTH completed + status
+    await updateDoc(moduleRef, {
+      completed: true,
+      status: "completed",
+    });
 
-      if (selectedModule?.id === moduleId) {
-        setSelectedModule({ ...selectedModule, completed: true });
-      }
+    // ✅ Update UI state
+    setRoadmap((prev) =>
+      prev.map((m) =>
+        m.id === moduleId
+          ? { ...m, completed: true, status: "completed" }
+          : m
+      )
+    );
 
-      await updateProgress();
-    } catch (err) {
-      console.error("❌ Error marking module done:", err);
+    if (selectedModule?.id === moduleId) {
+      setSelectedModule({
+        ...selectedModule,
+        completed: true,
+        status: "completed",
+      });
     }
-    finally {
-    setLoadingModuleId(null); // 👈 stop loader
-    }
-  };
+
+    await updateProgress();
+  } catch (err) {
+    console.error("❌ Error marking module done:", err);
+  } finally {
+    setLoadingModuleId(null);
+  }
+};
+
 
   // ===============================
   // ⏳ Skeleton Loader
@@ -193,6 +240,7 @@ return (
           />
         </div>
       </div>
+      
 
       {/* ===== Module Details Card ===== */}
       {selectedModule && (
@@ -271,7 +319,9 @@ return (
             </button>
           </div>
         </div>
+        
       )}
+      
     </div>
   </div>
 );

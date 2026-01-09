@@ -1,9 +1,11 @@
+// trainmate-backend/controllers/roadmap.controller.js
 import axios from "axios";
 import { db } from "../config/firebase.js";
 import { extractFileText } from "../utils/TextExtractor.js";
 import { retrieveDeptDocsFromPinecone } from "../services/pineconeService.js";
 import { generateRoadmap } from "../services/llmService.js";
 import { extractSkillsFromText } from "../services/skillExtractor.service.js";
+//import { generateModuleInsights } from "../services/moduleInsightsService.js";
 
 export const generateUserRoadmap = async (req, res) => {
   console.log("🚀 Roadmap generation request received");
@@ -45,42 +47,30 @@ export const generateUserRoadmap = async (req, res) => {
       return res.status(400).json({ error: "Onboarding incomplete" });
     }
 
-      const onboardingRef = db
-      .collection("companies")
-      .doc(companyId)
-      .collection("onboardingAnswers")
-      .doc(userId); // adjust if the doc ID is different
+  // 1️⃣ Fetch onboarding duration
+const onboardingRef = db
+  .collection("companies")
+  .doc(companyId)
+  .collection("onboardingAnswers");
 
-    const onboardingSnap = await onboardingRef.get();
-   //let trainingDurationFromOnboarding = "1 month";
+const onboardingSnap = await onboardingRef
+  .orderBy("createdAt", "desc") // 🔥 KEY FIX
+  .limit(1)
+  .get();
 
-// if (onboardingSnap.exists) {
-//   const answers = onboardingSnap.data();
-//   if (answers && typeof answers === "object") {
-//     const firstAnswerKey = Object.keys(answers)[0]; // first key, usually "1"
-//     trainingDurationFromOnboarding = answers[firstAnswerKey] || "1 month";
-//   }
-let trainingDurationFromOnboarding = "1 month";
+let trainingDurationFromOnboarding = null;
 
-if (onboardingSnap.exists) {
-  const data = onboardingSnap.data();
-
-  if (data?.answers?.["1"]) {
-    trainingDurationFromOnboarding = data.answers["1"];
-  }
+if (!onboardingSnap.empty) {
+  const data = onboardingSnap.docs[0].data();
+  trainingDurationFromOnboarding = data?.answers?.["1"] || null; 
 }
 
 console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboarding);
 
-// }
-
-// console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboarding);
-
-    
     const trainingOn = trainingOnFromClient || user.trainingOn || "General";
     const expertise = expertiseScore ?? user.expertise ?? 1;
     const level = expertiseLevel || user.level || "Beginner";
-     const finalTrainingDuration = trainingDurationFromOnboarding;
+    const finalTrainingDuration = trainingDurationFromOnboarding;
 
     console.log("🎯 FINAL VALUES USED:", {
       trainingOn,
@@ -188,6 +178,46 @@ console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboa
     }
 
     console.log("🎉 Roadmap saved successfully");
+  
+//   /* --------------------------------------------------
+//    8️⃣ Save Roadmap + Module Insights to Firestore
+// -------------------------------------------------- */
+
+// console.log("💾 Saving roadmap with insights...");
+
+// const roadmapCollection = userRef.collection("roadmap");
+
+// for (let i = 0; i < roadmapModules.length; i++) {
+//   const module = roadmapModules[i];
+//   console.log(`🧩 Generating insights for module ${i + 1}:`, module.moduleTitle);
+//   let insights = null;
+
+// try {
+//   insights = await generateModuleInsights({
+//     moduleTitle: module.moduleTitle,
+//     description: module.description,
+//     level,
+//   });
+// } catch (err) {
+//   console.error("❌ Insights generation failed:", err.message);
+//   insights = {
+//     whyThisMatters: "This module strengthens your professional foundation.",
+//     keyTopics: [],
+//     toolsYouWillUse: [],
+//     outcomes: [],
+//   };
+// }
+//   await roadmapCollection.add({
+//     ...module,
+//     insights,              // ✅ THIS is what frontend will show
+//     order: i + 1,
+//     completed: false,
+//     status: "pending",
+//     createdAt: new Date(),
+//   });
+// };
+
+//console.log("🎉 Roadmap with insights saved successfully");
 
     return res.json({
       success: true,

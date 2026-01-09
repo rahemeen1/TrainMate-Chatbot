@@ -12,6 +12,7 @@ export default function Roadmap() {
   const navigate = useNavigate();
   const [roadmap, setRoadmap] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingModuleId, setLoadingModuleId] = useState(null);
   // 📊 Progress calculation
 const completedCount = roadmap.filter((m) => m.completed).length;
 const progressPercent = roadmap.length
@@ -75,7 +76,7 @@ const progressPercent = roadmap.length
           const expertiseScore = userData.onboarding?.expertise ?? 1;
           const expertiseLevel = userData.onboarding?.level ?? "Beginner";
           const trainingOn = userData.trainingOn ?? "General";
-          const trainingDuration = userData.trainingDuration || "1 month";
+          const trainingDuration = userData.trainingDuration;
 
           await axios.post("http://localhost:5000/api/roadmap/generate", {
             companyId,
@@ -106,31 +107,66 @@ const progressPercent = roadmap.length
   }, [companyId, deptId, userId]);
 
   // Mark module as done
+  // const markDone = async (moduleId) => {
+  //   try {
+  //     const moduleRef = doc(
+  //       db,
+  //       "freshers",
+  //       companyId,
+  //       "departments",
+  //       deptId,
+  //       "users",
+  //       userId,
+  //       "roadmap",
+  //       moduleId
+  //     );
+
+  //     await updateDoc(moduleRef, { completed: true });
+
+  //     setRoadmap((prev) =>
+  //       prev.map((m) => (m.id === moduleId ? { ...m, completed: true } : m))
+  //     );
+
+  //     await updateProgress();
+  //   } catch (err) {
+  //     console.error(err);
+  //   }
+  // };
   const markDone = async (moduleId) => {
-    try {
-      const moduleRef = doc(
-        db,
-        "freshers",
-        companyId,
-        "departments",
-        deptId,
-        "users",
-        userId,
-        "roadmap",
-        moduleId
-      );
+  try {
+    setLoadingModuleId(moduleId);
 
-      await updateDoc(moduleRef, { completed: true });
+    const moduleRef = doc(
+      db,
+      "freshers",
+      companyId,
+      "departments",
+      deptId,
+      "users",
+      userId,
+      "roadmap",
+      moduleId
+    );
 
-      setRoadmap((prev) =>
-        prev.map((m) => (m.id === moduleId ? { ...m, completed: true } : m))
-      );
+    await updateDoc(moduleRef, {
+      completed: true,
+      status: "completed",
+    });
 
-      await updateProgress();
-    } catch (err) {
-      console.error(err);
-    }
-  };
+    // ✅ Update roadmap list only
+    setRoadmap((prev) =>
+      prev.map((m) =>
+        m.id === moduleId
+          ? { ...m, completed: true, status: "completed" }
+          : m
+      )
+    );
+  } catch (err) {
+    console.error("❌ Error marking module done:", err);
+  } finally {
+    setLoadingModuleId(null);
+  }
+};
 const getUnlockedModules = () => {
   let unlockedNext = true;
 
@@ -316,6 +352,23 @@ if (!roadmap.length)
 </div>
 
         ))}
+        {/* ===== Accomplishments Button (ALWAYS VISIBLE) ===== */}
+<div className="pt-4">
+  <button
+    onClick={() =>
+      navigate(
+        `/accomplishments/${companyId}/${deptId}/${userId}`,
+        { state: { companyName } }
+      )
+    }
+    className="px-6 py-3 bg-[#021B36] border border-[#00FFFF]
+    text-[#00FFFF] rounded-lg font-semibold
+    hover:bg-[#00FFFF]/10 transition"
+  >
+    🏆 View Your Accomplishments
+  </button>
+</div>
+
       </div>
     </div>
   );

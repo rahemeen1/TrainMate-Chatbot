@@ -1,3 +1,4 @@
+//CompanyDashboard.jsx
 import { useState, useEffect } from "react";
 import { collection, getDocs, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../../firebase";
@@ -12,6 +13,7 @@ const QUESTIONS = [
   { text: "Select your departments", type: "multi-select", options: DEPARTMENT_OPTIONS },
   { text: "Training duration", type: "single-select", options: ["1 month", "3 months", "6 months"] },
   { text: "Batch size", type: "single-select", options: ["Small (5-10)", "Medium (10-20)", "Large (20+)"] },
+   { text: "Tell us about your company", type: "text" },
 ];
 
 
@@ -123,9 +125,6 @@ useEffect(() => {
   if (hasDepartments) fetchUserCounts();
 }, [companyId, hasDepartments, selectedDepts]);
 
-
-
-
   // Save answers and departments
   const saveAnswersToDB = async () => {
     try {
@@ -184,26 +183,45 @@ useEffect(() => {
             <div className="max-w-4xl mx-auto space-y-6">
               <div className="p-6 rounded-xl border-2 border-[#00FFFF] bg-[#021B36]/80 shadow-[0_0_20px_rgba(0,255,255,0.3)]">
                 <p className="text-[#00FFFF] font-semibold text-lg mb-4">{QUESTIONS[step - 1].text}</p>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  {QUESTIONS[step - 1].options.map(opt => (
-                    <div
-                      key={opt}
-                      onClick={() => {
-                        if (QUESTIONS[step - 1].type === "multi-select") toggleDept(opt);
-                        else setAnswers(prev => ({ ...prev, [step - 1]: opt }));
-                      }}
-                      className={`cursor-pointer p-4 text-center rounded-xl border transition-all
-                        ${
-                          (QUESTIONS[step - 1].type === "multi-select"
-                            ? selectedDepts.includes(opt)
-                            : answers[step - 1] === opt)
-                            ? "bg-[#00FFFF]/20 border-[#00FFFF]"
-                            : "bg-[#021B36]/50 border-[#00FFFF30] hover:border-[#00FFFF60]"
-                        }`}
-                    >
-                      {opt}
-                    </div>
-                  ))}
+                {/* <div className="grid grid-cols-2 md:grid-cols-3 gap-4"> */}
+                  <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
+                   {QUESTIONS[step - 1].type === "text" ? (
+  <div className="w-full">
+    <textarea
+      rows={6}
+      placeholder="Tell us about your company, culture, and goals..."
+      value={answers[step - 1] || ""}
+      onChange={(e) =>
+        setAnswers((prev) => ({ ...prev, [step - 1]: e.target.value }))
+      }
+      className="w-full p-4 text-white rounded-xl border transition-all
+        bg-[#021B36]/50 border-[#00FFFF30] placeholder-[#AFCBE3]
+        focus:outline-none focus:border-[#00FFFF] hover:border-[#00FFFF60] resize-none"
+    />
+  </div>
+) : (
+  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+    {QUESTIONS[step - 1].options.map((opt) => (
+      <div
+        key={opt}
+        onClick={() => {
+          if (QUESTIONS[step - 1].type === "multi-select") toggleDept(opt);
+          else setAnswers((prev) => ({ ...prev, [step - 1]: opt }));
+        }}
+        className={`cursor-pointer p-4 text-center rounded-xl border transition-all
+          ${
+            (QUESTIONS[step - 1].type === "multi-select"
+              ? selectedDepts.includes(opt)
+              : answers[step - 1] === opt)
+              ? "bg-[#00FFFF]/20 border-[#00FFFF]"
+              : "bg-[#021B36]/50 border-[#00FFFF30] hover:border-[#00FFFF60]"
+          }`}
+      >
+        {opt}
+      </div>
+    ))}
+  </div>
+)}
                 </div>
 
                 {/* Navigation */}
@@ -216,6 +234,8 @@ useEffect(() => {
                       &larr; Back
                     </button>
                   )}
+
+                  {/* Next or Finish */}
                   {step === QUESTIONS.length ? (
                     <button
                       onClick={() => { handleNextStep(); saveAnswersToDB(); }}

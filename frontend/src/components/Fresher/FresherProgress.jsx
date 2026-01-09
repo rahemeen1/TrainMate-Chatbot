@@ -1,3 +1,4 @@
+//FresherProgress.jsx
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { doc, getDoc, collection, getDocs } from "firebase/firestore";
@@ -41,24 +42,64 @@ export default function FresherProgress() {
         const modules = roadmapSnap.docs.map((doc) => doc.data());
 
         const totalModules = modules.length;
-        const completedModules = modules.filter((m) => m.completed).length;
+        //const completedModules = modules.filter((m) => m.completed).length;
+        const completedModules = modules.filter(
+        (m) => m.completed === true || m.status === "completed"
+        ).length;
+
 
         const overallPercent = Math.round((completedModules / totalModules) * 100) || 0;
         setOverallProgress(overallPercent);
 
         // ✅ Phase-wise progress
-        const phaseCount = 3;
-        const modulesPerPhase = Math.ceil(totalModules / phaseCount);
-        const phases = Array.from({ length: phaseCount }, (_, i) => {
-          const start = i * modulesPerPhase;
-          const end = start + modulesPerPhase;
-          const phaseModules = modules.slice(start, end);
-          const completedPhase = phaseModules.filter((m) => m.completed).length;
-          const percent = phaseModules.length > 0 ? Math.round((completedPhase / phaseModules.length) * 100) : 0;
-          return { name: `Phase ${i + 1}`, progress: percent };
-        });
+        // const phaseCount = 3;
+        // const modulesPerPhase = Math.ceil(totalModules / phaseCount);
 
-        setPhaseProgress(phases);
+        // ✅ Group modules by phase (order)
+const phaseMap = {};
+
+modules.forEach((module) => {
+  const phase = module.order || 1; 
+  if (!phaseMap[phase]) phaseMap[phase] = [];
+  phaseMap[phase].push(module);
+});
+
+// ✅ Build phase progress dynamically
+const phases = Object.keys(phaseMap)
+  .sort((a, b) => a - b)
+  .map((phaseNumber) => {
+    const phaseModules = phaseMap[phaseNumber];
+
+    const completedCount = phaseModules.filter(
+      (m) => m.completed === true || m.status === "completed"
+    ).length;
+
+    const percent =
+      phaseModules.length > 0
+        ? Math.round((completedCount / phaseModules.length) * 100)
+        : 0;
+
+    return {
+      name: `Phase ${phaseNumber}`,
+      progress: percent,
+    };
+  });
+
+setPhaseProgress(phases);
+
+        // //const phases = Array.from({ length: phaseCount }, (_, i) => {
+        //   const start = i * modulesPerPhase;
+        //   const end = start + modulesPerPhase;
+        //   const phaseModules = modules.slice(start, end);
+        //   //const completedPhase = phaseModules.filter((m) => m.completed).length;
+        //   const completedPhase = phaseModules.filter(
+        //   (m) => m.completed === true || m.status === "completed"
+        //   ).length;
+        //   const percent = phaseModules.length > 0 ? Math.round((completedPhase / phaseModules.length) * 100) : 0;
+        //   return { name: `Phase ${i + 1}`, progress: percent };
+        // });
+
+        //setPhaseProgress(phases);
       } catch (err) {
         console.error(err);
         alert("Error fetching fresher progress");

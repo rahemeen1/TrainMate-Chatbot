@@ -40,7 +40,7 @@ export const generateRoadmap = async ({
   const safeTrainingOn = trainingOn || "General";
   const safeExpertise = expertise ?? 1;
   const safeLevel = level || "Beginner";
-  const safeDuration = trainingDuration || "1 month";
+  const safeDuration = trainingDuration;
 
   console.log("🧪 Normalized inputs:");
   console.log("   safeTrainingOn →", safeTrainingOn);
