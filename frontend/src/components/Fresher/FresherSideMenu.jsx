@@ -1,10 +1,15 @@
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { signOut } from "firebase/auth";
 import { auth } from "../../firebase";
+import { useState } from "react";
 
 export function FresherSideMenu({ userId, companyId, deptId, companyName }) {
-  const navigate = useNavigate();
+  const location = useLocation();
+  const state = location.state || {};
 
+  const navigate = useNavigate();
+const [email, setEmail] = useState(state.email || localStorage.getItem("email"));
+console.log(email);
   const handleLogout = async () => {
     if (window.confirm("Are you sure you want to logout?")) {
       await signOut(auth);
@@ -39,6 +44,13 @@ export function FresherSideMenu({ userId, companyId, deptId, companyName }) {
         className="text-left px-4 py-2 rounded-lg hover:bg-[#00FFFF]/20 transition font-medium"
       >
         RoadMap
+      </button>
+       <button
+        onClick={() =>
+          navigate("/chatbot", { state: { userId, companyId, deptId, companyName, email } })}
+        className="text-left px-4 py-2 rounded-lg hover:bg-[#00FFFF]/20 transition font-medium"
+      >
+        Training Assistant
       </button>
 
       <button

@@ -1,3 +1,4 @@
+//pinconeService.js
 import { Pinecone } from "@pinecone-database/pinecone";
 import { CohereClient } from "cohere-ai";
 import dotenv from "dotenv";

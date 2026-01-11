@@ -106,32 +106,6 @@ const progressPercent = roadmap.length
     loadRoadmap();
   }, [companyId, deptId, userId]);
 
-  // Mark module as done
-  // const markDone = async (moduleId) => {
-  //   try {
-  //     const moduleRef = doc(
-  //       db,
-  //       "freshers",
-  //       companyId,
-  //       "departments",
-  //       deptId,
-  //       "users",
-  //       userId,
-  //       "roadmap",
-  //       moduleId
-  //     );
-
-  //     await updateDoc(moduleRef, { completed: true });
-
-  //     setRoadmap((prev) =>
-  //       prev.map((m) => (m.id === moduleId ? { ...m, completed: true } : m))
-  //     );
-
-  //     await updateProgress();
-  //   } catch (err) {
-  //     console.error(err);
-  //   }
-  // };
   const markDone = async (moduleId) => {
   try {
     setLoadingModuleId(moduleId);

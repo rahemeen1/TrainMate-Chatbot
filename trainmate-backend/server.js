@@ -10,7 +10,7 @@ import superAdminRoutes from "./routes/superAdminRoutes.js";
 import { initPinecone } from "./config/pinecone.js";
 import ingestRoutes from "./routes/ingestroutes.js";
 import roadmapRoutes from "./routes/roadmapRoutes.js";
-import chatRoutes from "./routes/chatRoutes.js";
+import chatRoute from "./routes/chatRoutes.js";
 
 
 const app = express();
@@ -27,7 +27,7 @@ async function startServer() {
     app.use("/api", companyRoutes);
     app.use("/api", ingestRoutes);
     app.use("/api/roadmap", roadmapRoutes);
-    app.use("/api/chat", chatRoutes);
+    app.use("/api", chatRoute);
   
 
     app.listen(PORT, () => {
@@ -37,17 +37,3 @@ async function startServer() {
 
 
 startServer();
-
-
-
-
-  
-// // ✅ Total users count (if you have users collection, else return 0 for now)
-// app.get("/stats/users", async (req, res) => {
-//   try {
-//     const snapshot = await admin.firestore().collection("users").get();
-//     res.json({ count: snapshot.size });
-//   } catch (error) {
-//     res.json({ count: 0 });
-//   }
-// });

@@ -243,13 +243,7 @@ if (loading) {
     View Roadmap
   </button>
 
-  {/* Chat with Bot Button */}
-  <button
-    onClick={() => navigate("/chatbot", { state: { userId, companyId, deptId, companyName, email } })}
-    className="px-6 py-3 bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] font-semibold rounded-xl shadow-lg hover:scale-105 hover:shadow-2xl transition-transform duration-200 flex items-center gap-2"
-  >
-    💬 Chat with Bot
-  </button>
+ 
 </div>
        <p className="italic text-[#AFCBE3] mt-2">
           Best of luck with your journey

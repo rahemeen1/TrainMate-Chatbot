@@ -308,7 +308,7 @@ return (
                 bg-gradient-to-r from-cyan-400 to-blue-500
                 rounded-lg text-white font-semibold hover:scale-105 transition"
             >
-              🤖 Chat with AI Assistant
+              Chat with AI Assistant
             </button>
 
             <button

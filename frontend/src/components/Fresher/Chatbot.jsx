@@ -1,22 +1,16 @@
-//Chatbot.jsx
 import { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { FresherSideMenu } from "./FresherSideMenu";
 import { db } from "../../firebase";
-import { doc, getDoc } from "firebase/firestore";
-import { PaperAirplaneIcon } from "@heroicons/react/24/solid";
+import { collection, doc, getDoc, getDocs } from "firebase/firestore";
+import { PaperAirplaneIcon, ArrowLeftIcon } from "@heroicons/react/24/solid";
+import { UserCircleIcon, CpuChipIcon } from "@heroicons/react/24/solid";
+
 
 export default function FresherChatbot() {
   const navigate = useNavigate();
   const location = useLocation();
   const state = location.state || {};
-
-  const [userData, setUserData] = useState(null);
-  const [messages, setMessages] = useState([
-    { from: "bot", text: "Hi! I'm your assistant. How can I help you today?", id: 0 },
-  ]);
-  const [input, setInput] = useState("");
-  const [typing, setTyping] = useState(false); // bot typing indicator
   const chatEndRef = useRef(null);
 
   const userId = state.userId || localStorage.getItem("userId");
@@ -24,6 +18,19 @@ export default function FresherChatbot() {
   const deptId = state.deptId || localStorage.getItem("deptId");
   const companyName = state.companyName || localStorage.getItem("companyName");
 
+  const [userData, setUserData] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
+  const [typing, setTyping] = useState(false);
+
+  const [activeModuleId, setActiveModuleId] = useState(null);
+  const [availableDates, setAvailableDates] = useState([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  const [mode, setMode] = useState("new"); // new | read
+  const [selectedDate, setSelectedDate] = useState(null);
+
+  /* ---------------- USER LOAD ---------------- */
   useEffect(() => {
     if (!userId || !companyId || !deptId) {
       navigate("/", { replace: true });
@@ -31,187 +38,278 @@ export default function FresherChatbot() {
     }
 
     const fetchUser = async () => {
-      try {
-        const userRef = doc(db, "freshers", companyId, "departments", deptId, "users", userId);
-        const snap = await getDoc(userRef);
-        if (!snap.exists()) {
-          alert("User not found");
-          navigate("/", { replace: true });
-          return;
-        }
-        setUserData(snap.data());
-      } catch (err) {
-        console.error(err);
-        alert("Error loading user data");
-        navigate("/", { replace: true });
-      }
+      const userRef = doc(
+        db,
+        "freshers",
+        companyId,
+        "departments",
+        deptId,
+        "users",
+        userId
+      );
+      const snap = await getDoc(userRef);
+      if (snap.exists()) setUserData(snap.data());
     };
 
     fetchUser();
-  }, [userId, companyId, deptId, navigate]);
+  }, []);
 
-  // Scroll to bottom
+  /* ---------------- ACTIVE MODULE ---------------- */
+  useEffect(() => {
+    const fetchActiveModule = async () => {
+      const roadmapRef = collection(
+        db,
+        "freshers",
+        companyId,
+        "departments",
+        deptId,
+        "users",
+        userId,
+        "roadmap"
+      );
+
+      const snap = await getDocs(roadmapRef);
+      const active = snap.docs.find(d => d.data().status === "in-progress");
+      if (active) setActiveModuleId(active.id);
+    };
+
+    fetchActiveModule();
+  }, []);
+
+  /* ---------------- FETCH PREVIOUS CHAT DATES ---------------- */
+  useEffect(() => {
+    if (!activeModuleId) return;
+
+    const fetchPreviousChats = async () => {
+      const chatRef = collection(
+        db,
+        "freshers",
+        companyId,
+        "departments",
+        deptId,
+        "users",
+        userId,
+        "roadmap",
+        activeModuleId,
+        "chatSessions"
+      );
+
+      const snap = await getDocs(chatRef);
+      const dates = snap.docs.map(d => d.id).sort().reverse();
+      setAvailableDates(dates);
+
+      // show current server date chat by default
+      const today = dates[0];
+      if (today) loadChatByDate(today, false);
+    };
+
+    fetchPreviousChats();
+  }, [activeModuleId]);
+
+  /* ---------------- LOAD CHAT BY DATE ---------------- */
+  const loadChatByDate = async (date, readOnly = true) => {
+    const chatDoc = doc(
+      db,
+      "freshers",
+      companyId,
+      "departments",
+      deptId,
+      "users",
+      userId,
+      "roadmap",
+      activeModuleId,
+      "chatSessions",
+      date
+    );
+
+    const snap = await getDoc(chatDoc);
+    if (snap.exists()) {
+      setMessages(snap.data().messages || []);
+      setMode(readOnly ? "read" : "new");
+      setSelectedDate(date);
+      setShowDropdown(false);
+    }
+  };
+
+  /* ---------------- INIT NEW CHAT ---------------- */
+  const initNewChat = async () => {
+    const res = await fetch("http://localhost:5000/api/chat/init", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, companyId, deptId })
+    });
+
+    const data = await res.json();
+    setMessages([{ from: "bot", text: data.reply }]);
+    setMode("new");
+    setSelectedDate(null);
+  };
+
+  /* ---------------- SEND MESSAGE ---------------- */
+  const handleSend = async () => {
+    if (!input.trim() || mode === "read") return;
+
+    const userMsg = { from: "user", text: input };
+    setMessages(prev => [...prev, userMsg]);
+    setInput("");
+    setTyping(true);
+
+    try {
+      const res = await fetch("http://localhost:5000/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, companyId, deptId, newMessage: input })
+      });
+
+      const data = await res.json();
+      setMessages(prev => [...prev, { from: "bot", text: data.reply }]);
+    } catch (err) {
+      setMessages(prev => [
+        ...prev,
+        { from: "bot", text: "Unable to respond at the moment." }
+      ]);
+    } finally {
+      setTyping(false);
+    }
+  };
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, typing]);
-const handleSend = async () => {
-  if (!input.trim()) return;
-
-  const userMessage = { from: "user", text: input, id: Date.now() };
-  setMessages([...messages, userMessage]);
-  setInput("");
-  setTyping(true);
-
-  try {
-    const res = await fetch("http://localhost:5000/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userId,
-        companyId,
-        deptId,
-        messageHistory: messages.map(m => m.text),
-        newMessage: input,
-      }),
-    });
-
-    const { reply } = await res.json();
-    const botMessage = { from: "bot", text: reply, id: Date.now() + 1 };
-    setMessages(prev => [...prev, botMessage]);
-  } catch (err) {
-    console.error(err);
-    setMessages(prev => [
-      ...prev,
-      { from: "bot", text: "Oops, something went wrong!", id: Date.now() + 1 },
-    ]);
-  } finally {
-    setTyping(false);
-  }
-};
-
 
   return (
-    <div className="flex min-h-screen bg-[#031C3A] text-white">
+    <div className="flex h-screen overflow-hidden bg-[#031C3A] text-white">
 
-      {/* Left Side Menu */}
-      <div className="w-64 bg-[#021B36]/90 p-4">
-        <FresherSideMenu
-          userId={userId}
-          companyId={companyId}
-          deptId={deptId}
-          companyName={companyName}
-        />
-      </div>
-
-      {/* Chat Area */}
-      <div className="flex-1 flex flex-col">
-
-        {/* Header with neon/glass style */}
-        <div className="bg-[#021B36]/90 p-4 border-b border-[#00FFFF50] flex flex-col md:flex-row justify-between items-start md:items-center gap-2 md:gap-0 shadow-lg">
-          <div>
-            <h2 className="text-2xl font-bold text-[#00FFFF]">
-              Welcome to TrainMate Chatbot!
-            </h2>
-            <p className="text-[#AFCBE3] text-sm mt-1">
-              {userData?.name || "Fresher"} | <span className="text-[#00FFFF]">{userData?.deptName}</span> | <span className="text-[#00FFFF]">{userData?.companyName}</span>
-            </p>
-          </div>
-          <button
-            onClick={() => navigate(-1)}
-            className="text-[#00FFFF] font-bold hover:text-white border border-[#00FFFF50] rounded px-3 py-1 hover:scale-105 transition-transform shadow-md"
-          >
-            ← Back
-          </button>
-        </div>
-
-        {/* Chat History */}
-          <div className="flex-1 px-8 py-6 overflow-y-auto bg-gradient-to-b from-[#021B36] to-[#031C3A] space-y-6">
-  {messages.map((msg) => (
-    <div
-      key={msg.id}
-      className={`flex items-end gap-3 ${
-        msg.from === "user" ? "justify-end" : "justify-start"
-      }`}
-    >
-      {/* Bot Avatar */}
-      {msg.from === "bot" && (
-        <div className="w-9 h-9 rounded-full bg-[#00FFFF20] flex items-center justify-center border border-[#00FFFF40] shadow-md">
-          💬
-        </div>
-      )}
-
-      {/* Message Bubble */}
-      <div
-        className={`px-5 py-3 max-w-[65%] text-sm leading-relaxed backdrop-blur-md
-        ${
-          msg.from === "user"
-            ? "bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] rounded-2xl rounded-br-md shadow-lg"
-            : "bg-[#031C3A]/70 text-[#AFCBE3] rounded-2xl rounded-bl-md border border-[#00FFFF30] shadow-md"
-        }`}
-      >
-        {msg.text}
-      </div>
-    </div>
-  ))}
-
-  {/* Typing Indicator */}
-  {typing && (
-    <div className="flex items-center gap-3">
-      <div className="w-9 h-9 rounded-full bg-[#00FFFF20] flex items-center justify-center border border-[#00FFFF40] shadow-md">
-        💬
-      </div>
-
-      <div className="px-4 py-2 rounded-2xl bg-[#031C3A]/70 border border-[#00FFFF30] flex gap-1 shadow-md">
-        <span className="animate-bounce">•</span>
-        <span className="animate-bounce delay-150">•</span>
-        <span className="animate-bounce delay-300">•</span>
-      </div>
-    </div>
-  )}
-
-  <div ref={chatEndRef} />
+      {/* SIDEBAR */}
+     <div className="w-64 bg-[#021B36]/90 p-4 flex-none">
+  <FresherSideMenu
+    userId={userId}
+    companyId={companyId}
+    deptId={deptId}
+    companyName={companyName}
+  />
 </div>
 
 
-        {/* Input Box */}
-        <div className="bg-[#021B36]/90 p-4 border-t border-[#00FFFF50] flex gap-2 items-center">
-          <input
-            type="text"
-            placeholder="Type a message..."
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSend()}
-            className="flex-1 px-4 py-2 rounded-xl bg-[#031C3A]/80 text-white focus:outline-none border border-[#00FFFF50] placeholder:text-[#AFCBE3]"
-          />
-          <button
-            onClick={handleSend}
-            className="bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] p-3 rounded-xl hover:scale-105 transition-transform shadow-lg"
-          >
-            <PaperAirplaneIcon className="w-5 h-5 text-[#031C3A]" />
-          </button>
+      {/* MAIN */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+
+        {/* HEADER */}
+       <div className="bg-[#021B36]/90 p-4 border-b border-[#00FFFF50] flex justify-between items-center flex-none">
+
+          <div className="bg-[#021B36]/90 p-4 border-b border-[#00FFFF50] flex justify-between items-center flex-none">
+  <div>
+    <h2 className="text-2xl text-[#00FFFF]">TrainMate Chatbot</h2>
+    <p className="text-sm text-[#AFCBE3]">
+      {userData?.name} | {userData?.deptName} | {userData?.companyName}
+    </p>
+  </div>
+</div>
+
+
+          <div className="flex items-center gap-2 relative">
+         
+            <button
+  onClick={() =>
+    navigate("/previous-chats", {
+      state: { userId, companyId, deptId, activeModuleId }
+    })
+  }
+  className="border border-cyan-400/40 px-3 py-1 rounded"
+>
+  View Previous Chats
+</button>
+
+
+            {showDropdown && (
+              <div className="absolute right-0 mt-2 bg-[#021B36] border border-cyan-400/30 rounded w-44 z-10">
+                {availableDates.length === 0 && (
+                  <div className="p-3 text-sm text-gray-400">No previous chats</div>
+                )}
+                {availableDates.map(date => (
+                  <div
+                    key={date}
+                    onClick={() => loadChatByDate(date, true)}
+                    className="px-4 py-2 cursor-pointer hover:bg-cyan-400/10"
+                  >
+                    {date}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
+
+      
+     
+{/* CHAT CONTAINER */}
+<div className="flex-1 flex flex-col px-8 py-6 overflow-hidden">
+
+  {/* ONLY THIS SCROLLS */}
+  <div className="flex-1 overflow-y-auto px-8 py-6 space-y-6">
+
+   {messages.map((msg, i) => (
+  <div
+    key={i}
+    className={`flex items-end gap-2 ${
+      msg.from === "user" ? "justify-end" : "justify-start"
+    }`}
+  >
+    {/* BOT ICON */}
+    {msg.from === "bot" && (
+      <CpuChipIcon className="w-7 h-7 text-cyan-400 flex-shrink-0" />
+    )}
+
+    {/* MESSAGE BUBBLE */}
+    <div
+      className={`
+        px-4 py-2 rounded-xl max-w-[65%]
+        ${msg.from === "user"
+          ? "bg-[#00FFFF] text-[#031C3A]"
+          : "bg-[#021B36] border border-cyan-400/30 text-[#AFCBE3]"}
+        ${mode === "read" ? "opacity-50" : ""}
+      `}
+    >
+      {msg.text}
+    </div>
+
+    {/* USER ICON */}
+    {msg.from === "user" && (
+      <UserCircleIcon className="w-7 h-7 text-[#00FFFF] flex-shrink-0" />
+    )}
+  </div>
+))}
+
+{typing && <div className="text-sm text-gray-400">Typing...</div>}
+
+<div ref={chatEndRef} />
+
+  </div>
+
+
+</div>
+
+
+        {/* INPUT */}
+       <div className="p-4 border-t border-[#00FFFF50] flex gap-2 items-center bg-[#021B36]/90 flex-none">
+  <input
+    disabled={mode === "read"}
+    value={input}
+    onChange={e => setInput(e.target.value)}
+    onKeyDown={e => e.key === "Enter" && handleSend()}
+    placeholder={mode === "read" ? "Read only chat" : "Type a message..."}
+    className="flex-1 px-4 py-2 rounded bg-[#021B36] border border-cyan-400/40"
+  />
+  <button
+    onClick={handleSend}
+    disabled={mode === "read"}
+    className="bg-cyan-400 p-3 rounded disabled:opacity-40"
+  >
+    <PaperAirplaneIcon className="w-5 h-5 text-[#031C3A]" />
+  </button>
+</div>
+
       </div>
-
-      {/* Tailwind Animations */}
-      <style>
-        {`
-          @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px);}
-            to { opacity: 1; transform: translateY(0);}
-          }
-          .animate-fadeIn {
-            animation: fadeIn 0.4s ease-in-out;
-          }
-
-          @keyframes bounce {
-            0%, 80%, 100% { transform: translateY(0); }
-            40% { transform: translateY(-4px); }
-          }
-          .animate-bounce { animation: bounce 1s infinite; }
-          .delay-150 { animation-delay: 0.15s; }
-          .delay-300 { animation-delay: 0.3s; }
-        `}
-      </style>
     </div>
   );
 }

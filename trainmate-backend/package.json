@@ -12,6 +12,7 @@
     "axios": "^1.13.2",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.3",
+    "cheerio": "^1.1.2",
     "cohere-ai": "^7.20.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
@@ -20,6 +21,7 @@
     "firebase-admin": "^12.7.0",
     "mammoth": "^1.11.0",
     "openai": "^6.15.0",
-    "pdfjs-dist": "^5.4.530"
+    "pdfjs-dist": "^5.4.530",
+    "rss-parser": "^3.13.0"
   }
 }
