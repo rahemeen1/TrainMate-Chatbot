@@ -178,46 +178,6 @@ console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboa
     }
 
     console.log("🎉 Roadmap saved successfully");
-  
-//   /* --------------------------------------------------
-//    8️⃣ Save Roadmap + Module Insights to Firestore
-// -------------------------------------------------- */
-
-// console.log("💾 Saving roadmap with insights...");
-
-// const roadmapCollection = userRef.collection("roadmap");
-
-// for (let i = 0; i < roadmapModules.length; i++) {
-//   const module = roadmapModules[i];
-//   console.log(`🧩 Generating insights for module ${i + 1}:`, module.moduleTitle);
-//   let insights = null;
-
-// try {
-//   insights = await generateModuleInsights({
-//     moduleTitle: module.moduleTitle,
-//     description: module.description,
-//     level,
-//   });
-// } catch (err) {
-//   console.error("❌ Insights generation failed:", err.message);
-//   insights = {
-//     whyThisMatters: "This module strengthens your professional foundation.",
-//     keyTopics: [],
-//     toolsYouWillUse: [],
-//     outcomes: [],
-//   };
-// }
-//   await roadmapCollection.add({
-//     ...module,
-//     insights,              // ✅ THIS is what frontend will show
-//     order: i + 1,
-//     completed: false,
-//     status: "pending",
-//     createdAt: new Date(),
-//   });
-// };
-
-//console.log("🎉 Roadmap with insights saved successfully");
 
     return res.json({
       success: true,

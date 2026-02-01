@@ -1,3 +1,4 @@
+//chatbot.jsx
 import { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { FresherSideMenu } from "./FresherSideMenu";
@@ -53,6 +54,38 @@ export default function FresherChatbot() {
 
     fetchUser();
   }, []);
+  
+  useEffect(() => {
+  if (!userId || !companyId || !deptId) {
+    navigate("/", { replace: true });
+    return;
+  }
+
+  const fetchUser = async () => {
+    const userRef = doc(
+      db,
+      "freshers",
+      companyId,
+      "departments",
+      deptId,
+      "users",
+      userId
+    );
+    const snap = await getDoc(userRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      // Fetch company name separately
+      const companyRef = doc(db, "companies", companyId);
+      const companySnap = await getDoc(companyRef);
+      const companyName = companySnap.exists() ? companySnap.data().name : "Unknown Company";
+
+      setUserData({ ...data, companyName }); // override with correct name
+    }
+  };
+
+  fetchUser();
+}, []);
+
 
   /* ---------------- ACTIVE MODULE ---------------- */
   useEffect(() => {
@@ -286,10 +319,7 @@ export default function FresherChatbot() {
 
   </div>
 
-
 </div>
-
-
         {/* INPUT */}
        <div className="p-4 border-t border-[#00FFFF50] flex gap-2 items-center bg-[#021B36]/90 flex-none">
   <input

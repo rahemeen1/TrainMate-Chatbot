@@ -145,7 +145,7 @@ const resetForm = () => {
             <form onSubmit={handleSubmit} className="space-y-5 animate-fade-in-up w-full">
               <div>
                 <label className="block text-sm font-medium text-[#AFCBE3] mb-1.5">
-                  {userType === "admin" ? "Username / Company ID" : "User ID"}
+                  {userType === "admin" ? "Username / Company ID" : "Email ID"}
                 </label>
                 <div className="relative">
                   {userType === "admin" ? (
@@ -158,7 +158,7 @@ const resetForm = () => {
                     value={formData.emailOrUsername}
                     onChange={(e) => setFormData({ ...formData, emailOrUsername: e.target.value })}
                     className="w-full pl-11 pr-4 py-2.5 bg-[#021B36]/60 border border-[#00FFFF30] text-white rounded-lg focus:border-[#00FFFF]"
-                    placeholder={userType === "admin" ? "company_username" : "your_user_id"}
+                    placeholder={userType === "admin" ? "company_username" : "your_email_id"}
                     required
                   />
                 </div>

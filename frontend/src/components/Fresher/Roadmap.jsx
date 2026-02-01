@@ -141,6 +141,40 @@ const progressPercent = roadmap.length
     setLoadingModuleId(null);
   }
 };
+const markInProgress = async (module) => {
+  // ❌ Do nothing if already in-progress or completed
+  if (module.status === "in-progress" || module.completed) return;
+
+  try {
+    const moduleRef = doc(
+      db,
+      "freshers",
+      companyId,
+      "departments",
+      deptId,
+      "users",
+      userId,
+      "roadmap",
+      module.id
+    );
+
+    await updateDoc(moduleRef, {
+      status: "in-progress",
+    });
+
+    // ✅ Update local state
+    setRoadmap((prev) =>
+      prev.map((m) =>
+        m.id === module.id
+          ? { ...m, status: "in-progress" }
+          : m
+      )
+    );
+  } catch (err) {
+    console.error("❌ Error updating module status:", err);
+  }
+};
+
 const getUnlockedModules = () => {
   let unlockedNext = true;
 
@@ -293,14 +327,14 @@ if (!roadmap.length)
         ? "bg-green-500/20 text-green-400"
         : "bg-yellow-500/20 text-yellow-400"}`}
     >
-      {module.completed ? "Completed" : "Pending"}
+      {module.completed ? "Completed" : "in-progress"}
     </span>
   )}
 
   {/* Actions */}
   {!module.locked && !module.completed && (
     <div className="flex gap-3 mt-4">
-      <button
+      {/* <button
         onClick={() =>
           navigate(`/fresher-training/${companyId}/${deptId}/${userId}`, {
             state: { moduleId: module.id, companyName },
@@ -309,8 +343,16 @@ if (!roadmap.length)
         className="px-4 py-2 bg-[#00FFFF] text-[#031C3A] rounded font-semibold"
       >
         Start Learning
-      </button>
+      </button> */}
+      <button
+  onClick={async () => {
+    await markInProgress(module);
 
+    navigate(`/fresher-training/${companyId}/${deptId}/${userId}`,
+      { state: { moduleId: module.id, companyName },} );}}
+  className="px-4 py-2 bg-[#00FFFF] text-[#031C3A] rounded font-semibold"
+>Start Learning
+</button>
       <button
         onClick={() =>
           navigate(`/fresher-training/${companyId}/${deptId}/${userId}`, {

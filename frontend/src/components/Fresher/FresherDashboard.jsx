@@ -4,11 +4,13 @@ import { useLocation, useNavigate } from "react-router-dom";
 import {
   doc,
   getDoc,
+  collection,
   collectionGroup,
   query,
   where,
   getDocs,
 } from "firebase/firestore";
+
 import { db } from "../../firebase";
 import OnboardingPage from "./OnboardingPage";
 import { FresherSideMenu } from "./FresherSideMenu";
@@ -19,7 +21,8 @@ export default function FresherDashboard() {
 
   const [loading, setLoading] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
-
+  const [roadmap, setRoadmap] = useState([]);
+  const [progressPercent, setProgressPercent] = useState(0);
   const [userData, setUserData] = useState(null);
   
 
@@ -40,6 +43,43 @@ useEffect(() => {
   if (state.companyName) localStorage.setItem("companyName", state.companyName);
   if (state.email) localStorage.setItem("email", state.email);
 }, [state]);
+
+//progress calculation
+useEffect(() => {
+  if (!companyId || !deptId || !userId) return;
+
+  const loadRoadmapProgress = async () => {
+    try {
+      const roadmapRef = collection(
+        db,
+        "freshers",
+        companyId,
+        "departments",
+        deptId,
+        "users",
+        userId,
+        "roadmap"
+      );
+
+      const snap = await getDocs(roadmapRef);
+      const modules = snap.docs.map(d => d.data());
+
+      setRoadmap(modules);
+
+      const completedCount = modules.filter(m => m.completed).length;
+      const percent = modules.length
+        ? Math.round((completedCount / modules.length) * 100)
+        : 0;
+
+      setProgressPercent(percent);
+    } catch (err) {
+      console.error("❌ Error loading roadmap progress:", err);
+    }
+  };
+
+  loadRoadmapProgress();
+}, [companyId, deptId, userId]);
+
 
 // Redirect if essential info missing
 useEffect(() => {
@@ -218,7 +258,7 @@ if (loading) {
         </div>
 
         {/* PROGRESS */}
-        <div className="bg-[#021B36]/80 p-6 rounded-xl border border-[#00FFFF30] mb-6">
+        {/* <div className="bg-[#021B36]/80 p-6 rounded-xl border border-[#00FFFF30] mb-6">
           <h3 className="text-[#00FFFF] font-semibold mb-4">
             Training Progress
           </h3>
@@ -233,7 +273,24 @@ if (loading) {
           <p className="text-[#AFCBE3] mt-2">
             {userData?.progress || 0}% completed
           </p>
-        </div>
+        </div> */}
+        <div className="bg-[#021B36]/80 p-6 rounded-xl border border-[#00FFFF30] mb-6">
+  <h3 className="text-[#00FFFF] font-semibold mb-4">
+    Training Progress
+  </h3>
+
+  <div className="w-full h-4 bg-[#031C3A] rounded-full overflow-hidden">
+    <div
+      className={`h-full bg-gradient-to-r ${getProgressColor(progressPercent)}`}
+      style={{ width: `${progressPercent}%` }}
+    />
+  </div>
+
+  <p className="text-[#AFCBE3] mt-2">
+    {progressPercent}% completed
+  </p>
+</div>
+
            <div className="flex gap-4 mt-4">
   {/* View Roadmap Button */}
   <button
