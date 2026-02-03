@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { FresherSideMenu } from "./FresherSideMenu";
 import { db } from "../../firebase";
-import { collection, doc, getDoc, getDocs } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, setDoc } from "firebase/firestore";
 import { PaperAirplaneIcon, ArrowLeftIcon } from "@heroicons/react/24/solid";
 import { UserCircleIcon, CpuChipIcon } from "@heroicons/react/24/solid";
 
@@ -30,6 +30,8 @@ export default function FresherChatbot() {
 
   const [mode, setMode] = useState("new"); // new | read
   const [selectedDate, setSelectedDate] = useState(null);
+  const todayDate = new Date().toISOString().split("T")[0];
+
 
   /* ---------------- USER LOAD ---------------- */
   useEffect(() => {
@@ -110,34 +112,82 @@ export default function FresherChatbot() {
   }, []);
 
   /* ---------------- FETCH PREVIOUS CHAT DATES ---------------- */
-  useEffect(() => {
-    if (!activeModuleId) return;
+  // useEffect(() => {
+  //   if (!activeModuleId) return;
 
-    const fetchPreviousChats = async () => {
-      const chatRef = collection(
-        db,
-        "freshers",
-        companyId,
-        "departments",
-        deptId,
-        "users",
-        userId,
-        "roadmap",
-        activeModuleId,
-        "chatSessions"
-      );
+  //   const fetchPreviousChats = async () => {
+  //     const chatRef = collection(
+  //       db,
+  //       "freshers",
+  //       companyId,
+  //       "departments",
+  //       deptId,
+  //       "users",
+  //       userId,
+  //       "roadmap",
+  //       activeModuleId,
+  //       "chatSessions"
+  //     );
 
-      const snap = await getDocs(chatRef);
-      const dates = snap.docs.map(d => d.id).sort().reverse();
-      setAvailableDates(dates);
+  //     const snap = await getDocs(chatRef);
+  //     const dates = snap.docs.map(d => d.id).sort().reverse();
+  //     setAvailableDates(dates);
 
-      // show current server date chat by default
-      const today = dates[0];
-      if (today) loadChatByDate(today, false);
-    };
+  //     // show current server date chat by default
+  //     const today = dates[0];
+  //     if (today) loadChatByDate(today, false);
+  //   };
 
-    fetchPreviousChats();
-  }, [activeModuleId]);
+  //   fetchPreviousChats();
+  // }, [activeModuleId]);
+useEffect(() => {
+  if (!activeModuleId) return;
+
+  const loadTodayChat = async () => {
+    const chatRef = doc(
+      db,
+      "freshers",
+      companyId,
+      "departments",
+      deptId,
+      "users",
+      userId,
+      "roadmap",
+      activeModuleId,
+      "chatSessions",
+      todayDate
+    );
+
+    const snap = await getDoc(chatRef);
+
+    // ✅ IF TODAY CHAT EXISTS → LOAD IT
+    if (snap.exists()) {
+      setMessages(snap.data().messages || []);
+      setMode("new");
+    }
+    // ❌ ELSE → CREATE CHAT → THEN LOAD
+    else {
+      const res = await fetch("http://localhost:5000/api/chat/init", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, companyId, deptId })
+      });
+
+      const data = await res.json();
+      const initMessages = [{ from: "bot", text: data.reply }];
+
+      await setDoc(chatRef, {
+        messages: initMessages,
+        createdAt: new Date()
+      });
+
+      setMessages(initMessages);
+      setMode("new");
+    }
+  };
+
+  loadTodayChat();
+}, [activeModuleId]);
 
   /* ---------------- LOAD CHAT BY DATE ---------------- */
   const loadChatByDate = async (date, readOnly = true) => {
@@ -158,7 +208,8 @@ export default function FresherChatbot() {
     const snap = await getDoc(chatDoc);
     if (snap.exists()) {
       setMessages(snap.data().messages || []);
-      setMode(readOnly ? "read" : "new");
+      //setMode(readOnly ? "read" : "new");
+      setMode(date === todayDate ? "new" : "read");
       setSelectedDate(date);
       setShowDropdown(false);
     }
@@ -175,7 +226,8 @@ export default function FresherChatbot() {
     const data = await res.json();
     setMessages([{ from: "bot", text: data.reply }]);
     setMode("new");
-    setSelectedDate(null);
+    setSelectedDate(todayDate);
+    //setSelectedDate(null);
   };
 
   /* ---------------- SEND MESSAGE ---------------- */
@@ -206,9 +258,13 @@ export default function FresherChatbot() {
     }
   };
 
+  // useEffect(() => {
+  //   chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  // }, [messages, typing]);
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, typing]);
+  chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+}, [messages, typing]);
+
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#031C3A] text-white">
@@ -279,8 +335,7 @@ export default function FresherChatbot() {
 <div className="flex-1 flex flex-col px-8 py-6 overflow-hidden">
 
   {/* ONLY THIS SCROLLS */}
-  <div className="flex-1 overflow-y-auto px-8 py-6 space-y-6">
-
+  <div className="flex-1 flex flex-col overflow-hidden">
    {messages.map((msg, i) => (
   <div
     key={i}
@@ -312,11 +367,8 @@ export default function FresherChatbot() {
     )}
   </div>
 ))}
-
-{typing && <div className="text-sm text-gray-400">Typing...</div>}
-
+{typing && <div className="text-sm text-blue-400">Typing...</div>}
 <div ref={chatEndRef} />
-
   </div>
 
 </div>
