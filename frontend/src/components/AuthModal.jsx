@@ -23,16 +23,6 @@ export default function AuthModal({ isOpen, mode: initialMode, onClose }) {
 };
 
 
-  // useEffect(() => {
-  //   if (isOpen) {
-  //     setMode(initialMode);
-  //     setUserType(null);
-  //     setFormData({ emailOrUsername: "", password: "" });
-  //     setShowPassword(false);
-  //     setRememberMe(false);
-  //     setError("");
-  //   }
-  // }, [isOpen, initialMode]);
   useEffect(() => {
   if (isOpen) {
     resetForm();
@@ -188,16 +178,7 @@ const resetForm = () => {
 
               {error && <p className="text-red-500 text-sm">{error}</p>}
 
-              {/* <div className="flex items-center justify-between">
-                <label className="flex items-center space-x-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                    className="w-4 h-4 accent-[#00FFFF] border-gray-600 rounded focus:ring-[#00FFFF]"
-                  />
-                </label>
-              </div> */}
+             
               <div className="flex items-center mt-2">
   <label className="flex items-center space-x-2 cursor-pointer text-[#AFCBE3] text-sm">
     <input

@@ -107,16 +107,7 @@ export default function UserProfile() {
               <p className="text-white">{user.onboarding?.onboardingCompleted ? "Yes" : "No"}</p>
             </div>
 
-            {user.cvUrl && (
-              <a
-                href={user.cvUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-4 py-2 bg-[#00FFFF] text-[#031C3A] rounded font-semibold hover:bg-[#00e5e5] transition inline-block mt-4"
-              >
-                View CV
-              </a>
-            )}
+           
           </div>
         </div>
       </div>
