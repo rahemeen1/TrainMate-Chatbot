@@ -1,3 +1,4 @@
+//frontend/src/components/AuthModal.jsx
 import { useState, useEffect } from "react";
 import { X, Eye, EyeOff, Mail, Lock, Briefcase, User } from "lucide-react";
 import { useNavigate } from "react-router-dom";

@@ -100,7 +100,7 @@ const navigate = useNavigate();
       alert("❌ Failed to delete user. Please try again.");
     }
     finally {
-    setDeletingUserId(null); 
+    setDeletingUserId(null); // 🟢 stop deleting
   }
   };
 
@@ -168,36 +168,18 @@ const navigate = useNavigate();
                       <td className="p-3 text-center">{u.deptName || "N/A"}</td>
 
                       <td className="p-3 text-center">
-  <div className="flex items-center justify-center gap-2">
-    <span
-      className={`px-2 py-1 rounded text-xs font-semibold ${
-        u.progress >= 100
-          ? "bg-teal-400 text-black"
-          : "bg-teal-400/20 text-teal-300"
-      }`}
-    >
-      {u.progress >= 100 ? "Completed" : `${u.progress || 0}%`}
-    </span>
-
-    <button
-      onClick={() =>
-        navigate(
-          `/progress-details/${companyId}/${u.deptName}/${u.id}`,
-          {
-            state: {
-              userName: u.name,
-              progress: u.progress,
-            },
-          }
-        )
-      }
-      className="px-2 py-1 text-xs bg-teal-600 hover:bg-teal-500 rounded"
-    >
-      Details
-    </button>
-  </div>
-</td>
-
+                        <span
+                          className={`px-2 py-1 rounded text-xs font-semibold ${
+                            u.progress >= 100
+                              ? "bg-teal-400 text-black"
+                              : "bg-teal-400/20 text-teal-300"
+                          }`}
+                        >
+                          {u.progress >= 100
+                            ? "Completed"
+                            : `${u.progress || 0}%`}
+                        </span>
+                      </td>
 
                       <td className="p-3">
                         <div className="flex justify-center gap-2">

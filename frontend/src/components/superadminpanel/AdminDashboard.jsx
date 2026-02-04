@@ -1,36 +1,51 @@
 import { useState, useEffect } from "react";
 import { Users, Building2, UserPlus, LogOut } from "lucide-react";
+import { collection, collectionGroup, getDocs, query, where } from "firebase/firestore";
+import { db } from "../../firebase"; // <-- fixed path
 import SuperAdminSettings from "./SuperAdminSettings";
 import AddCompany from "./AddCompany";
 import { useNavigate } from "react-router-dom";
 import ViewCompanies from "./ViewCompanies";
 import ManageCompanies from "./ManageCompanies";
+import SuperAdminAnalytics from "./SuperAdminAnalytics";
 
 
 export default function AdminDashboard() {
   const [activeSection, setActiveSection] = useState("overview");
   const [stats, setStats] = useState({
-    companies: 0,
-    users: 0,
-    admins: 0
-  });
+  companies: 0,        // ACTIVE
+  totalCompanies: 0,   // ALL
+  users: 0,
+  admins: 1
+});
+
   const navigate = useNavigate();
-   const fetchStats = async () => {
-    try {
-      const comp = await fetch("http://localhost:5000/api/stats/companies").then(r => r.json());
-      const users = await fetch("http://localhost:5000/stats/users").then(r => r.json());
-      const admins = await fetch("http://localhost:5000/api/stats/superadmins").then(r => r.json());
+  const fetchStats = async () => {
+  try {
+    // 1️⃣ Count active companies
+    const companiesSnap = await getDocs(
+      query(collection(db, "companies"), where("status", "==", "active"))
+    );
+    const activeCompanies = companiesSnap.size;
 
-      setStats({
-        companies: comp.count,
-        users: users.count,
-        admins: admins.count
-      });
-    } catch (error) {
-      console.error("❌ Error fetching stats", error);
-    }
-  };
+    // 2️⃣ Count total companies
+    const totalCompaniesSnap = await getDocs(collection(db, "companies"));
+    const totalCompanies = totalCompaniesSnap.size;
 
+    // 3️⃣ Count total freshers (all users in all departments)
+    const freshersSnap = await getDocs(collectionGroup(db, "users"));
+    const totalUsers = freshersSnap.size;
+
+    setStats({
+      companies: activeCompanies,
+      totalCompanies: totalCompanies,
+      users: totalUsers,
+      admins: 1,
+    });
+  } catch (err) {
+    console.error("❌ Error fetching stats from Firestore:", err);
+  }
+};
   useEffect(() => {
     fetchStats();
   }, []);
@@ -107,13 +122,26 @@ export default function AdminDashboard() {
         </h1>
 
         {/* ✅ Overview Stats */}
-       {activeSection === "overview" && (
+       {/* {activeSection === "overview" && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             <StatCard title="Companies Onboard" value={stats.companies} icon={<Building2 />} />
             <StatCard title="Total Users" value={stats.users} icon={<Users />} />
             <StatCard title="Super Admins" value={stats.admins} icon={<UserPlus />} />
           </div>
-        )}
+          
+        )} */}
+        {activeSection === "overview" && (
+  <>
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      <StatCard title="Companies Onboard" value={stats.companies} icon={<Building2 />} />
+      <StatCard title="Total Users" value={stats.users} icon={<Users />} />
+      <StatCard title="Super Admins" value={stats.admins} icon={<UserPlus />} />
+    </div>
+
+    <SuperAdminAnalytics stats={stats} />
+  </>
+)}
+
 
         {/* ✅ Add Company Page */}
         {activeSection === "addCompany" && <AddCompany />}

@@ -1,3 +1,4 @@
+//frontend/src/components/services/authHandlers.js
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth, db } from "../../firebase";
 import { collection, getDoc, getDocs, doc } from "firebase/firestore";
@@ -33,26 +34,47 @@ export const handleLogin = async ({
 
       const companiesSnap = await getDocs(collection(db, "companies"));
 
+      // let companyId = null;
+      // let companyName = null;
       let companyId = null;
       let companyName = null;
+      let companyStatus = null;
 
+
+      // companiesSnap.forEach((c) => {
+      //   const data = c.data();
+      //   const short = data.name
+      //     .split(" ")
+      //     .map((w) => w[0])
+      //     .join("")
+      //     .toUpperCase();
+
+      //   if (short === companyShort) {
+      //     companyId = c.id;
+      //     companyName = data.name;
+      //   }
+      // });
       companiesSnap.forEach((c) => {
-        const data = c.data();
-        const short = data.name
-          .split(" ")
-          .map((w) => w[0])
-          .join("")
-          .toUpperCase();
+  const data = c.data();
+  const short = data.name
+    .split(" ")
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase();
 
-        if (short === companyShort) {
-          companyId = c.id;
-          companyName = data.name;
-        }
-      });
-
+  if (short === companyShort) {
+    companyId = c.id;
+    companyName = data.name;
+    companyStatus = data.status; // ✅ capture status
+  }
+});
       if (!companyId) {
         return { error: "Company not found" };
       }
+if (companyStatus !== "active") {
+  return { error: "Your company is suspended. Contact admin." };
+}
+
 
       const fresherRef = doc(
         db,

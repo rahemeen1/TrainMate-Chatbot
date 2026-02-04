@@ -28,6 +28,7 @@ async function startServer() {
     app.use("/api", ingestRoutes);
     app.use("/api/roadmap", roadmapRoutes);
     app.use("/api", chatRoute);
+app.use("/api/stats", statsRoutes);
   
 
     app.listen(PORT, () => {

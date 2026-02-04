@@ -6,6 +6,8 @@ export default function ManageCompanies() {
   const [companies, setCompanies] = useState([]);
   const [selected, setSelected] = useState(null);
   const [message, setMessage] = useState("");
+  const [filter, setFilter] = useState("all");
+
 
   // ✅ Fetch companies from backend
   const fetchCompanies = async () => {
@@ -106,6 +108,35 @@ export default function ManageCompanies() {
       </h2>
 
       {message && <p className="text-green-400 mb-3">{message}</p>}
+      <div className="flex gap-3 mb-4">
+  <button
+    onClick={() => setFilter("all")}
+    className={`px-3 py-1 rounded ${
+      filter === "all" ? "bg-[#00FFFF] text-black" : "bg-gray-700 text-white"
+    }`}
+  >
+    All
+  </button>
+
+  <button
+    onClick={() => setFilter("active")}
+    className={`px-3 py-1 rounded ${
+      filter === "active" ? "bg-green-500 text-black" : "bg-gray-700 text-white"
+    }`}
+  >
+    Active
+  </button>
+
+  <button
+    onClick={() => setFilter("suspended")}
+    className={`px-3 py-1 rounded ${
+      filter === "suspended" ? "bg-red-500 text-black" : "bg-gray-700 text-white"
+    }`}
+  >
+    Suspended
+  </button>
+</div>
+
 
       <table className="w-full text-white border border-[#00FFFF30]">
         <thead className="bg-[#021B36]">
@@ -119,7 +150,9 @@ export default function ManageCompanies() {
         </thead>
 
         <tbody>
-          {companies.map((c) => (
+          {/* {companies.map((c) => ( */}
+            {companies.filter((c) =>
+    filter === "all" ? true : c.status === filter ).map((c) => (
             <tr key={c.id} className="border-b border-[#00FFFF30]">
               <td className="p-2">{c.name || "-"}</td>
               <td className="p-2">{c.email || "-"}</td>
