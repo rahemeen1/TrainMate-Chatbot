@@ -1,6 +1,19 @@
 //CompanyDashboard.jsx
 import { useState, useEffect } from "react";
 import { collection, getDocs, addDoc, serverTimestamp } from "firebase/firestore";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
+} from "recharts";
 import { db } from "../../firebase";
 import { useNavigate, useLocation } from "react-router-dom";
 import { doc, setDoc } from "firebase/firestore";
@@ -33,6 +46,8 @@ export default function CompanyDashboard() {
   const [hasDepartments, setHasDepartments] = useState(false); // checks if onboarding is needed
   const [totalUsers, setTotalUsers] = useState(0);
   const [activeUsers, setActiveUsers] = useState(0);
+  const [chartData, setChartData] = useState([]);
+  const [pieData, setPieData] = useState([]);
   
 
   useEffect(() => {
@@ -124,6 +139,40 @@ useEffect(() => {
 
   if (hasDepartments) fetchUserCounts();
 }, [companyId, hasDepartments, selectedDepts]);
+
+  // Build chart data for departments
+  useEffect(() => {
+    const fetchChart = async () => {
+      if (!companyId || !hasDepartments) return;
+
+      try {
+        const depts = selectedDepts.length ? selectedDepts : [];
+        const chart = [];
+
+        for (const dept of depts) {
+          const usersRef = collection(
+            db,
+            "freshers",
+            companyId,
+            "departments",
+            dept,
+            "users"
+          );
+          const snap = await getDocs(usersRef);
+          chart.push({ department: dept, users: snap.size });
+        }
+
+        setChartData(chart);
+        // also build pie data
+        const pie = chart.map((c) => ({ name: c.department, value: c.users }));
+        setPieData(pie);
+      } catch (err) {
+        console.error("Error building chart data:", err);
+      }
+    };
+
+    fetchChart();
+  }, [companyId, hasDepartments, selectedDepts]);
 
   // Save answers and departments
   const saveAnswersToDB = async () => {
@@ -257,7 +306,7 @@ useEffect(() => {
           </>
         )}
 
-        {/* Dashboard */}
+        {/* Dashboard + Chart */}
         {hasDepartments && (
           <div className="max-w-5xl mx-auto space-y-6 mt-8">
             <h1 className="text-3xl font-bold text-[#00FFFF] mb-6">Dashboard Overview</h1>
@@ -279,6 +328,41 @@ useEffect(() => {
                 <p className="text-xl font-bold">—</p>
               </div>
             </div>
+
+            {chartData && chartData.length > 0 && (
+              <div className="max-w-5xl mx-auto mt-6 bg-[#021B36]/70 border border-[#00FFFF30] rounded-xl p-6">
+                <h2 className="text-lg font-semibold text-[#00FFFF] mb-4">Department Analytics</h2>
+                <p className="text-[#AFCBE3] mb-4">View user distribution and activity across departments</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="h-[360px] p-4 rounded-lg border-2 border-[#00FFFF40] bg-[#021B36]/60">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={chartData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(13, 88, 200, 0.13)" />
+                        <XAxis dataKey="department" stroke="#AFCBE3" />
+                        <YAxis stroke="#AFCBE3" allowDecimals={false} />
+                        <Tooltip
+                          contentStyle={{ backgroundColor: "#021B36", border: "1px solid #00FFFF50", color: "#fff" }}
+                        />
+                        <Bar dataKey="users" fill="#00FFFF" radius={[6, 6, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  <div className="h-[360px] p-4 rounded-lg border-2 border-[#00FFFF40] bg-[#021B36]/60">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label={{ fill: '#AFCBE3' }}>
+                          {pieData.map((entry, idx) => (
+                            <Cell key={`cell-${idx}`} fill={["#00FFFF", "#007BFF", "#7CFFEA", "#FFD36E", "#FF7AB6"][idx % 5]} />
+                          ))}
+                        </Pie>
+                        <Legend wrapperStyle={{ color: '#AFCBE3' }} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
