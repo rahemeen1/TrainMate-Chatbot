@@ -215,7 +215,6 @@ export default function ManageUser() {
             </select>
           </div>
 
-          {/* Loading / No Users / Table */}
           {loading ? (
             <div className="p-8 text-center text-[#AFCBE3]">Loading users...</div>
           ) : users.length === 0 ? (
@@ -231,10 +230,10 @@ export default function ManageUser() {
               <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr className="bg-cyan-400/20 uppercase text-cyan-300">
-                    <th className="py-4 px-5 text-left">#</th>
-                    <th className="py-4 px-5 text-left">Name</th>
-                    <th className="py-4 px-5 text-left">Phone</th>
-                    <th className="py-4 px-5 text-left">Department</th>
+                    <th className="py-4 px-5 text-center">#</th>
+                    <th className="py-4 px-5 text-center">Name</th>
+                    <th className="py-4 px-5 text-center">Phone</th>
+                    <th className="py-4 px-5 text-center">Department</th>
                     <th className="py-4 px-5 text-center">Status</th>
                     <th className="py-4 px-5 text-center">Training</th>
                     <th className="py-4 px-5 text-center">Progress</th>
@@ -251,9 +250,9 @@ export default function ManageUser() {
                       }`}
                     >
                       <td className="py-3 px-5">{i + 1}</td>
-                      <td className="py-3 px-5 font-medium">{u.name}</td>
-                      <td className="py-3 px-5">{u.phone || "—"}</td>
-                      <td className="py-3 px-5">
+                      <td className="py-3 px-5 font-medium text-center">{u.name}</td>
+                      <td className="py-3 px-5 text-center">{u.phone || "—"}</td>
+                      <td className="py-3 px-5 text-center">
                         <span className="px-3 py-1 rounded-full bg-cyan-400/20">
                           {u.deptName}
                         </span>

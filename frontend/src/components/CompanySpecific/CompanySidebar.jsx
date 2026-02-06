@@ -6,7 +6,6 @@ const MENU_OPTIONS = [
   { label: "Manage Users", path: "/CompanySpecific/Manageuser" },,
   { label: "Settings", path: "/CompanySpecific/CompanySettings" },
   { label: "Logout", path: "/" },
-  
 
 ];
 

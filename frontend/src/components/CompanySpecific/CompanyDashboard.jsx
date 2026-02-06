@@ -353,7 +353,7 @@ useEffect(() => {
                       <PieChart>
                         <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label={{ fill: '#AFCBE3' }}>
                           {pieData.map((entry, idx) => (
-                            <Cell key={`cell-${idx}`} fill={["#00FFFF", "#007BFF", "#7CFFEA", "#FFD36E", "#FF7AB6"][idx % 5]} />
+                            <Cell key={`cell-${idx}`} fill={["#00FFFF", "#007BFF", "#7CFFEA", "#AFCBE3", "#FF7AB6"][idx % 5]} />
                           ))}
                         </Pie>
                         <Legend wrapperStyle={{ color: '#AFCBE3' }} />
