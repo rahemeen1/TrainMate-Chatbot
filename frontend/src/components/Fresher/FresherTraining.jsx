@@ -63,16 +63,41 @@ export default function FresherTraining() {
     : 0;
 
   const updateProgress = async () => {
-    const userRef = doc(
-      db,
-      "freshers",
-      companyId,
-      "departments",
-      deptId,
-      "users",
-      userId
-    );
-    await updateDoc(userRef, { progress: progressPercent });
+    try {
+      const roadmapRef = collection(
+        db,
+        "freshers",
+        companyId,
+        "departments",
+        deptId,
+        "users",
+        userId,
+        "roadmap"
+      );
+      const snap = await getDocs(roadmapRef);
+      const modules = snap.docs.map((d) => d.data());
+
+      const totalModules = modules.length;
+      const completedModules = modules.filter((m) => m.completed).length;
+      const percent = totalModules ? Math.round((completedModules / totalModules) * 100) : 0;
+
+      const userRef = doc(
+        db,
+        "freshers",
+        companyId,
+        "departments",
+        deptId,
+        "users",
+        userId
+      );
+      const payload = { progress: percent };
+      if (percent === 100) payload.trainingStatus = "completed";
+      await updateDoc(userRef, payload);
+      return percent;
+    } catch (err) {
+      console.error("❌ Error updating progress:", err);
+      return 0;
+    }
   };
 
   // ===============================

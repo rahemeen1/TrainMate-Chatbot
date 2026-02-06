@@ -177,6 +177,12 @@ console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboa
       });
     }
 
+    // Initialize progress on user document to 0
+    try {
+      await userRef.update({ progress: 0 });
+    } catch (err) {
+      console.warn("⚠️ Failed to set initial progress on user doc:", err.message || err);
+    }
     console.log("🎉 Roadmap saved successfully");
 
     return res.json({

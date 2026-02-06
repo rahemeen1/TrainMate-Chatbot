@@ -257,23 +257,6 @@ if (loading) {
           </div>
         </div>
 
-        {/* PROGRESS */}
-        {/* <div className="bg-[#021B36]/80 p-6 rounded-xl border border-[#00FFFF30] mb-6">
-          <h3 className="text-[#00FFFF] font-semibold mb-4">
-            Training Progress
-          </h3>
-          <div className="w-full h-4 bg-[#031C3A] rounded-full overflow-hidden">
-            <div
-              className={`h-full bg-gradient-to-r ${getProgressColor(
-                userData?.progress || 0
-              )}`}
-              style={{ width: `${userData?.progress || 0}%` }}
-            />
-          </div>
-          <p className="text-[#AFCBE3] mt-2">
-            {userData?.progress || 0}% completed
-          </p>
-        </div> */}
         <div className="bg-[#021B36]/80 p-6 rounded-xl border border-[#00FFFF30] mb-6">
   <h3 className="text-[#00FFFF] font-semibold mb-4">
     Training Progress

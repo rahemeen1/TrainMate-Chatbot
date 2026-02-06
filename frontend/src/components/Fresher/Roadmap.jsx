@@ -39,7 +39,9 @@ const progressPercent = roadmap.length
       const progressPercent = Math.round((completedModules / totalModules) * 100);
 
       const userRef = doc(db, "freshers", companyId, "departments", deptId, "users", userId);
-      await updateDoc(userRef, { progress: progressPercent });
+      const payload = { progress: progressPercent };
+      if (progressPercent === 100) payload.trainingStatus = "completed";
+      await updateDoc(userRef, payload);
 
       return progressPercent;
     } catch (err) {
@@ -135,6 +137,12 @@ const progressPercent = roadmap.length
           : m
       )
     );
+    // Update overall progress in user doc
+    try {
+      await updateProgress();
+    } catch (err) {
+      console.error("❌ Error updating overall progress after markDone:", err);
+    }
   } catch (err) {
     console.error("❌ Error marking module done:", err);
   } finally {
