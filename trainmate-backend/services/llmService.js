@@ -78,6 +78,7 @@ STRICT RULES:
 3. LOGIC: Ensure 'estimatedDays' is an integer and titles are professional.
 4. QUALITY: Descriptions must be actionable and specific to the user's expertise level.
 5. SCHEMA: Adhere strictly to the requested JSON structure provided in the prompt.`,
+
     });
 
     console.log("✅ Gemini model initialized");

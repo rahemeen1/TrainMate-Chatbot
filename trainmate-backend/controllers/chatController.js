@@ -24,24 +24,39 @@ async function embedText(text) {
 }
 
 // ================= TRAINING PROGRESS =================
+
+
 function calculateTrainingProgress(moduleData) {
-  if (!moduleData.createdAt || !moduleData.estimatedDays) {
-    return { completedDays: 0, remainingDays: moduleData.estimatedDays || 0 };
+  const totalDays = moduleData.estimatedDays;
+
+  if (!moduleData.createdAt) {
+    return {
+      completedDays: 0,
+      remainingDays: totalDays,
+    };
   }
 
-  const createdAt = moduleData.createdAt.toDate();
+  const startDate = moduleData.createdAt.toDate
+    ? moduleData.createdAt.toDate()
+    : new Date(moduleData.createdAt);
+
   const today = new Date();
 
-  const diffTime = today.getTime() - createdAt.getTime();
-  const completedDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  // normalize both to midnight (CRITICAL)
+  startDate.setHours(0, 0, 0, 0);
+  today.setHours(0, 0, 0, 0);
 
-  const totalDays = moduleData.estimatedDays;
-  const safeCompleted = Math.min(completedDays, totalDays);
-  const remainingDays = Math.max(totalDays - safeCompleted, 0);
+  const diffDays =
+    Math.floor((today - startDate) / (1000 * 60 * 60 * 24)) + 1;
 
-  return { completedDays: safeCompleted, remainingDays };
+  const completedDays = Math.min(diffDays, totalDays);
+  const remainingDays = Math.max(totalDays - completedDays, 0);
+
+  return {
+    completedDays,
+    remainingDays,
+  };
 }
-
 
 /* ================= PINECONE ================= */
 const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
@@ -136,7 +151,7 @@ export const initChat = async (req, res) => {
     // First time today reply (without company info)
     if (firstTimeToday) {
       const reply = `
-🎯 Welcome to TrainMate!
+ Welcome to TrainMate!
 
 Hi! Your active module is "${moduleData.moduleTitle}".
 In this module, you will learn: ${moduleData.description || "details coming soon"}.
@@ -157,8 +172,6 @@ Let's get started and have fun learning! 🚀
 };
 
 
-/* ================= CHAT CONTROLLER ================= */
-/* ================= CHAT CONTROLLER ================= */
 export const chatController = async (req, res) => {
   try {
     console.log("🟡 chatController body:", req.body);
@@ -245,13 +258,38 @@ const userData = userSnap.exists ? userSnap.data() : {};
 
     // Prepare context: include module-specific context if any
     const contextParts = [];
-    // if (pineconeResults.length > 0) contextParts.push(pineconeResults.join("\n"));
+    
     if (pineconeResults.length > 0)
   contextParts.push(`REFERENCE MATERIAL (use only to explain concepts):\n${pineconeResults.join("\n")}`);
 
     if (companyDescription) contextParts.push(`Company Info:\n${companyDescription} *${companyDocName}*`);
     const context = contextParts.length > 0 ? contextParts.join("\n\n") : "No additional context available.";
+// Fetch all chatSessions for active module
+const allChatsSnap = await roadmapRef
+  .doc(activeModuleDoc.id)
+  .collection("chatSessions")
+  .orderBy("startedAt", "asc")
+  .get();
 
+let chatHistory = [];
+
+allChatsSnap.forEach((doc) => {
+  const data = doc.data();
+  if (data.messages && Array.isArray(data.messages)) {
+    chatHistory.push(...data.messages);
+  }
+});
+
+// 🧠 Convert chat history into readable context
+const formattedChatHistory = chatHistory
+  .slice(-50) // last 50 messages to limit tokens
+  .map((m) => `${m.from === 'user' ? 'User' : 'Assistant'}: ${m.text}`)
+  .join('\n');
+if (formattedChatHistory) {
+  contextParts.push(
+    `PREVIOUS CONVERSATION CONTEXT (for continuity, do not repeat unless needed):\n${formattedChatHistory}`
+  );
+}
     // Construct prompt
     const prompt = `
 SYSTEM DATA (authoritative, must be used when relevant):
@@ -278,13 +316,32 @@ TRAINING STATUS:
 RULES:
 - Answer primarily related to the active module.
 - You are allowed to use system-provided data such as user profile, training progress, and module metadata for personalization.
-- If the question is outside the module but about the company, use company onboarding info.- Only when you explicitly mention company policies, culture, or onboarding details, add a small italic reference at the end (*docName*).
+- If the question is outside the module but about the company, use company onboarding info.- Only when you explicitly mention company policies, culture, or onboarding details.
 - When company onboarding info is used, add small italics at the end as a reference (*docName*).
 - If a question can be answered using module data or user training data, do NOT use company onboarding documents.
 - If the question is outside the module and unrelated to both the module and company, politely refuse.
 - Do not use bold text or ** anywhere in the response.
 - Keep the tone friendly and encouraging.
+- Maintain conversation continuity using previous chat history.
+- Do not repeat explanations unless the user asks again.
+- If the user refers to something said earlier, resolve it from chat history.
+- Do not start every response with 'Hi', 'Hello', or the user's name unless appropriate.
+- Be concise and friendly, but avoid unnecessary filler.
+- Always tailor the response to the user’s question.
+- Use **HTML tags** for formatting instead of Markdown.
+- Use <strong> for bold, <em> for italic.
+- Use <ol>/<ul> for lists, <li> for list items.
+- Do NOT use ** or * for formatting.
+- Keep responses clear, friendly, and concise.
 
+PREVIOUS CONVERSATION CONTEXT:
+${formattedChatHistory}
+
+RULES:
+- Always use the previous conversation context when answering questions.
+- If the user asks about anything said before, retrieve it from the chat history.
+- Do not make up or guess what the user said previously.
+- Keep your tone friendly and encouraging.
 
 CONTEXT:
 ${context}
@@ -292,13 +349,33 @@ ${context}
 QUESTION:
 ${newMessage}
     `;
-
-  const progressMessage =
+const progressMessage =
   remainingDays === 0
-    ? `Great job ${userData.name}! You have completed the "${moduleData.moduleTitle}" module.`
-    : `Hi ${userData.name}, you have completed ${completedDays} out of ${moduleData.estimatedDays} training days for "${moduleData.moduleTitle}". ${remainingDays} days are remaining.`;
+    ? `Great job ${userData.name}! 🎉 You’ve successfully completed the "${moduleData.moduleTitle}" module.`
+    : `You’re currently on day ${completedDays} of your ${moduleData.estimatedDays}-day "${moduleData.moduleTitle}" module. You have ${remainingDays} days remaining.`;
 
-const finalPrompt = progressMessage + "\n\n" + prompt;
+  const finalPrompt = `
+SYSTEM DATA:
+- User: ${userData.name}
+- Active module: ${moduleData.moduleTitle}
+- Training progress: ${completedDays}/${moduleData.estimatedDays} days completed
+RULES:
+- Answer questions about the user's active module.
+- Use HTML tags for formatting instead of Markdown.
+- <strong> for bold, <em> for italic.
+- <ol>/<ul> for lists, <li> for list items.
+- Do not use ** or * anywhere.
+- Keep responses friendly and clear.
+
+${progressMessage}
+
+CONTEXT:
+${formattedChatHistory}
+
+QUESTION:
+${newMessage}
+`;
+
 
     // Generate response
     let botReply = "";

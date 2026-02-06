@@ -111,35 +111,7 @@ export default function FresherChatbot() {
     fetchActiveModule();
   }, []);
 
-  /* ---------------- FETCH PREVIOUS CHAT DATES ---------------- */
-  // useEffect(() => {
-  //   if (!activeModuleId) return;
 
-  //   const fetchPreviousChats = async () => {
-  //     const chatRef = collection(
-  //       db,
-  //       "freshers",
-  //       companyId,
-  //       "departments",
-  //       deptId,
-  //       "users",
-  //       userId,
-  //       "roadmap",
-  //       activeModuleId,
-  //       "chatSessions"
-  //     );
-
-  //     const snap = await getDocs(chatRef);
-  //     const dates = snap.docs.map(d => d.id).sort().reverse();
-  //     setAvailableDates(dates);
-
-  //     // show current server date chat by default
-  //     const today = dates[0];
-  //     if (today) loadChatByDate(today, false);
-  //   };
-
-  //   fetchPreviousChats();
-  // }, [activeModuleId]);
 useEffect(() => {
   if (!activeModuleId) return;
 
@@ -258,9 +230,6 @@ useEffect(() => {
     }
   };
 
-  // useEffect(() => {
-  //   chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  // }, [messages, typing]);
   useEffect(() => {
   chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
 }, [messages, typing]);
@@ -357,8 +326,9 @@ useEffect(() => {
           : "bg-[#021B36] border border-cyan-400/30 text-[#AFCBE3]"}
         ${mode === "read" ? "opacity-50" : ""}
       `}
+       dangerouslySetInnerHTML={{ __html: msg.text }}  // ✅ Replace msg.text with HTML content
     >
-      {msg.text}
+      
     </div>
 
     {/* USER ICON */}
