@@ -168,8 +168,20 @@ const navigate = useNavigate();
                       <td className="p-3 text-center">{u.deptName || "N/A"}</td>
 
                       <td className="p-3 text-center">
-                        <span
-                          className={`px-2 py-1 rounded text-xs font-semibold ${
+                          <button
+                          onClick={() =>
+                            navigate(`/progress-details/${companyId}/${encodeURIComponent(u.deptName || "unknown")}/${u.id}`, {
+                              state: {
+                                userId: u.id,
+                                userName: u.name,
+                                userProgress: u.progress || 0,
+                                companyId,
+                                companyName,
+                                deptName: u.deptName,
+                              },
+                            })
+                          }
+                          className={`px-3 py-1 rounded text-xs font-semibold hover:opacity-80 transition ${
                             u.progress >= 100
                               ? "bg-teal-400 text-black"
                               : "bg-teal-400/20 text-teal-300"
@@ -178,7 +190,7 @@ const navigate = useNavigate();
                           {u.progress >= 100
                             ? "Completed"
                             : `${u.progress || 0}%`}
-                        </span>
+                        </button>
                       </td>
 
                       <td className="p-3">

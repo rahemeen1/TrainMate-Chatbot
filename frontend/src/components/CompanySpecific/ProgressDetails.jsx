@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { db } from "../../firebase";
 import {
   collection,
@@ -10,7 +10,9 @@ import {
 import CompanySidebar from "./CompanySidebar";
 
 export default function ProgressDetails() {
-  const { companyId, deptName, userId } = useParams();
+  const { companyId, deptName: encodedDeptName, userId } = useParams();
+  const deptName = decodeURIComponent(encodedDeptName || "");
+  const navigate = useNavigate();
 
   const [modules, setModules] = useState([]);
   const [userInfo, setUserInfo] = useState(null);
@@ -89,12 +91,24 @@ export default function ProgressDetails() {
       {/* Main Content */}
       <div className="flex-1 p-10">
         {/* Header */}
-        <h1 className="text-3xl font-bold text-[#00FFFF] mb-2">
-          Employee Roadmap Progress
-        </h1>
-        <p className="text-[#AFCBE3] mb-6">
-          Detailed module-wise completion overview
-        </p>
+        <div className="flex items-start justify-between mb-2">
+          <div>
+            <h1 className="text-3xl font-bold text-[#00FFFF] mb-2">
+              Employee Roadmap Progress
+            </h1>
+            <p className="text-[#AFCBE3] mb-6">
+              Detailed module-wise completion overview
+            </p>
+          </div>
+          <div>
+            <button
+              onClick={() => navigate(-1)}
+              className="px-3 py-2 bg-[#00FFFF] text-[#031C3A] rounded-lg font-semibold"
+            >
+              ← Back
+            </button>
+          </div>
+        </div>
 
         {/* Employee Info Card */}
         <div className="bg-[#021B36] border border-teal-400/30 rounded-xl p-6 mb-8 max-w-4xl">
@@ -162,7 +176,15 @@ export default function ProgressDetails() {
 
           {!modules.length && (
             <div className="text-center text-gray-400 py-10">
-              No roadmap modules available
+              <p className="text-lg text-[#AFCBE3]">
+                {userInfo?.name
+                  ? `${userInfo.name} hasn't onboarded yet.`
+                  : "This user hasn't onboarded yet."}
+              </p>
+              <p className="text-sm mt-2">No roadmap created for this user.</p>
+              <div className="mt-4">
+                
+              </div>
             </div>
           )}
         </div>

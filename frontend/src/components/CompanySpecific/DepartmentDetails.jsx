@@ -20,6 +20,7 @@ const [docs, setDocs] = useState([]);
 const [uploadingDoc, setUploadingDoc] = useState(false);
 const [addingUser, setAddingUser] = useState(false);
 const [userAddedSuccess, setUserAddedSuccess] = useState(false);
+const [deletingDocId, setDeletingDocId] = useState(null);
 
 
   const { state } = useLocation();
@@ -143,13 +144,13 @@ const closeAddUserModal = () => {
         <button onClick={() => navigate(-1)} className="mb-4 text-[#00FFFF]">
           ← Back
         </button>
-        <h1 className="text-3xl font-bold mb-6">{deptName} Department</h1>
+        <h1 className="text-3xl font-bold mb-6">{(deptName || "").toUpperCase()} Department</h1>
 
         {/* DOCUMENTS */}
         <div className="mb-10">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-semibold">
-              {deptName} Documents ({docs.length})
+              {(deptName || "").toUpperCase()} Documents ({docs.length})
             </h2>
           </div>
 
@@ -223,19 +224,37 @@ const closeAddUserModal = () => {
               <button
   onClick={async () => {
     if (window.confirm(`Delete ${doc.name}?`)) {
-      console.log("Deleting doc with storagePath:", doc.storagePath); // <-- DEBUG
-      await deleteDepartmentDoc({
-        companyId,
-        deptName,
-        docId: doc.id,
-        storagePath: doc.storagePath, // must exist
-      });
-      setDocs(await fetchDepartmentDocs(companyId, deptId));
+      try {
+        setDeletingDocId(doc.id);
+        console.log("Deleting doc with storagePath:", doc.storagePath);
+        await deleteDepartmentDoc({
+          companyId,
+          deptName,
+            docId: doc.id,
+          storagePath: doc.storagePath,
+        });
+        await new Promise(resolve => setTimeout(resolve, 800));
+        setDocs(await fetchDepartmentDocs(companyId, deptId));
+      } finally {
+        setDeletingDocId(null);
+      }
     }
   }}
-   className="px-3 py-1 bg-red-600 text-white rounded flex items-center gap-1 hover:bg-red-700 transition"
+   className={`px-3 py-1 rounded flex items-center gap-1 transition text-sm font-semibold ${
+     deletingDocId === doc.id
+       ? "bg-red-700 text-white cursor-not-allowed animate-pulse"
+       : "bg-red-600 text-white hover:bg-red-700"
+   }`}
+   disabled={deletingDocId === doc.id}
 >
-  🗑 Delete
+  {deletingDocId === doc.id ? (
+    <>
+      <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+      Deleting...
+    </>
+  ) : (
+    <>🗑 Delete</>
+  )}
 </button>
             </div>
           </td>
@@ -272,9 +291,9 @@ const closeAddUserModal = () => {
 </thead>
 
               <tbody>
-  {users.map((u) => (
+      {users.map((u) => (
     <tr key={u.id} className="border-t border-[#00FFFF20]">
-      <td className="p-2">{u.name}</td>
+      <td className="p-2">{(u.name || "").toUpperCase()}</td>
 
       <td className="p-2 text-center">
         {u.phone || "—"}

@@ -149,7 +149,7 @@ export default function ManageDepartments() {
                     key={dept.id}
                     className="border-t border-[#00FFFF20] hover:bg-[#00FFFF10]"
                   >
-                    <td className="p-4 font-medium">{dept.name}</td>
+                    <td className="p-4 font-medium">{(dept.name || "").toUpperCase()}</td>
                     <td className="p-4 text-center">{dept.usersCount}</td>
                     <td className="p-4 text-center">
                       <button
