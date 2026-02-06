@@ -1,5 +1,6 @@
 //ingestController.js
 import { ingestDocAsync } from "../services/ingestService.js";
+import { deleteDocFromPinecone } from "../services/deleteDocFromPinecone.js";
 
 export const ingestDocumentController = async (req, res) => {
   console.log("📥 [INGEST] API HIT /api/ingest/document");
@@ -59,5 +60,20 @@ export const ingestDocumentController = async (req, res) => {
       message: "Internal server error during ingestion",
       error: error.message,
     });
+  }
+};
+export const deleteDocumentController = async (req, res) => {
+  try {
+    const { companyId, docId } = req.body;
+
+    console.log("Deleting Pinecone vectors for docId:", JSON.stringify(docId));
+    console.log("Length:", docId.length);
+
+    await deleteDocFromPinecone({ companyId, docId });
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("❌ Pinecone delete failed", err);
+    res.status(500).json({ error: "Delete failed" });
   }
 };

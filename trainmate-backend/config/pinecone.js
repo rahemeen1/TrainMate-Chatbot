@@ -1,3 +1,4 @@
+// pinecone.js
 import { Pinecone } from "@pinecone-database/pinecone";
 
 let pineconeIndex;

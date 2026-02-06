@@ -1,3 +1,4 @@
+//departmentHandlers.js
 import {
   collection,
   getDocs,
@@ -140,17 +141,29 @@ export const deleteDepartmentDoc = async ({
       await deleteObject(fileRef);
       console.log("✅ Storage file deleted:", cleanedPath);
     }
-
+await fetch("http://localhost:5000/api/ingest/document", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        companyId,
+        deptName,
+        docId,
+         numChunks: 10,
+      }),
+    });
     // Firestore delete
     await deleteDoc(
       doc(db, "companies", companyId, "departments", deptName, "documents", docId)
     );
     console.log("✅ Firestore document deleted:", docId);
 
+  
+
   } catch (err) {
     console.error("❌ Delete failed:", err);
     throw err;
   }
+  
 };
 
 

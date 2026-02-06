@@ -94,6 +94,7 @@ export const ingestDocAsync = async ({
           companyId,
           deptName,
           fileName,
+          docId, 
           chunkIndex: i,
           text: chunk, // ✅ CRITICAL FIX
         },
@@ -120,4 +121,5 @@ export const ingestDocAsync = async ({
     console.error(err?.stack || err);
     throw err;
   }
+  
 };
