@@ -238,6 +238,17 @@ const userData = userSnap.exists ? userSnap.data() : {};
     } catch (err) {
       console.error("⚠️ Pinecone query failed:", err);
     }
+      // 🧠 Load agent memory summary
+const memoryRef = roadmapRef
+  .doc(activeModuleDoc.id)
+  .collection("agentMemory")
+  .doc("summary");
+
+const memorySnap = await memoryRef.get();
+
+const agentMemory = memorySnap.exists
+  ? memorySnap.data().summary
+  : "No prior memory available.";
 
     // Get company description from Firestore
     const onboardingRef = db
@@ -264,123 +275,87 @@ const userData = userSnap.exists ? userSnap.data() : {};
 
     if (companyDescription) contextParts.push(`Company Info:\n${companyDescription} *${companyDocName}*`);
     const context = contextParts.length > 0 ? contextParts.join("\n\n") : "No additional context available.";
-// Fetch all chatSessions for active module
-const allChatsSnap = await roadmapRef
-  .doc(activeModuleDoc.id)
-  .collection("chatSessions")
-  .orderBy("startedAt", "asc")
-  .get();
+const progressMessage =
+  remainingDays === 0
+    ? `The user has completed the module "${moduleData.moduleTitle}".`
+    : `The user is on day ${completedDays} of ${moduleData.estimatedDays} for "${moduleData.moduleTitle}".`;
 
-let chatHistory = [];
+const finalPrompt = `
+SYSTEM ROLE:
+You are TrainMate, a goal-driven onboarding training agent.
 
-allChatsSnap.forEach((doc) => {
-  const data = doc.data();
-  if (data.messages && Array.isArray(data.messages)) {
-    chatHistory.push(...data.messages);
-  }
-});
-
-// 🧠 Convert chat history into readable context
-const formattedChatHistory = chatHistory
-  .slice(-50) // last 50 messages to limit tokens
-  .map((m) => `${m.from === 'user' ? 'User' : 'Assistant'}: ${m.text}`)
-  .join('\n');
-if (formattedChatHistory) {
-  contextParts.push(
-    `PREVIOUS CONVERSATION CONTEXT (for continuity, do not repeat unless needed):\n${formattedChatHistory}`
-  );
-}
-    // Construct prompt
-    const prompt = `
-SYSTEM DATA (authoritative, must be used when relevant):
-- User profile, training progress, and module status come directly from the database.
-- This data is always accurate and should be reflected in responses naturally.
-
-
-You are TrainMate, a friendly onboarding assistant.
+AGENT MEMORY (authoritative – reflects past learning and conversation):
+${agentMemory}
 
 USER PROFILE:
-- Name: ${userData.name || "Trainee"}
-- Department: ${userData.deptName || deptId}
-- Company: ${userData.companyName || "Company"}
-- Training Status: ${userData.trainingStatus || "ongoing"}
+Name: ${userData.name}
+Department: ${userData.deptName || deptId}
 
 ACTIVE MODULE:
 ${moduleData.moduleTitle}
 
 TRAINING STATUS:
-- Total training days: ${moduleData.estimatedDays}
-- Completed days: ${completedDays}
-- Remaining days: ${remainingDays}
-
-RULES:
-- Answer primarily related to the active module.
-- You are allowed to use system-provided data such as user profile, training progress, and module metadata for personalization.
-- If the question is outside the module but about the company, use company onboarding info.- Only when you explicitly mention company policies, culture, or onboarding details.
-- When company onboarding info is used, add small italics at the end as a reference (*docName*).
-- If a question can be answered using module data or user training data, do NOT use company onboarding documents.
-- If the question is outside the module and unrelated to both the module and company, politely refuse.
-- Do not use bold text or ** anywhere in the response.
-- Keep the tone friendly and encouraging.
-- Maintain conversation continuity using previous chat history.
-- Do not repeat explanations unless the user asks again.
-- If the user refers to something said earlier, resolve it from chat history.
-- Do not start every response with 'Hi', 'Hello', or the user's name unless appropriate.
-- Be concise and friendly, but avoid unnecessary filler.
-- Always tailor the response to the user’s question.
-- Use **HTML tags** for formatting instead of Markdown.
-- Use <strong> for bold, <em> for italic.
-- Use <ol>/<ul> for lists, <li> for list items.
-- Do NOT use ** or * for formatting.
-- Keep responses clear, friendly, and concise.
-
-PREVIOUS CONVERSATION CONTEXT:
-${formattedChatHistory}
-
-RULES:
-- Always use the previous conversation context when answering questions.
-- If the user asks about anything said before, retrieve it from the chat history.
-- Do not make up or guess what the user said previously.
-- Keep your tone friendly and encouraging.
-
-CONTEXT:
-${context}
-
-QUESTION:
-${newMessage}
-    `;
-const progressMessage =
-  remainingDays === 0
-    ? `Great job ${userData.name}! 🎉 You’ve successfully completed the "${moduleData.moduleTitle}" module.`
-    : `You’re currently on day ${completedDays} of your ${moduleData.estimatedDays}-day "${moduleData.moduleTitle}" module. You have ${remainingDays} days remaining.`;
-
-  const finalPrompt = `
-SYSTEM DATA:
-- User: ${userData.name}
-- Active module: ${moduleData.moduleTitle}
-- Training progress: ${completedDays}/${moduleData.estimatedDays} days completed
-RULES:
-- Answer questions about the user's active module.
-- Use HTML tags for formatting instead of Markdown.
-- <strong> for bold, <em> for italic.
-- <ol>/<ul> for lists, <li> for list items.
-- Do not use ** or * anywhere.
-- Keep responses friendly and clear.
-
 ${progressMessage}
 
-CONTEXT:
-${formattedChatHistory}
+RULES:
+- Use agent memory to maintain continuity.
+- Do NOT repeat explanations unless the user asks.
+- If user refers to past messages, resolve using agent memory only.
+- Do NOT invent past conversations.
+- Do NOT greet repeatedly.
+- Use HTML tags only (<strong>, <em>, <ul>, <ol>, <li>).
+- No Markdown (** or *).
+- Be concise, helpful, and step-focused.
+If asked about:
+- first / last message
+- exact wording
+- confirmations
+- whether something was explained previously
 
-QUESTION:
+AND that information is not explicitly present in chat history,
+
+You must say you cannot determine it.
+Do not infer, guess, or fabricate memory.
+Do not imply background retrieval or internal processes.
+
+
+OPTIONAL CONTEXT (reference only):
+${context}
+
+USER MESSAGE:
 ${newMessage}
 `;
+
 
 
     // Generate response
     let botReply = "";
 try {
   const completion = await model.generateContent(finalPrompt);
+// 🧠 Update agent memory (lightweight summarization)
+const memoryUpdatePrompt = `
+Summarize this conversation update into 2–3 sentences.
+Focus on:
+- What the user learned
+- What step they are on
+- Any confusion or pending task
+
+User message:
+${newMessage}
+
+Assistant reply:
+${botReply}
+`;
+
+const memoryCompletion = await model.generateContent(memoryUpdatePrompt);
+const updatedMemory = memoryCompletion?.response?.text();
+
+if (updatedMemory) {
+  await memoryRef.set({
+    summary: updatedMemory,
+    lastUpdated: new Date(),
+  });
+}
 
   //const completion = await model.generateContent(prompt);
   botReply = completion?.response?.text() || "I’m trained only to assist you with your active module.";
