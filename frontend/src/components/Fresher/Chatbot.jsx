@@ -304,7 +304,7 @@ useEffect(() => {
 <div className="flex-1 flex flex-col px-8 py-6 overflow-hidden">
 
   {/* ONLY THIS SCROLLS */}
-  <div className="flex-1 flex flex-col overflow-hidden">
+  <div className="flex-1 flex flex-col overflow-y-auto scroll-smooth">
    {messages.map((msg, i) => (
   <div
     key={i}
@@ -337,7 +337,22 @@ useEffect(() => {
     )}
   </div>
 ))}
-{typing && <div className="text-sm text-blue-400">Typing...</div>}
+{typing && (
+  <div className="flex items-end gap-2 justify-start mb-2 animate-pulse">
+    {/* BOT ICON */}
+    <CpuChipIcon className="w-7 h-7 text-cyan-400 flex-shrink-0" />
+
+    {/* TYPING BUBBLE */}
+    <div className="px-4 py-2 rounded-xl bg-[#021B36] border border-cyan-400/30 text-[#AFCBE3]">
+      <span className="flex gap-1">
+        <span className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce [animation-delay:0ms]" />
+        <span className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce [animation-delay:150ms]" />
+        <span className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce [animation-delay:300ms]" />
+      </span>
+    </div>
+  </div>
+)}
+
 <div ref={chatEndRef} />
   </div>
 

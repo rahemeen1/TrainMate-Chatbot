@@ -1,10 +1,4 @@
 // services/confidenceService.js
-
-/**
- * Assign confidence scores to aggregated results.
- * Confidence is dynamic based on source priority + similarity score
- */
-
 export const assignConfidence = (aggregatedResults) => {
   return aggregatedResults.map((item) => {
     let baseScore = 0;
