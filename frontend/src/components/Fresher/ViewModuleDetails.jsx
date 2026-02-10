@@ -146,7 +146,7 @@ export default function ViewModuleDetails() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
           >
-            <p className="text-[#AFCBE3]">🤖 AI is preparing a detailed explanation...</p>
+            <p className="text-[#AFCBE3]"> AI is preparing a detailed explanation...</p>
           </motion.div>
         )}
 
