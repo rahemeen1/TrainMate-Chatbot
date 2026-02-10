@@ -100,44 +100,6 @@ export default function FresherTraining() {
     }
   };
 
-  // ===============================
-  // ✅ Mark Module Done
-  // ===============================
-  // const markDone = async (moduleId) => {
-  //    try {
-  //   setLoadingModuleId(moduleId); // 👈 start loader
-  //     const moduleRef = doc(
-  //       db,
-  //       "freshers",
-  //       companyId,
-  //       "departments",
-  //       deptId,
-  //       "users",
-  //       userId,
-  //       "roadmap",
-  //       moduleId
-  //     );
-
-  //     await updateDoc(moduleRef, { completed: true });
-
-  //     setRoadmap((prev) =>
-  //       prev.map((m) =>
-  //         m.id === moduleId ? { ...m, completed: true } : m
-  //       )
-  //     );
-
-  //     if (selectedModule?.id === moduleId) {
-  //       setSelectedModule({ ...selectedModule, completed: true });
-  //     }
-
-  //     await updateProgress();
-  //   } catch (err) {
-  //     console.error("❌ Error marking module done:", err);
-  //   }
-  //   finally {
-  //   setLoadingModuleId(null); // 👈 stop loader
-  //   }
-  // };
   const markDone = async (moduleId) => {
   try {
     setLoadingModuleId(moduleId);

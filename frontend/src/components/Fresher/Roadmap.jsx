@@ -362,15 +362,16 @@ if (!roadmap.length)
 >Start Learning
 </button>
       <button
-        onClick={() =>
-          navigate(`/fresher-training/${companyId}/${deptId}/${userId}`, {
-            state: { moduleId: module.id, companyName },
-          })
-        }
-        className="px-4 py-2 border border-[#00FFFF] text-[#00FFFF] rounded"
-      >
-        View Details
-      </button>
+  onClick={() =>
+    navigate(
+      `/module-details/${companyId}/${deptId}/${userId}/${module.id}`
+    )
+  }
+  className="px-4 py-2 border border-[#00FFFF] text-[#00FFFF] rounded"
+>
+  View Details
+</button>
+
     </div>
   )}
 </div>

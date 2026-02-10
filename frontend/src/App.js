@@ -17,6 +17,8 @@ import Chatbot from "./components/Fresher/Chatbot";
 import FresherAccomplishments from "./components/Fresher/FresherAccomplishments";
 import PreviousChats from "./components/Fresher/PreviousChats";
 import ProgressDetails from "./components/CompanySpecific/ProgressDetails";
+import ViewModuleDetails from "./components/Fresher/ViewModuleDetails";
+import QuizPage from "./components/Fresher/QuizPage";
 
 export default function App() {
   return (
@@ -41,6 +43,10 @@ export default function App() {
         <Route path="/accomplishments/:companyId/:deptId/:userId" element={<FresherAccomplishments />} />
         <Route path="/previous-chats" element={<PreviousChats />} />
         <Route path="/progress-details/:companyId/:deptName/:userId" element={<ProgressDetails />} />
+        <Route path="/module-details/:companyId/:deptId/:userId/:moduleId" element={<ViewModuleDetails />} />
+        <Route path="/quiz/:companyId/:deptId/:userId/:moduleId" element={<QuizPage />} />
+
+
 
       </Routes>
 
