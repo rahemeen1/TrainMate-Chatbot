@@ -11,6 +11,8 @@ import { initPinecone } from "./config/pinecone.js";
 import ingestRoutes from "./routes/ingestroutes.js";
 import roadmapRoutes from "./routes/roadmapRoutes.js";
 import chatRoute from "./routes/chatRoutes.js";
+import moduleExplain from "./routes/moduleExplain.js";
+
 
 
 const app = express();
@@ -29,6 +31,7 @@ async function startServer() {
     app.use("/api/roadmap", roadmapRoutes);
     app.use("/api", chatRoute);
 // app.use("/api/stats", statsRoutes);
+app.use("/api/module", moduleExplain);
   
 
     app.listen(PORT, () => {
