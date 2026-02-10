@@ -59,7 +59,7 @@ console.log(email);
         }
         className="text-left px-4 py-2 rounded-lg hover:bg-[#00FFFF]/20 transition font-medium"
       >
-        Progress
+        Progress Details
       </button>
 
       <button

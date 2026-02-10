@@ -15,8 +15,8 @@ export default function FresherSettings() {
 
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [editMode, setEditMode] = useState({ name: false, email: false, password: false });
+  const [phone, setPhone] = useState("");
+  const [editMode, setEditMode] = useState({ name: false, phone: false, password: false });
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [error, setError] = useState("");
@@ -24,18 +24,30 @@ export default function FresherSettings() {
   const [passwordStrength, setPasswordStrength] = useState("");
 
   const currentUser = auth.currentUser;
+const isValidPhone = (value) => {
+  return /^[0-9]{11}$/.test(value);
+};
 
   useEffect(() => {
     console.log("Received props: ", { userId, companyId, deptId });
 
     const fetchUser = async () => {
       try {
-        const userRef = doc(db, "companies", companyId, "departments", deptId, "users", userId);
+        const userRef = doc(
+  db,
+  "freshers",
+  companyId,
+  "departments",
+  deptId,
+  "users",
+  userId
+);
+
         const snap = await getDoc(userRef);
         if (snap.exists()) {
           const u = snap.data();
           setName(u.name || "");
-          setEmail(u.email || "");
+          setPhone(u.phone || "");
         }
       } catch (err) {
         console.error(err);
@@ -57,7 +69,16 @@ export default function FresherSettings() {
   const saveField = async (field) => {
     setError("");
     try {
-      const userRef = doc(db, "companies", companyId, "departments", deptId, "users", userId);
+      const userRef = doc(
+  db,
+  "freshers",     
+  companyId,
+  "departments",
+  deptId,
+  "users",
+  userId
+);
+
 
       if (field === "password") {
         if (!oldPassword || !newPassword) {
@@ -73,10 +94,19 @@ export default function FresherSettings() {
 
         setOldPassword("");
         setShowDownload(true);
-      } else if (field === "email") {
-        if (!currentUser) throw new Error("No authenticated user");
-        await updateEmail(currentUser, email);
-        await setDoc(userRef, { email }, { merge: true });
+      } else if (field === "phone") {
+  if (!phone.trim()) {
+    setError("Phone number cannot be empty");
+    return;
+  }
+
+  if (!isValidPhone(phone)) {
+    setError("Phone number must be exactly 11 digits (e.g. 03XXXXXXXXX)");
+    return;
+  }
+
+  await setDoc(userRef, { phone }, { merge: true });
+
       } else if (field === "name") {
         await setDoc(userRef, { name }, { merge: true });
       }
@@ -93,12 +123,11 @@ export default function FresherSettings() {
     docPDF.text(`User Credentials`, 10, 10);
     docPDF.text(`UserID: ${userId}`, 10, 20);
     docPDF.text(`Name: ${name}`, 10, 30);
-    docPDF.text(`Email: ${email}`, 10, 40);
-    docPDF.text(`Password: ${newPassword || "(Updated)"}`, 10, 50); // new password if available
+    docPDF.text(`Phone: ${phone}`, 10, 40);
+    docPDF.text(`Password: ${newPassword || "(Updated)"}`, 10, 50); 
     docPDF.save(`${userId}_credentials.pdf`);
   };
 
-  // if (loading) return <p className="text-white text-left mt-20 ml-10">Loading...</p>;
   if (loading) {
   return (
     <div className="flex min-h-screen bg-[#031C3A] text-white">
@@ -170,49 +199,69 @@ export default function FresherSettings() {
             <p className="text-white font-medium">{userId}</p>
           </div>
 
-          {/* Name */}
-          <div className="flex items-center justify-between border-b border-[#00FFFF30] py-2">
-            <div className="flex-1">
-              <p className="text-[#AFCBE3] text-sm">Name</p>
-              {editMode.name ? (
-                <input
-                  className="text-black w-full px-2 py-1 rounded"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                />
-              ) : (
-                <p className="text-white font-medium">{name}</p>
-              )}
-            </div>
-            <button
-              onClick={() => (editMode.name ? saveField("name") : setEditMode({ ...editMode, name: true }))}
-              className="ml-3 p-2 bg-[#00FFFF] text-[#031C3A] rounded-full"
-            >
-              {editMode.name ? <CheckIcon className="w-5 h-5" /> : <PencilIcon className="w-5 h-5" />}
-            </button>
-          </div>
+         {/* Name */}
+<div className="flex items-center justify-between border-b border-[#00FFFF30] py-2">
+  <div className="flex-1">
+    <p className="text-[#AFCBE3] text-sm">Name</p>
+    {editMode.name ? (
+      <input
+        className="text-black w-full px-2 py-1 rounded"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+      />
+    ) : (
+      <p className="text-white font-medium">{name}</p>
+    )}
+  </div>
 
-          {/* Email */}
-          <div className="flex items-center justify-between border-b border-[#00FFFF30] py-2">
-            <div className="flex-1">
-              <p className="text-[#AFCBE3] text-sm">Email</p>
-              {editMode.email ? (
-                <input
-                  className="text-black w-full px-2 py-1 rounded"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              ) : (
-                <p className="text-white font-medium">{email}</p>
-              )}
-            </div>
-            <button
-              onClick={() => (editMode.email ? saveField("email") : setEditMode({ ...editMode, email: true }))}
-              className="ml-3 p-2 bg-[#00FFFF] text-[#031C3A] rounded-full"
-            >
-              {editMode.email ? <CheckIcon className="w-5 h-5" /> : <PencilIcon className="w-5 h-5" />}
-            </button>
-          </div>
+  <button
+    onClick={() =>
+      editMode.name
+        ? saveField("name")
+        : setEditMode({ ...editMode, name: true })
+    }
+    className="ml-3 p-2 bg-[#00FFFF] text-[#031C3A] rounded-full"
+  >
+    {editMode.name ? <CheckIcon className="w-5 h-5" /> : <PencilIcon className="w-5 h-5" />}
+  </button>
+</div>
+
+{/* Phone Number */}
+<div className="flex items-center justify-between border-b border-[#00FFFF30] py-2">
+  <div className="flex-1">
+    <p className="text-[#AFCBE3] text-sm">Phone Number</p>
+    {editMode.phone ? (
+     <input
+  className="text-black w-full px-2 py-1 rounded"
+  value={phone}
+  maxLength={11}
+  inputMode="numeric"
+  pattern="[0-9]*"
+  onChange={(e) => {
+    const onlyDigits = e.target.value.replace(/\D/g, "");
+    setPhone(onlyDigits);
+  }}
+  placeholder="03XXXXXXXXX"
+/>
+
+    ) : (
+      <p className="text-white font-medium">{phone}</p>
+    )}
+  </div>
+
+  <button
+    onClick={() =>
+      editMode.phone
+        ? saveField("phone")
+        : setEditMode({ ...editMode, phone: true })
+    }
+    className="ml-3 p-2 bg-[#00FFFF] text-[#031C3A] rounded-full"
+  >
+    {editMode.phone ? <CheckIcon className="w-5 h-5" /> : <PencilIcon className="w-5 h-5" />}
+  </button>
+</div>
+
+
 
           {/* Password */}
           <div className="flex flex-col border-b border-[#00FFFF30] py-2">

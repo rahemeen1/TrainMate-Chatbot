@@ -1,11 +1,13 @@
 //trainmate-backend/controllers/chatController.js
 import { db } from "../config/firebase.js"; // Admin SDK
 import admin from "firebase-admin";
+import { getPineconeIndex } from "../config/pinecone.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { Pinecone } from "@pinecone-database/pinecone";
 import { CohereClient } from "cohere-ai";
-import { isSemanticallyRelevant } from "../utils/relevanceGuard.js";
 import dotenv from "dotenv";
+import { isDocAllowed } from "../utils/relevanceGuard.js";
+
+
 
 dotenv.config();
 
@@ -60,19 +62,54 @@ function calculateTrainingProgress(moduleData) {
 }
 
 /* ================= PINECONE ================= */
-const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
 async function queryPinecone({ embedding, companyId, deptId, topK = 5 }) {
-  const index = pinecone.Index(process.env.PINECONE_INDEX).namespace(
-    `company-${companyId}`
-  );
-  const res = await index.query({
-    vector: embedding,
-    topK,
-    includeMetadata: true,
-    filter: { deptName: { $eq: deptId.toUpperCase() } },
-  });
-  return (res.matches || []).map((m) => m.metadata?.text || "");
+  try {
+    console.log("🔍 Pinecone query started");
+    console.log("   Company:", companyId);
+    console.log("   Department:", deptId);
+    console.log("   TopK:", topK);
+
+    const index = getPineconeIndex();
+
+    const res = await index
+      .namespace(`company-${companyId}`)
+      .query({
+        vector: embedding,
+        topK,
+        includeMetadata: true,
+        filter: {
+          deptName: { $eq: deptId.toUpperCase() },
+        },
+      });
+
+    const matchCount = res?.matches?.length || 0;
+
+    console.log(`📚 Pinecone results: ${matchCount}`);
+
+    if (matchCount > 0) {
+      console.log(
+        "🧾 Pinecone sources:",
+        res.matches.map((m) => ({
+          score: m.score,
+          dept: m.metadata?.deptName,
+        }))
+      );
+    } else {
+      console.log("⚠️ Pinecone returned no matches");
+    }
+
+    return (res.matches || []).map((m) => ({
+      text: m.metadata?.text || "",
+      score: m.score || 0,
+      source: "pinecone",
+    }));
+  } catch (err) {
+    console.error("❌ Pinecone query failed:", err.message);
+    return [];
+  }
 }
+
+
 
 /* ================= INIT CHAT ================= */
 export const initChat = async (req, res) => {
@@ -175,14 +212,12 @@ Let's get started and have fun learning! 🚀
 
 export const chatController = async (req, res) => {
   try {
-    console.log("🟡 chatController body:", req.body);
     const { userId, companyId, deptId, newMessage } = req.body;
-
     if (!userId || !companyId || !deptId || !newMessage) {
       return res.json({ reply: "Missing parameters" });
     }
 
-    // 1️⃣ Get user data
+    /* ---------- USER ---------- */
     const userRef = db
       .collection("freshers")
       .doc(companyId)
@@ -194,86 +229,84 @@ export const chatController = async (req, res) => {
     const userSnap = await userRef.get();
     const userData = userSnap.exists ? userSnap.data() : {};
 
-    // 2️⃣ Get roadmap & active module
+    /* ---------- ACTIVE MODULE ---------- */
     const roadmapRef = userRef.collection("roadmap");
     const roadmapSnap = await roadmapRef.get();
-    if (roadmapSnap.empty) return res.json({ reply: "Your roadmap does not exist. Please generate it first." });
 
-    const activeModuleDoc = roadmapSnap.docs.find(d => ["pending", "in-progress"].includes(d.data().status));
-    if (!activeModuleDoc) return res.json({ reply: "You don’t have any active training module right now." });
+    if (roadmapSnap.empty) {
+      return res.json({ reply: "Your roadmap does not exist." });
+    }
+
+    const activeModuleDoc = roadmapSnap.docs.find(d =>
+      ["pending", "in-progress"].includes(d.data().status)
+    );
+
+    if (!activeModuleDoc) {
+      return res.json({ reply: "No active training module." });
+    }
 
     const moduleData = activeModuleDoc.data();
-    const { completedDays, remainingDays } = calculateTrainingProgress(moduleData);
 
-    // 3️⃣ Chat session for today
+    /* ---------- CHAT SESSION ---------- */
     const today = new Date().toISOString().split("T")[0];
-    const chatSessionRef = roadmapRef.doc(activeModuleDoc.id).collection("chatSessions").doc(today);
-    const chatSnap = await chatSessionRef.get();
-    if (!chatSnap.exists) await chatSessionRef.set({ startedAt: new Date(), messages: [] });
+    const chatSessionRef = roadmapRef
+      .doc(activeModuleDoc.id)
+      .collection("chatSessions")
+      .doc(today);
 
-    // 4️⃣ Embed user message & query Pinecone
-    const embedding = await embedText(newMessage);
-    let pineconeResults = [];
-    try {
-      pineconeResults = await queryPinecone({ embedding, companyId, deptId });
-    } catch (err) {
-      console.error("⚠️ Pinecone query failed:", err);
+    if (!(await chatSessionRef.get()).exists) {
+      await chatSessionRef.set({ startedAt: new Date(), messages: [] });
     }
-    
 
-    // 5️⃣ Load agent memory
-    const memoryRef = roadmapRef.doc(activeModuleDoc.id).collection("agentMemory").doc("summary");
+    /* ---------- MEMORY ---------- */
+    const memoryRef = roadmapRef
+      .doc(activeModuleDoc.id)
+      .collection("agentMemory")
+      .doc("summary");
+
     const memorySnap = await memoryRef.get();
-    const agentMemory = memorySnap.exists ? memorySnap.data().summary : "No prior memory available.";
+    const agentMemory = memorySnap.exists
+      ? memorySnap.data().summary
+      : "No prior memory.";
 
-    // 6️⃣ Load previous chat sessions for context
-    const allChatsSnap = await roadmapRef.doc(activeModuleDoc.id).collection("chatSessions").orderBy("startedAt", "asc").get();
-    let chatHistory = [];
-    allChatsSnap.forEach(doc => {
-      const data = doc.data();
-      if (data.messages && Array.isArray(data.messages)) chatHistory.push(...data.messages);
-    });
-    const formattedChatHistory = chatHistory.slice(-50).map(m => `${m.from === 'user' ? 'User' : 'Assistant'}: ${m.text}`).join("\n");
+    /* ---------- PINECONE (SAFE) ---------- */
+    let relevantDocs = [];
 
-    // 7️⃣ Get company onboarding info
-    const onboardingRef = db.collection("companies").doc(companyId).collection("onboardingAnswers");
-    const onboardingSnap = await onboardingRef.get();
-    let companyDescription = "";
-    let companyDocName = "";
-    onboardingSnap.forEach(d => {
-      const answers = d.data().answers;
-      if (answers && answers["3"]) {
-        companyDescription = answers["3"];
-        companyDocName = d.id;
-      }
-    });
+    try {
+      const embedding = await embedText(newMessage);
+      const pineconeResults = await queryPinecone({
+        embedding,
+        companyId,
+        deptId,
+      });
 
-    
-    // 8️⃣ Build reference context
+      relevantDocs = pineconeResults.filter(doc =>
+        isDocAllowed({
+          similarityScore: doc.score,
+          docDepartment: doc.dept,
+          userDepartment: deptId.toUpperCase(),
+        })
+      );
+
+    } catch (err) {
+      console.warn("⚠️ Pinecone skipped:", err.message);
+    }
+
+    /* ---------- CONTEXT ---------- */
     const contextParts = [];
-// Only keep Pinecone results relevant to the user's department
-const relevantPineconeResults = pineconeResults.filter(
-  r => r.deptName === (userData.deptName || deptId) && r.score >= 0.35
-);
 
-const hasRelevantSource = relevantPineconeResults.length > 0;
+    if (relevantDocs.length > 0) {
+      contextParts.push(
+        `REFERENCE MATERIAL:\n${relevantDocs.map(d => d.text).join("\n")}`
+      );
+    }
 
-if (hasRelevantSource) {
-  contextParts.push(
-    `REFERENCE MATERIAL (for explanation only):\n${relevantPineconeResults.map(r => r.text || r).join("\n")}`
-  );
-}
+    const context =
+      contextParts.length > 0
+        ? contextParts.join("\n\n")
+        : "No additional context.";
 
-    if (companyDescription) contextParts.push(`Company Info:\n${companyDescription} *${companyDocName}*`);
-    if (formattedChatHistory) contextParts.push(`PREVIOUS CONVERSATION CONTEXT:\n${formattedChatHistory}`);
-    const context = contextParts.length > 0 ? contextParts.join("\n\n") : "No additional context available.";
-
-    // 9️⃣ Progress message
-    const progressMessage = remainingDays === 0
-      ? `The user has completed the module "${moduleData.moduleTitle}".`
-      : `The user is on day ${completedDays} of ${moduleData.estimatedDays} for "${moduleData.moduleTitle}".`;
-
-    // 10️⃣ Build final prompt for LLM
+    /* ---------- PROMPT ---------- */
     const finalPrompt = `
 SYSTEM ROLE:
 You are TrainMate, a goal-driven onboarding agent.
@@ -282,92 +315,55 @@ AGENT MEMORY:
 ${agentMemory}
 
 USER PROFILE:
-Name: ${userData.name}
+Name: ${userData.name || "User"}
 Department: ${userData.deptName || deptId}
 
 ACTIVE MODULE:
 ${moduleData.moduleTitle}
 
-TRAINING STATUS:
-${progressMessage}
+Remaining Days: ${calculateTrainingProgress(moduleData).remainingDays}
 
 RULES:
-- Use agent memory and previous chat history to maintain continuity.
-- Do NOT repeat explanations unless explicitly asked.
-- Only answer questions relevant to the active module and department.
-- Use HTML tags only (<strong>, <em>, <ul>, <ol>, <li>).
-- Do not answer questions unrelated to the active module or department.
-- If unsure, say "I cannot determine it."
-- Keep responses concise and helpful.
+- Answer all questions related to the active module or department
+- Give examples when helpful
+- Never refuse module-related questions
+- Use HTML tags only (<strong>, <em>, <ul>, <li>)
+- Do NOT greet the user again and again. Do NOT say "hello", "hi", or any opening phrases. Get straight to the point. 
+- Do NOT say hello, hi, or any opening phrases.
+- If the question is not related to the module or department, politely refuse to answer and say "I’m here to help with your training module." Do NOT answer questions unrelated to the module or department. Always steer the conversation back to the training content.
+- Do not introduce yourself again and again. Avoid repetitive phrases.
 
-OPTIONAL CONTEXT:
+
+CONTEXT:
 ${context}
 
 USER MESSAGE:
 ${newMessage}
 `;
 
-    // 11️⃣ Relevance check before generating
-    const memoryIntents = ["summarize", "previous", "last", "step", "earlier"];
-    const isMemoryQuestion = memoryIntents.some(k => newMessage.toLowerCase().includes(k));
+    /* ---------- LLM ---------- */
+    const completion = await model.generateContent(finalPrompt);
+    const botReply =
+      completion?.response?.text() ||
+      "I’m here to help with your training module.";
 
-    if (!hasRelevantSource && !isMemoryQuestion) {
-      return res.json({
-        reply: "I can only help with topics related to your current training module and department."
-      });
-    }
-
-    // 12️⃣ Generate bot reply
-    let botReply = "";
-    try {
-      const completion = await model.generateContent(finalPrompt);
-      botReply = completion?.response?.text() || "I’m trained only to assist you with your active module.";
-
-      // ✅ Update agent memory AFTER botReply
-      const memoryUpdatePrompt = `
-Summarize this conversation update into 2–3 sentences.
-Focus on:
-- What the user learned
-- Current step or topic
-- Any confusion or pending task
-
-User message:
-${newMessage}
-
-Assistant reply:
-${botReply}
-`;
-
-      const memoryCompletion = await model.generateContent(memoryUpdatePrompt);
-      const updatedMemory = memoryCompletion?.response?.text();
-      if (updatedMemory) {
-        await memoryRef.set({
-          summary: updatedMemory,
-          lastUpdated: new Date(),
-        });
-      }
-
-    } catch (err) {
-      if (err.status === 429) botReply = "🚨 LLM quota exceeded for today. Please try again later.";
-      else {
-        console.error("❌ LLM generateContent failed:", err);
-        botReply = "I’m trained only to assist you with your active module.";
-      }
-    }
-
-    // 13️⃣ Store messages
+    /* ---------- SAVE CHAT ---------- */
     await chatSessionRef.update({
-      messages: admin.firestore.FieldValue.arrayUnion({ from: "user", text: newMessage, timestamp: new Date() }),
-    });
-    await chatSessionRef.update({
-      messages: admin.firestore.FieldValue.arrayUnion({ from: "bot", text: botReply, timestamp: new Date() }),
+      messages: admin.firestore.FieldValue.arrayUnion(
+        { from: "user", text: newMessage, timestamp: new Date() },
+        { from: "bot", text: botReply, timestamp: new Date() }
+      ),
     });
 
-    // 14️⃣ Return bot reply
-    return res.json({ reply: botReply, sourceUsed: hasRelevantSource });
+    return res.json({
+      reply: botReply,
+      sourceUsed: relevantDocs.length > 0,
+    });
+
   } catch (err) {
-    console.error("❌ chatController error FULL:", err);
-    return res.json({ reply: "⚠️ Something went wrong. Try again later." });
+    console.error("❌ chatController FULL ERROR:", err);
+    return res.json({ reply: "⚠️ Something went wrong." });
   }
 };
+
 
