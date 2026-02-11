@@ -9,6 +9,7 @@ import {
   query,
   where,
   getDocs,
+  updateDoc,
 } from "firebase/firestore";
 
 import { db } from "../../firebase";
@@ -62,16 +63,54 @@ useEffect(() => {
       );
 
       const snap = await getDocs(roadmapRef);
-      const modules = snap.docs.map(d => d.data());
+      
+      // Calculate progress based on chatbot usage days
+      const modulesWithProgress = await Promise.all(
+        snap.docs.map(async (moduleDoc) => {
+          const moduleData = { id: moduleDoc.id, ...moduleDoc.data() };
+          
+          // Count unique chat session days for this module
+          const chatSessionsRef = collection(
+            db,
+            "freshers",
+            companyId,
+            "departments",
+            deptId,
+            "users",
+            userId,
+            "roadmap",
+            moduleDoc.id,
+            "chatSessions"
+          );
+          
+          const chatSessionsSnap = await getDocs(chatSessionsRef);
+          const daysUsed = chatSessionsSnap.size;
+          
+          const estimatedDays = moduleData.estimatedDays || 1;
+          
+          return {
+            ...moduleData,
+            daysUsed,
+            estimatedDays,
+          };
+        })
+      );
 
-      setRoadmap(modules);
+      setRoadmap(modulesWithProgress);
 
-      const completedCount = modules.filter(m => m.completed).length;
-      const percent = modules.length
-        ? Math.round((completedCount / modules.length) * 100)
+      // Calculate overall progress as (total days used / total estimated days) * 100
+      const totalDaysUsed = modulesWithProgress.reduce((sum, m) => sum + m.daysUsed, 0);
+      const totalEstimatedDays = modulesWithProgress.reduce((sum, m) => sum + m.estimatedDays, 0);
+      const percent = totalEstimatedDays > 0 
+        ? Math.min(Math.round((totalDaysUsed / totalEstimatedDays) * 100), 100)
         : 0;
 
       setProgressPercent(percent);
+
+      // Update progress in user document
+      const userRef = doc(db, "freshers", companyId, "departments", deptId, "users", userId);
+      await updateDoc(userRef, { progress: percent });
+      
     } catch (err) {
       console.error("❌ Error loading roadmap progress:", err);
     }

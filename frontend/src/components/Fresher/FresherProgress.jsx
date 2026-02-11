@@ -1,7 +1,7 @@
 //FresherProgress.jsx
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { doc, getDoc, collection, getDocs } from "firebase/firestore";
+import { doc, getDoc, collection, getDocs, updateDoc } from "firebase/firestore";
 import { db } from "../../firebase";
 import { FresherSideMenu } from "./FresherSideMenu";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
@@ -36,70 +36,85 @@ export default function FresherProgress() {
         const data = snap.data();
         setUserData(data);
 
-        // ✅ Get all modules
+        // ✅ Get all modules with their chat session counts
         const roadmapRef = collection(db, "freshers", companyId, "departments", deptId, "users", userId, "roadmap");
         const roadmapSnap = await getDocs(roadmapRef);
-        const modules = roadmapSnap.docs.map((doc) => doc.data());
+        
+        // Calculate progress for each module based on days used
+        const modulesWithProgress = await Promise.all(
+          roadmapSnap.docs.map(async (moduleDoc) => {
+            const moduleData = { id: moduleDoc.id, ...moduleDoc.data() };
+            
+            // Count unique chat session days for this module
+            const chatSessionsRef = collection(
+              db,
+              "freshers",
+              companyId,
+              "departments",
+              deptId,
+              "users",
+              userId,
+              "roadmap",
+              moduleDoc.id,
+              "chatSessions"
+            );
+            
+            const chatSessionsSnap = await getDocs(chatSessionsRef);
+            const daysUsed = chatSessionsSnap.size; // Each doc represents a unique day
+            
+            const estimatedDays = moduleData.estimatedDays || 1;
+            const moduleProgress = Math.min(Math.round((daysUsed / estimatedDays) * 100), 100);
+            
+            return {
+              ...moduleData,
+              daysUsed,
+              estimatedDays,
+              moduleProgress,
+            };
+          })
+        );
 
-        const totalModules = modules.length;
-        //const completedModules = modules.filter((m) => m.completed).length;
-        const completedModules = modules.filter(
-        (m) => m.completed === true || m.status === "completed"
-        ).length;
-
-
-        const overallPercent = Math.round((completedModules / totalModules) * 100) || 0;
+        // Calculate overall progress as (total days used / total estimated days) * 100
+        const totalDaysUsed = modulesWithProgress.reduce((sum, m) => sum + m.daysUsed, 0);
+        const totalEstimatedDays = modulesWithProgress.reduce((sum, m) => sum + m.estimatedDays, 0);
+        const overallPercent = totalEstimatedDays > 0 
+          ? Math.min(Math.round((totalDaysUsed / totalEstimatedDays) * 100), 100)
+          : 0;
         setOverallProgress(overallPercent);
 
-        // ✅ Phase-wise progress
-        // const phaseCount = 3;
-        // const modulesPerPhase = Math.ceil(totalModules / phaseCount);
+        // Update progress in user document
+        await updateDoc(userRef, { progress: overallPercent });
 
         // ✅ Group modules by phase (order)
-const phaseMap = {};
+        const phaseMap = {};
 
-modules.forEach((module) => {
-  const phase = module.order || 1; 
-  if (!phaseMap[phase]) phaseMap[phase] = [];
-  phaseMap[phase].push(module);
-});
+        modulesWithProgress.forEach((module) => {
+          const phase = module.order || 1; 
+          if (!phaseMap[phase]) phaseMap[phase] = [];
+          phaseMap[phase].push(module);
+        });
 
-// ✅ Build phase progress dynamically
-const phases = Object.keys(phaseMap)
-  .sort((a, b) => a - b)
-  .map((phaseNumber) => {
-    const phaseModules = phaseMap[phaseNumber];
+        // ✅ Build phase progress dynamically based on chatbot usage
+        const phases = Object.keys(phaseMap)
+          .sort((a, b) => a - b)
+          .map((phaseNumber) => {
+            const phaseModules = phaseMap[phaseNumber];
 
-    const completedCount = phaseModules.filter(
-      (m) => m.completed === true || m.status === "completed"
-    ).length;
+            // Calculate average progress for modules in this phase
+            const totalPhaseProgress = phaseModules.reduce((sum, m) => sum + m.moduleProgress, 0);
+            const percent = phaseModules.length > 0
+              ? Math.round(totalPhaseProgress / phaseModules.length)
+              : 0;
 
-    const percent =
-      phaseModules.length > 0
-        ? Math.round((completedCount / phaseModules.length) * 100)
-        : 0;
+            return {
+              name: `Phase ${phaseNumber}`,
+              progress: percent,
+            };
+          });
 
-    return {
-      name: `Phase ${phaseNumber}`,
-      progress: percent,
-    };
-  });
+        setPhaseProgress(phases);
 
-setPhaseProgress(phases);
-
-        // //const phases = Array.from({ length: phaseCount }, (_, i) => {
-        //   const start = i * modulesPerPhase;
-        //   const end = start + modulesPerPhase;
-        //   const phaseModules = modules.slice(start, end);
-        //   //const completedPhase = phaseModules.filter((m) => m.completed).length;
-        //   const completedPhase = phaseModules.filter(
-        //   (m) => m.completed === true || m.status === "completed"
-        //   ).length;
-        //   const percent = phaseModules.length > 0 ? Math.round((completedPhase / phaseModules.length) * 100) : 0;
-        //   return { name: `Phase ${i + 1}`, progress: percent };
-        // });
-
-        //setPhaseProgress(phases);
+    
       } catch (err) {
         console.error(err);
         alert("Error fetching fresher progress");
@@ -177,7 +192,7 @@ if (!userData) {
           <ResponsiveContainer width="100%" height={250}>
             <BarChart data={phaseProgress}>
               <XAxis dataKey="name" stroke="#ffffffff" />
-              <YAxis stroke="#ffffffff" />
+              <YAxis stroke="#ffffffff" domain={[0, 100]} />
               <Tooltip />
               <Bar dataKey="progress" fill="#1c5252ff" />
             </BarChart>
