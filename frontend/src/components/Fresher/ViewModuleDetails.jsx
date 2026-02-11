@@ -6,8 +6,8 @@ import { FresherSideMenu } from "./FresherSideMenu";
 import { motion } from "framer-motion";
 
 export default function ViewModuleDetails() {
-  const { companyId, deptId, userId, moduleId } = useParams();
-  const navigate = useNavigate();
+  const { companyId, deptId, userId, moduleId, companyName } = useParams();
+    const navigate = useNavigate();
 
   const [module, setModule] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -20,9 +20,11 @@ export default function ViewModuleDetails() {
   // 🔄 Load module from Firestore
   // ===============================
   useEffect(() => {
-    const loadModule = async () => {
+    const loadModuleAndAI = async () => {
       try {
         setLoading(true);
+
+        // 1️⃣ Load module doc
         const moduleRef = doc(
           db,
           "freshers",
@@ -35,64 +37,63 @@ export default function ViewModuleDetails() {
           moduleId
         );
 
-        const snap = await getDoc(moduleRef);
-        if (snap.exists()) {
-          const moduleData = { id: snap.id, ...snap.data() };
-          setModule(moduleData);
-        } else {
+        const moduleSnap = await getDoc(moduleRef);
+
+        if (!moduleSnap.exists()) {
           setModule(null);
+          setAiData(null);
+          return;
         }
-      } catch (err) {
-        console.error(err);
-        setModule(null);
-      } finally {
-        setLoading(false);
-      }
-    };
 
-    loadModule();
-  }, [companyId, deptId, userId, moduleId]);
+        const moduleData = { id: moduleSnap.id, ...moduleSnap.data() };
+        setModule(moduleData);
 
-  // ===============================
-  // 🤖 Call Gemini API
-  // ===============================
-  useEffect(() => {
-    if (!module) return;
+        // 2️⃣ Check if AI data already exists
+        const aiRef = doc(moduleRef, "moduleDetails", "aiData");
+        const aiSnap = await getDoc(aiRef);
 
-    const fetchAIExplanation = async () => {
-      try {
-        setAiLoading(true);
-        setAiError(false);
+        if (aiSnap.exists()) {
+          // ✅ Use cached AI data
+          setAiData(aiSnap.data());
+        } else {
+          // ⚡ Call backend to generate AI content
+          setAiLoading(true);
+          setAiError(false);
 
-        const res = await fetch("http://localhost:5000/api/module/explain", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            moduleTitle: module.moduleTitle,
-            description: module.description,
-            skillsCovered: module.skillsCovered || [],
-            estimatedDays: module.estimatedDays,
-          }),
-        });
+          const res = await fetch("http://localhost:5000/api/module/explain", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              fresherId: companyId,
+              department: deptId,
+              userId,
+              moduleId,
+              moduleTitle: moduleData.moduleTitle,
+              description: moduleData.description,
+              skillsCovered: moduleData.skillsCovered || [],
+              estimatedDays: moduleData.estimatedDays,
+            }),
+          });
 
-        const data = await res.json();
-        const parsed = typeof data.content === "string" ? JSON.parse(data.content) : data.content;
-        setAiData(parsed);
+          if (!res.ok) throw new Error("AI request failed");
+
+          const data = await res.json();
+
+          setAiData(data.content);
+        }
+
       } catch (err) {
         console.error(err);
         setAiError(true);
-        setAiData(null);
       } finally {
+        setLoading(false);
         setAiLoading(false);
       }
     };
 
-    fetchAIExplanation();
-  }, [module]);
+    loadModuleAndAI();
+  }, [companyId, deptId, userId, moduleId]);
 
-  // ===============================
-  // ⏳ Animated Loader
-  // ===============================
   const Loader = () => (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-[#031C3A] to-[#021B36] text-white">
       <div className="w-16 h-16 border-4 border-t-[#00FFFF] border-white border-solid rounded-full animate-spin mb-6"></div>
@@ -117,7 +118,7 @@ export default function ViewModuleDetails() {
         animate={{ x: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <FresherSideMenu userId={userId} companyId={companyId} deptId={deptId} />
+        <FresherSideMenu userId={userId} companyId={companyId} deptId={deptId} companyName={companyName}/>
       </motion.div>
 
       {/* ===== Main Content ===== */}
@@ -133,10 +134,16 @@ export default function ViewModuleDetails() {
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.5 }}
         >
-          <h1 className="text-4xl font-bold text-[#00FFFF]">{module.moduleTitle}</h1>
+          <h1 className="text-3xl font-bold text-[#00FFFF]">{module.moduleTitle}</h1>
           <p className="text-[#AFCBE3] mt-1">
             ⏱ {module.estimatedDays || "N/A"} days • Status: {module.status || "N/A"}
           </p>
+           <button
+    onClick={() => navigate(-1)}
+     className="px-5 py-2 border border-[#00FFFF] text-[#00FFFF] rounded hover:bg-[#00FFFF]/20 transition-all duration-300"
+  >
+    ← Back
+  </button>
         </motion.div>
 
         {/* AI Loading */}
@@ -146,7 +153,7 @@ export default function ViewModuleDetails() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
           >
-            <p className="text-[#AFCBE3]"> AI is preparing a detailed explanation...</p>
+            <p className="text-[#AFCBE3]">Detailed explanation is generating...</p>
           </motion.div>
         )}
 
@@ -157,77 +164,77 @@ export default function ViewModuleDetails() {
             initial={{ x: -20, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
           >
-            <p className="text-[#FFAAAA]">❌ Could not load AI explanation. Please try again later.</p>
+            <p className="text-[#FFAAAA]">❌ Could not load details. Please try again later.</p>
           </motion.div>
         )}
 
-        {/* AI Content */}
-        {!aiLoading && !aiError && aiData && (
-          <motion.div
-            className="space-y-6"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ staggerChildren: 0.2 }}
-          >
-            {/* Overview */}
-            {aiData.overview && (
-              <motion.div
-                className="bg-[#021B36]/80 border border-[#00FFFF30] rounded-xl p-6 hover:scale-[1.02] transition-transform duration-300"
-              >
-                <h3 className="text-lg text-[#00FFFF] font-semibold mb-2">📘 Module Overview</h3>
-                <p className="text-[#AFCBE3] leading-relaxed">{aiData.overview}</p>
-              </motion.div>
-            )}
+        {/* AI Content in 2-column horizontal layout */}
+{!aiLoading && !aiError && aiData && (
+  <motion.div
+    className="grid grid-cols-1 md:grid-cols-2 gap-6"
+    initial={{ opacity: 0 }}
+    animate={{ opacity: 1 }}
+    transition={{ staggerChildren: 0.2 }}
+  >
+    {/* Row 1: Module Overview */}
+    {aiData.overview && (
+      <motion.div
+        className="md:col-span-2 bg-[#021B36]/80 border border-[#00FFFF30] rounded-xl p-6 hover:scale-[1.02] transition-transform duration-300"
+      >
+        <h3 className="text-lg text-[#00FFFF] font-semibold mb-2">Module Overview</h3>
+        <p className="text-[#AFCBE3] leading-relaxed">{aiData.overview}</p>
+      </motion.div>
+    )}
 
-            {/* What You Will Learn */}
-            {aiData.whatYouWillLearn?.length > 0 && (
-              <motion.div
-                className="bg-[#021B36]/80 border border-[#00FFFF30] rounded-xl p-6 hover:scale-[1.02] transition-transform duration-300"
-              >
-                <h3 className="text-lg text-[#00FFFF] font-semibold mb-3">🧠 What You Will Learn</h3>
-                <ul className="list-disc list-inside text-[#AFCBE3] space-y-1">
-                  {aiData.whatYouWillLearn.map((item, i) => (
-                    <li key={i}>{item}</li>
-                  ))}
-                </ul>
-              </motion.div>
-            )}
+    {/* Row 2: What You Will Learn (Left) */}
+    {aiData.whatYouWillLearn?.length > 0 && (
+      <motion.div
+        className="bg-[#021B36]/80 border border-[#00FFFF30] rounded-xl p-6 hover:scale-[1.02] transition-transform duration-300"
+      >
+        <h3 className="text-lg text-[#00FFFF] font-semibold mb-3">What You Will Learn</h3>
+        <ul className="list-disc list-inside text-[#AFCBE3] space-y-1">
+          {aiData.whatYouWillLearn.map((item, i) => (
+            <li key={i}>{item}</li>
+          ))}
+        </ul>
+      </motion.div>
+    )}
 
-            {/* Skills Breakdown */}
-            {aiData.skillsBreakdown?.length > 0 && (
-              <motion.div
-                className="bg-[#021B36]/80 border border-[#00FFFF30] rounded-xl p-6 hover:scale-[1.02] transition-transform duration-300"
-              >
-                <h3 className="text-lg text-[#00FFFF] font-semibold mb-3">🛠 Skills Breakdown</h3>
-                <ul className="list-disc list-inside text-[#AFCBE3] space-y-1">
-                  {aiData.skillsBreakdown.map((skill, i) => (
-                    <li key={i}>{skill}</li>
-                  ))}
-                </ul>
-              </motion.div>
-            )}
+    {/* Row 2: Skills Breakdown (Right) */}
+    {aiData.skillsBreakdown?.length > 0 && (
+      <motion.div
+        className="bg-[#021B36]/80 border border-[#00FFFF30] rounded-xl p-6 hover:scale-[1.02] transition-transform duration-300"
+      >
+        <h3 className="text-lg text-[#00FFFF] font-semibold mb-3">Skills Breakdown</h3>
+        <ul className="list-disc list-inside text-[#AFCBE3] space-y-1">
+          {aiData.skillsBreakdown.map((skill, i) => (
+            <li key={i}>{skill}</li>
+          ))}
+        </ul>
+      </motion.div>
+    )}
 
-            {/* Learning Outcome */}
-            {aiData.learningOutcome && (
-              <motion.div
-                className="bg-[#021B36]/80 border border-[#00FFFF30] rounded-xl p-6 hover:scale-[1.02] transition-transform duration-300"
-              >
-                <h3 className="text-lg text-[#00FFFF] font-semibold mb-2">🎯 Learning Outcome</h3>
-                <p className="text-[#AFCBE3]">{aiData.learningOutcome}</p>
-              </motion.div>
-            )}
+    {/* Row 3: Learning Outcome (Left) */}
+    {aiData.learningOutcome && (
+      <motion.div
+        className="bg-[#021B36]/80 border border-[#00FFFF30] rounded-xl p-6 hover:scale-[1.02] transition-transform duration-300"
+      >
+        <h3 className="text-lg text-[#00FFFF] font-semibold mb-2">Learning Outcome</h3>
+        <p className="text-[#AFCBE3]">{aiData.learningOutcome}</p>
+      </motion.div>
+    )}
 
-            {/* Real World Application */}
-            {aiData.realWorldApplication && (
-              <motion.div
-                className="bg-[#021B36]/80 border border-[#00FFFF30] rounded-xl p-6 hover:scale-[1.02] transition-transform duration-300"
-              >
-                <h3 className="text-lg text-[#00FFFF] font-semibold mb-2">🌍 Real-World Application</h3>
-                <p className="text-[#AFCBE3]">{aiData.realWorldApplication}</p>
-              </motion.div>
-            )}
-          </motion.div>
-        )}
+    {/* Row 3: Real-World Application (Right) */}
+    {aiData.realWorldApplication && (
+      <motion.div
+        className="bg-[#021B36]/80 border border-[#00FFFF30] rounded-xl p-6 hover:scale-[1.02] transition-transform duration-300"
+      >
+        <h3 className="text-lg text-[#00FFFF] font-semibold mb-2">Real-World Application</h3>
+        <p className="text-[#AFCBE3]">{aiData.realWorldApplication}</p>
+      </motion.div>
+    )}
+  </motion.div>
+)}
 
         {/* Actions */}
         <div className="flex gap-4 pt-4">

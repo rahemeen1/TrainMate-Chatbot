@@ -42,7 +42,7 @@ export default function App() {
         <Route path="/accomplishments/:companyId/:deptId/:userId" element={<FresherAccomplishments />} />
         <Route path="/previous-chats" element={<PreviousChats />} />
         <Route path="/progress-details/:companyId/:deptName/:userId" element={<ProgressDetails />} />
-        <Route path="/module-details/:companyId/:deptId/:userId/:moduleId" element={<ViewModuleDetails />} />
+        <Route path="/module-details/:companyId/:deptId/:userId/:moduleId/:companyName" element={<ViewModuleDetails />} />
         {/* <Route path="/quiz/:companyId/:deptId/:userId/:moduleId" element={<QuizPage />} /> */}
       </Routes>
     </BrowserRouter>

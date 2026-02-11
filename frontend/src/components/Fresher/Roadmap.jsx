@@ -342,16 +342,7 @@ if (!roadmap.length)
   {/* Actions */}
   {!module.locked && !module.completed && (
     <div className="flex gap-3 mt-4">
-      {/* <button
-        onClick={() =>
-          navigate(`/fresher-training/${companyId}/${deptId}/${userId}`, {
-            state: { moduleId: module.id, companyName },
-          })
-        }
-        className="px-4 py-2 bg-[#00FFFF] text-[#031C3A] rounded font-semibold"
-      >
-        Start Learning
-      </button> */}
+      
       <button
   onClick={async () => {
     await markInProgress(module);
@@ -364,7 +355,7 @@ if (!roadmap.length)
       <button
   onClick={() =>
     navigate(
-      `/module-details/${companyId}/${deptId}/${userId}/${module.id}`
+      `/module-details/${companyId}/${deptId}/${userId}/${module.id}/${companyName}`,
     )
   }
   className="px-4 py-2 border border-[#00FFFF] text-[#00FFFF] rounded"
