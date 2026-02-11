@@ -48,6 +48,44 @@ export default function CompanyDashboard() {
   const [activeUsers, setActiveUsers] = useState(0);
   const [chartData, setChartData] = useState([]);
   const [pieData, setPieData] = useState([]);
+  const [completedFreshers, setCompletedFreshers] = useState(0);
+
+useEffect(() => {
+  const fetchOnboardingCompletion = async () => {
+    if (!companyId || !hasDepartments) return;
+
+    try {
+      let completed = 0;
+      let total = 0;
+
+      for (const dept of selectedDepts) {
+        const usersRef = collection(
+          db,
+          "freshers",
+          companyId,
+          "departments",
+          dept,
+          "users"
+        );
+
+        const snap = await getDocs(usersRef);
+
+        total += snap.size;
+
+        snap.forEach((doc) => {
+          if (doc.data().onboarding?.onboardingCompleted) completed++;
+        });
+      }
+
+      setCompletedFreshers(completed);
+    } catch (err) {
+      console.error("Error fetching onboarding completion:", err);
+    }
+  };
+
+  fetchOnboardingCompletion();
+}, [companyId, hasDepartments, selectedDepts]);
+
   
 
   useEffect(() => {
@@ -197,8 +235,34 @@ useEffect(() => {
     }
   };
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center bg-[#031C3A] text-white">Loading...</div>;
-
+ if (loading) {
+   return (
+     <div className="flex min-h-screen bg-[#031C3A] text-white">
+       {/* Sidebar stays as it is */}
+       <CompanySidebar companyId={companyId}/>
+ 
+       {/* Main content loading area */}
+       <div className="flex-1 flex flex-col items-center justify-center gap-4 p-10">
+         {/* Rotating hourglass */}
+         <svg
+           className="animate-spin h-8 w-8 text-[#00FFFF]"
+           xmlns="http://www.w3.org/2000/svg"
+           fill="none"
+           viewBox="0 0 24 24"
+         >
+           <path
+             fill="currentColor"
+             d="M12 2C6.477 2 2 6.477 2 12h2a8 8 0 0116 0h2c0-5.523-4.477-10-10-10zm0 20c5.523 0 10-4.477 10-10h-2a8 8 0 01-16 0H2c0 5.523 4.477 10 10 10z"
+           />
+         </svg>
+ 
+         <p className="text-base font-medium text-white">
+           Loading Company Dashboard...
+         </p>
+       </div>
+     </div>
+   );
+ }
   const progressPercent = (step / QUESTIONS.length) * 100;
 
   return (
@@ -324,9 +388,13 @@ useEffect(() => {
                 <p className="text-xl font-bold">{activeUsers}</p>
               </div>
               <div className="p-6 bg-[#021B36]/70 rounded-xl border border-[#00FFFF30] shadow-lg hover:scale-105 transition-all">
-                <h3 className="text-[#00FFFF] font-semibold mb-2">Progress</h3>
-                <p className="text-xl font-bold">—</p>
-              </div>
+  <h3 className="text-[#00FFFF] font-semibold mb-2">Onboarding Completion</h3>
+  <p className="text-xl font-bold">
+    {completedFreshers} / {totalUsers}{" "}
+    {/* {totalUsers > 0 && `${Math.round((completedFreshers / totalUsers) * 100)}%`} */}
+  </p>
+</div>
+
             </div>
 
             {chartData && chartData.length > 0 && (
