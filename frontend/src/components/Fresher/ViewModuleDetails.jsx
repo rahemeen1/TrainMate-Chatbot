@@ -94,10 +94,60 @@ export default function ViewModuleDetails() {
     loadModuleAndAI();
   }, [companyId, deptId, userId, moduleId]);
 
+  // Calculate training progress for this module
+  const calculateTrainingProgress = () => {
+    if (!module?.estimatedDays) return null;
+
+    const totalDays = module.estimatedDays;
+
+    if (!module.createdAt) {
+      return {
+        completedDays: 0,
+        remainingDays: totalDays,
+      };
+    }
+
+    const startDate = module.createdAt.toDate
+      ? module.createdAt.toDate()
+      : new Date(module.createdAt);
+
+    const today = new Date();
+
+    // normalize both to midnight (CRITICAL)
+    startDate.setHours(0, 0, 0, 0);
+    today.setHours(0, 0, 0, 0);
+
+    const diffDays =
+      Math.floor((today - startDate) / (1000 * 60 * 60 * 24)) + 1;
+
+    const completedDays = Math.min(diffDays, totalDays);
+    const remainingDays = Math.max(totalDays - completedDays, 0);
+
+    return {
+      completedDays,
+      remainingDays,
+    };
+  };
+
   const Loader = () => (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-[#031C3A] to-[#021B36] text-white">
-      <div className="w-16 h-16 border-4 border-t-[#00FFFF] border-white border-solid rounded-full animate-spin mb-6"></div>
-      <p className="text-xl font-medium tracking-wide animate-pulse">Loading module...</p>
+    <div className="flex min-h-screen bg-[#031C3A] text-white">
+      <div className="w-64 flex-shrink-0 bg-[#021B36]/90">
+        <div className="sticky top-0 h-screen p-4">
+          <FresherSideMenu
+            userId={userId}
+            companyId={companyId}
+            deptId={deptId}
+            companyName={companyName}
+          />
+        </div>
+      </div>
+      <div className="flex-1 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-[#00FFFF]" />
+          <p className="text-lg font-semibold">Loading module details...</p>
+          <p className="text-sm text-[#AFCBE3]">Please wait, this may take a few seconds.</p>
+        </div>
+      </div>
     </div>
   );
 
@@ -133,17 +183,25 @@ export default function ViewModuleDetails() {
           initial={{ y: -20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.5 }}
+          className="flex items-start justify-between"
         >
-          <h1 className="text-3xl font-bold text-[#00FFFF]">{module.moduleTitle}</h1>
-          <p className="text-[#AFCBE3] mt-1">
-            ⏱ {module.estimatedDays || "N/A"} days • Status: {module.status || "N/A"}
-          </p>
-           <button
-    onClick={() => navigate(-1)}
-     className="px-5 py-2 border border-[#00FFFF] text-[#00FFFF] rounded hover:bg-[#00FFFF]/20 transition-all duration-300"
-  >
-    ← Back
-  </button>
+          <div>
+            <h1 className="text-3xl font-bold text-[#00FFFF]">{module.moduleTitle}</h1>
+            <p className="text-[#AFCBE3] mt-1">
+              ⏱ {module.estimatedDays || "N/A"} days • Status: {module.status || "N/A"}
+            </p>
+            {calculateTrainingProgress() && (
+              <p className="text-[#00FFFF] mt-1 font-medium">
+                📅 {calculateTrainingProgress().remainingDays} days remaining • {calculateTrainingProgress().completedDays} days completed
+              </p>
+            )}
+          </div>
+          <button
+            onClick={() => navigate(-1)}
+            className="px-5 py-2 border border-[#00FFFF] text-[#00FFFF] rounded hover:bg-[#00FFFF]/20 transition-all duration-300"
+          >
+            ← Back
+          </button>
         </motion.div>
 
         {/* AI Loading */}
@@ -235,27 +293,7 @@ export default function ViewModuleDetails() {
     )}
   </motion.div>
 )}
-
-        {/* Actions */}
-        <div className="flex gap-4 pt-4">
-          <button
-            onClick={() => navigate(-1)}
-            className="px-6 py-2 border border-[#00FFFF] text-[#00FFFF] rounded hover:bg-[#00FFFF]/20 transition-all duration-300"
-          >
-            ← Back to Roadmap
-          </button>
-
-          <button
-            onClick={() =>
-              navigate("/chatbot", {
-                state: { userId, companyId, deptId },
-              })
-            }
-            className="px-6 py-2 bg-[#00FFFF] text-[#031C3A] rounded font-semibold hover:bg-[#00FFFF]/90 transition-all duration-300"
-          >
-            Chat with AI
-          </button>
-        </div>
+        
       </motion.div>
     </div>
   );
