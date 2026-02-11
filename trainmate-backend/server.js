@@ -12,6 +12,7 @@ import ingestRoutes from "./routes/ingestroutes.js";
 import roadmapRoutes from "./routes/roadmapRoutes.js";
 import chatRoute from "./routes/chatRoutes.js";
 import moduleExplain from "./routes/moduleExplain.js";
+import quizRoutes from "./routes/quizRoutes.js";
 
 
 
@@ -32,6 +33,7 @@ async function startServer() {
     app.use("/api", chatRoute);
 // app.use("/api/stats", statsRoutes);
 app.use("/api/module", moduleExplain);
+    app.use("/api", quizRoutes);
   
 
     app.listen(PORT, () => {

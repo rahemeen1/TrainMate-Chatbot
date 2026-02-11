@@ -192,7 +192,7 @@ const getUnlockedModules = () => {
 
     return {
       ...module,
-      locked: !unlocked,
+      locked: !unlocked || (module.quizLocked && !module.completed),
     };
   });
 };
@@ -339,6 +339,12 @@ if (!roadmap.length)
     </span>
   )}
 
+  {module.quizLocked && !module.completed && (
+    <span className="absolute top-4 right-4 px-3 py-1 rounded-full text-xs bg-red-500/20 text-red-300">
+      Quiz Locked
+    </span>
+  )}
+
   {/* Actions */}
   {!module.locked && !module.completed && (
     <div className="flex gap-3 mt-4">
@@ -362,6 +368,18 @@ if (!roadmap.length)
 >
   View Details
 </button>
+      <button
+        onClick={() =>
+          navigate(
+            `/quiz/${companyId}/${deptId}/${userId}/${module.id}`,
+            { state: { companyName } }
+          )
+        }
+        disabled={module.quizOpened || module.quizLocked}
+        className={`px-4 py-2 border border-[#00FFFF] text-[#00FFFF] rounded ${module.quizOpened || module.quizLocked ? "opacity-50 cursor-not-allowed" : ""}`}
+      >
+        {module.quizLocked ? "Quiz Locked" : module.quizOpened ? "Quiz Opened" : "Attempt Quiz"}
+      </button>
 
     </div>
   )}
