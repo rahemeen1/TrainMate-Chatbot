@@ -306,35 +306,28 @@ useEffect(() => {
   {/* ONLY THIS SCROLLS */}
   <div className="flex-1 flex flex-col overflow-y-auto scroll-smooth">
    {messages.map((msg, i) => (
-  <div
-    key={i}
-    className={`flex items-end gap-2 ${
-      msg.from === "user" ? "justify-end" : "justify-start"
-    }`}
-  >
-    {/* BOT ICON */}
-    {msg.from === "bot" && (
-      <CpuChipIcon className="w-7 h-7 text-cyan-400 flex-shrink-0" />
-    )}
+  <div key={i} className="flex flex-col mb-3">
+    <div className={`flex items-end gap-2 ${msg.from === "user" ? "justify-end" : "justify-start"}`}>
+      {msg.from === "bot" && (
+        <CpuChipIcon className="w-7 h-7 text-cyan-400 flex-shrink-0" />
+      )}
 
-    {/* MESSAGE BUBBLE */}
-    <div
-      className={`
-        px-4 py-2 rounded-xl max-w-[65%]
-        ${msg.from === "user"
-          ? "bg-[#00FFFF] text-[#031C3A]"
-          : "bg-[#021B36] border border-cyan-400/30 text-[#AFCBE3]"}
-        ${mode === "read" ? "opacity-50" : ""}
-      `}
-       dangerouslySetInnerHTML={{ __html: msg.text }}  // ✅ Replace msg.text with HTML content
-    >
-      
+      <div
+        className={`
+          px-4 py-2 rounded-xl 
+          max-w-full sm:max-w-[75%] md:max-w-[65%] lg:max-w-[50%]
+          ${msg.from === "user"
+            ? "bg-[#00FFFF] text-[#031C3A] ml-auto"
+            : "bg-[#021B36] border border-cyan-400/30 text-[#AFCBE3] mr-auto"}
+          ${mode === "read" ? "opacity-50" : ""}
+        `}
+        dangerouslySetInnerHTML={{ __html: msg.text }}
+      />
+
+      {msg.from === "user" && (
+        <UserCircleIcon className="w-7 h-7 text-[#00FFFF] flex-shrink-0" />
+      )}
     </div>
-
-    {/* USER ICON */}
-    {msg.from === "user" && (
-      <UserCircleIcon className="w-7 h-7 text-[#00FFFF] flex-shrink-0" />
-    )}
   </div>
 ))}
 {typing && (
