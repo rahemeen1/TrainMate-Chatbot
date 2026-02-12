@@ -11,6 +11,11 @@ const fallbackModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 const cohere = new CohereClient({ token: process.env.COHERE_API_KEY });
 
+const QUIZ_COUNTS = { mcq: 15, oneLiners: 5 };
+const QUIZ_MAX_RETRIES = 2;
+const PLAN_MAX_QUERIES = 4;
+const MAX_CONTEXT_CHARS = 8000;
+
 async function embedText(text) {
 	const res = await cohere.embed({
 		model: "embed-english-v3.0",
@@ -56,6 +61,269 @@ function normalizeText(value) {
 		.toLowerCase();
 }
 
+function truncateText(text, maxChars) {
+	if (!text) return "";
+	return text.length > maxChars ? text.slice(0, maxChars) : text;
+}
+
+function isQuizComplete(quiz) {
+	if (!quiz || !Array.isArray(quiz.mcq) || !Array.isArray(quiz.oneLiners)) {
+		return false;
+	}
+	if (quiz.mcq.length !== QUIZ_COUNTS.mcq || quiz.oneLiners.length !== QUIZ_COUNTS.oneLiners) {
+		return false;
+	}
+	const mcqValid = quiz.mcq.every((q) => Array.isArray(q.options) && q.options.length === 4 && Number.isInteger(q.correctIndex) && q.correctIndex >= 0 && q.correctIndex < 4);
+	const oneLinersValid = quiz.oneLiners.every((q) => q.question && q.answer);
+	return mcqValid && oneLinersValid;
+}
+
+function mergeDocs(docsList) {
+	const map = new Map();
+	for (const doc of docsList) {
+		const key = doc.text || "";
+		if (!key) continue;
+		const prev = map.get(key);
+		if (!prev || (doc.score || 0) > (prev.score || 0)) {
+			map.set(key, doc);
+		}
+	}
+	return Array.from(map.values()).sort((a, b) => (b.score || 0) - (a.score || 0));
+}
+
+async function generateAgenticPlan({ title, baseContext, agentMemorySnippet }) {
+	const prompt = `
+You are a planning agent for corporate training quiz generation.
+
+MODULE: "${title}"
+
+BASE CONTEXT (may be partial):
+${truncateText(baseContext, 1200)}
+
+PERSONALIZED CONTEXT (optional):
+${truncateText(agentMemorySnippet, 800)}
+
+Create a compact retrieval plan that identifies the most important subtopics and suggests targeted search queries.
+
+Return JSON only in this format:
+{
+  "queries": ["string"],
+  "focusAreas": ["string"],
+  "difficulty": "advanced"
+}
+
+Constraints:
+- 2 to ${PLAN_MAX_QUERIES} queries
+- Queries should be concise and specific
+- Output valid JSON only
+`;
+
+	try {
+		const result = await generateWithRetry(prompt);
+		const text = result?.response?.text()?.trim() || "";
+		const parsed = safeParseJson(text);
+		const queries = Array.isArray(parsed?.queries) ? parsed.queries.slice(0, PLAN_MAX_QUERIES) : [];
+		const focusAreas = Array.isArray(parsed?.focusAreas) ? parsed.focusAreas.slice(0, 6) : [];
+		if (queries.length >= 2) {
+			return { queries, focusAreas, difficulty: parsed?.difficulty || "advanced" };
+		}
+	} catch (err) {
+		console.warn("Agentic plan generation failed, using fallback plan:", err.message);
+	}
+
+	return {
+		queries: [
+			`${title} policies and procedures`,
+			`${title} best practices and pitfalls`,
+			`${title} real-world scenarios and troubleshooting`,
+		],
+		focusAreas: ["definitions", "procedures", "best practices", "scenarios"],
+		difficulty: "advanced",
+	};
+}
+
+async function fetchPlannedDocs({ queries, companyId, deptId }) {
+	const results = [];
+	for (const q of queries) {
+		try {
+			const embedding = await embedText(q);
+			const docs = await queryPinecone({ embedding, companyId, deptId, topK: 6 });
+			results.push(...docs);
+		} catch (err) {
+			console.warn(`Planned retrieval failed for query "${q}":`, err.message);
+		}
+	}
+	return results;
+}
+
+async function critiqueQuiz({ title, quiz }) {
+	const prompt = `
+You are a strict quiz quality auditor.
+
+MODULE: "${title}"
+
+QUIZ JSON:
+${JSON.stringify(quiz)}
+
+Check for:
+- Exactly ${QUIZ_COUNTS.mcq} MCQs and ${QUIZ_COUNTS.oneLiners} one-liners
+- Each MCQ has 4 options and one correct answer
+- Questions are specific to the module and advanced-level
+- No duplicate questions or options
+
+Return JSON only:
+{
+  "pass": true|false,
+  "issues": ["string"],
+  "score": 0-100
+}
+`;
+
+	try {
+		const result = await generateWithRetry(prompt);
+		const text = result?.response?.text()?.trim() || "";
+		const parsed = safeParseJson(text);
+		if (typeof parsed?.pass === "boolean") {
+			return parsed;
+		}
+	} catch (err) {
+		console.warn("Quiz critique failed:", err.message);
+	}
+
+	return { pass: isQuizComplete(quiz), issues: ["Critique unavailable"], score: isQuizComplete(quiz) ? 80 : 40 };
+}
+
+function buildQuizPrompt({ title, context, critiqueIssues }) {
+	const critiqueBlock = critiqueIssues && critiqueIssues.length
+		? `\n\nCRITIQUE ISSUES TO FIX:\n- ${critiqueIssues.join("\n- ")}`
+		: "";
+
+	return `
+You are an expert corporate trainer creating an assessment for: "${title}"
+
+Your task is to generate a comprehensive quiz that evaluates the trainee's understanding of this specific module.
+
+CONTEXT SOURCES:
+${context}
+
+QUIZ GENERATION INSTRUCTIONS:
+1. Focus Questions on Module: All questions must be directly related to "${title}"
+2. Source Weighting:
+   - 90% of questions should come from the COMPANY TRAINING MATERIALS (official policies, procedures, technical details)
+   - 10% can incorporate insights from PERSONALIZED LEARNING CONTEXT (if available)
+3. Question Quality:
+   - Create advanced-level questions that test practical application, not just memorization
+   - Include scenario-based questions relevant to "${title}"
+   - Cover key concepts, definitions, best practices, and procedures
+   - Each MCQ must have 4 distinct options with only one correct answer
+   - One-liner questions should test specific knowledge and skills
+${critiqueBlock}
+
+REQUIRED OUTPUT FORMAT (JSON only):
+{
+	"mcq": [
+		{
+			"id": "mcq-1",
+			"question": "string (related to ${title})",
+			"options": ["Option A", "Option B", "Option C", "Option D"],
+			"correctIndex": 0,
+			"explanation": "string (brief explanation of correct answer)"
+		}
+		// ... exactly ${QUIZ_COUNTS.mcq} MCQs total
+	],
+	"oneLiners": [
+		{
+			"id": "ol-1",
+			"question": "string (specific to ${title})",
+			"answer": "string (concise correct answer)",
+			"explanation": "string (why this is correct)"
+		}
+		// ... exactly ${QUIZ_COUNTS.oneLiners} one-liners total
+	]
+}
+
+Generate exactly ${QUIZ_COUNTS.mcq} MCQs and ${QUIZ_COUNTS.oneLiners} one-liner questions. Return ONLY valid JSON, no other text.
+`;
+}
+
+async function generateQuizAgentic({ title, context }) {
+	let lastQuiz = null;
+	let critique = null;
+
+	for (let attempt = 0; attempt < QUIZ_MAX_RETRIES; attempt += 1) {
+		const prompt = buildQuizPrompt({ title, context, critiqueIssues: critique?.issues || [] });
+		const result = await generateWithRetry(prompt);
+		const text = result?.response?.text()?.trim() || "";
+		const parsed = safeParseJson(text);
+		if (!parsed) {
+			critique = { pass: false, issues: ["Invalid JSON output"], score: 0 };
+			continue;
+		}
+
+		const quiz = shapeQuizPayload(parsed);
+		lastQuiz = quiz;
+		const localValid = isQuizComplete(quiz);
+		if (!localValid) {
+			critique = { pass: false, issues: ["Incomplete quiz structure"], score: 40 };
+			continue;
+		}
+
+		critique = await critiqueQuiz({ title, quiz });
+		if (critique?.pass) {
+			return { quiz, critique };
+		}
+	}
+
+	if (lastQuiz) {
+		return { quiz: lastQuiz, critique: critique || { pass: false, issues: ["Fallback quiz"], score: 50 } };
+	}
+
+	throw new Error("Failed to generate a valid quiz");
+}
+
+async function generateRemediationPlan({ title, mcqResults, oneLinerResults }) {
+	const weakMcq = mcqResults.filter((r) => !r.isCorrect).map((r) => ({ question: r.question, correctAnswer: r.correctAnswer }));
+	const weakOneLiners = oneLinerResults.filter((r) => !r.isCorrect).map((r) => ({ question: r.question, correctAnswer: r.correctAnswer }));
+
+	const prompt = `
+You are a corporate training coach. Create a remediation plan based on missed quiz items.
+
+MODULE: "${title}"
+
+MISSED MCQ ITEMS:
+${JSON.stringify(weakMcq)}
+
+MISSED ONE-LINERS:
+${JSON.stringify(weakOneLiners)}
+
+Return JSON only:
+{
+  "summary": "string",
+  "focusAreas": ["string"],
+  "actions": ["string"],
+  "recommendedRetryInDays": 1-30
+}
+`;
+
+	try {
+		const result = await generateWithRetry(prompt);
+		const text = result?.response?.text()?.trim() || "";
+		const parsed = safeParseJson(text);
+		if (parsed?.summary && Array.isArray(parsed?.actions)) {
+			return parsed;
+		}
+	} catch (err) {
+		console.warn("Remediation plan generation failed:", err.message);
+	}
+
+	return {
+		summary: "Review incorrect items and revisit module materials.",
+		focusAreas: ["core concepts", "procedures", "best practices"],
+		actions: ["Re-read module materials", "Review missed questions", "Attempt practice scenarios"],
+		recommendedRetryInDays: 3,
+	};
+}
+
 async function evaluateOneLinerWithLLM(question, correctAnswer, userResponse) {
 	if (!userResponse || userResponse.trim().length === 0) {
 		return false;
@@ -99,7 +367,7 @@ function shapeQuizPayload(raw) {
 	const mcq = Array.isArray(raw?.mcq) ? raw.mcq : [];
 	const oneLiners = Array.isArray(raw?.oneLiners) ? raw.oneLiners : [];
 
-	const shapedMcq = mcq.slice(0, 15).map((q, i) => ({
+	const shapedMcq = mcq.slice(0, QUIZ_COUNTS.mcq).map((q, i) => ({
 		id: q.id || `mcq-${i + 1}`,
 		question: q.question || "",
 		options: Array.isArray(q.options) ? q.options.slice(0, 4) : [],
@@ -107,7 +375,7 @@ function shapeQuizPayload(raw) {
 		explanation: q.explanation || "",
 	}));
 
-	const shapedOneLiners = oneLiners.slice(0, 5).map((q, i) => ({
+	const shapedOneLiners = oneLiners.slice(0, QUIZ_COUNTS.oneLiners).map((q, i) => ({
 		id: q.id || `ol-${i + 1}`,
 		question: q.question || "",
 		answer: q.answer || "",
@@ -186,14 +454,23 @@ export const generateQuiz = async (req, res) => {
 			console.warn(`Could not fetch agent memory: ${memErr.message}`);
 		}
 
-		// Query Pinecone for company docs (90% weight) - focused on module
-		const queryText = `${title}: Key concepts, technical skills, best practices, procedures, policies, and practical applications for ${title}`;
-		const embedding = await embedText(queryText);
-		const docs = await queryPinecone({ embedding, companyId, deptId, topK: 12 });
+		// Agentic retrieval plan + multi-query expansion
+		const baseQueryText = `${title}: Key concepts, technical skills, best practices, procedures, policies, and practical applications for ${title}`;
+		const baseEmbedding = await embedText(baseQueryText);
+		const baseDocs = await queryPinecone({ embedding: baseEmbedding, companyId, deptId, topK: 12 });
 
-		// Build context: 90% from company docs, 10% from agent memory
-		const companyDocsContext = docs.map((d) => d.text).join("\n\n").slice(0, 7200); // ~90%
-		const agentMemorySnippet = agentMemoryContext.slice(0, 800); // ~10%
+		const baseDocsContext = baseDocs.map((d) => d.text).join("\n\n");
+		const agentMemorySnippet = agentMemoryContext.slice(0, 800);
+		const plan = await generateAgenticPlan({
+			title,
+			baseContext: baseDocsContext,
+			agentMemorySnippet,
+		});
+		console.log(`Agentic plan: ${plan.queries.length} queries, focus areas: ${plan.focusAreas.join(", ")}`);
+
+		const plannedDocs = await fetchPlannedDocs({ queries: plan.queries, companyId, deptId });
+		const mergedDocs = mergeDocs([...baseDocs, ...plannedDocs]);
+		const companyDocsContext = truncateText(mergedDocs.map((d) => d.text).join("\n\n"), MAX_CONTEXT_CHARS);
 		
 		const context = `COMPANY TRAINING MATERIALS (Primary Source):
 ${companyDocsContext || "No company documents available."}
@@ -203,65 +480,9 @@ ${agentMemorySnippet}` : ""}`;
 
 		console.log(`Context built: ${companyDocsContext.length} chars from docs, ${agentMemorySnippet.length} chars from memory`);
 
-		const prompt = `
-You are an expert corporate trainer creating an assessment for: "${title}"
-
-Your task is to generate a comprehensive quiz that evaluates the trainee's understanding of this specific module.
-
-CONTEXT SOURCES:
-${context}
-
-QUIZ GENERATION INSTRUCTIONS:
-1. Focus Questions on Module: All questions must be directly related to "${title}"
-2. Source Weighting:
-   - 90% of questions should come from the COMPANY TRAINING MATERIALS (official policies, procedures, technical details)
-   - 10% can incorporate insights from PERSONALIZED LEARNING CONTEXT (if available)
-3. Question Quality:
-   - Create advanced-level questions that test practical application, not just memorization
-   - Include scenario-based questions relevant to "${title}"
-   - Cover key concepts, definitions, best practices, and procedures
-   - Each MCQ must have 4 distinct options with only one correct answer
-   - One-liner questions should test specific knowledge and skills
-
-REQUIRED OUTPUT FORMAT (JSON only):
-{
-	"mcq": [
-		{
-			"id": "mcq-1",
-			"question": "string (related to ${title})",
-			"options": ["Option A", "Option B", "Option C", "Option D"],
-			"correctIndex": 0,
-			"explanation": "string (brief explanation of correct answer)"
-		}
-		// ... exactly 15 MCQs total
-	],
-	"oneLiners": [
-		{
-			"id": "ol-1",
-			"question": "string (specific to ${title})",
-			"answer": "string (concise correct answer)",
-			"explanation": "string (why this is correct)"
-		}
-		// ... exactly 5 one-liners total
-	]
-}
-
-Generate exactly 15 MCQs and 5 one-liner questions. Return ONLY valid JSON, no other text.
-`;
-
-		console.log(`Generating quiz with LLM...`);
-
-		const result = await generateWithRetry(prompt);
-		const text = result?.response?.text()?.trim() || "";
-		console.log(`✓ LLM response received (${text.length} chars)`);
-
-		const parsed = safeParseJson(text);
-		if (!parsed) {
-			return res.status(500).json({ error: "AI returned invalid JSON" });
-		}
-
-		const quiz = shapeQuizPayload(parsed);
-		console.log(`✓ Quiz parsed: ${quiz.mcq.length} MCQs, ${quiz.oneLiners.length} one-liners`);
+		console.log(`Generating quiz with agentic loop...`);
+		const { quiz, critique } = await generateQuizAgentic({ title, context });
+		console.log(`✓ Quiz parsed: ${quiz.mcq.length} MCQs, ${quiz.oneLiners.length} one-liners (critique pass=${critique?.pass})`);
 
 		try {
 			// Ensure module document exists before writing to subcollection
@@ -282,11 +503,17 @@ Generate exactly 15 MCQs and 5 one-liner questions. Return ONLY valid JSON, no o
 				...quiz,
 				moduleTitle: title,
 				createdAt: admin.firestore.FieldValue.serverTimestamp(),
-				sourceCount: docs.length,
+				sourceCount: mergedDocs.length,
 				hasAgentMemory: agentMemorySnippet.length > 0,
 				contextSources: {
-					companyDocs: docs.length,
+					companyDocs: mergedDocs.length,
 					agentMemoryLength: agentMemorySnippet.length,
+				},
+				agentic: {
+					planQueries: plan.queries,
+					planFocusAreas: plan.focusAreas,
+					critiqueScore: critique?.score || null,
+					critiquePass: critique?.pass || false,
 				},
 			};
 			
@@ -488,6 +715,18 @@ export const submitQuiz = async (req, res) => {
 					lastQuizSubmitted: admin.firestore.FieldValue.serverTimestamp(),
 				}, { merge: true });
 				console.log(`✓ Module updated: quiz locked`);
+
+				const remediationPlan = await generateRemediationPlan({
+					title: quizData.moduleTitle || "Module",
+					mcqResults,
+					oneLinerResults,
+				});
+				const remediationRef = quizRef.collection("remediation").doc("latest");
+				await remediationRef.set({
+					...remediationPlan,
+					createdAt: admin.firestore.FieldValue.serverTimestamp(),
+				});
+				console.log(`✓ Remediation plan stored`);
 			}
 			
 			// Verify module update

@@ -11,6 +11,11 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 export const generateRoadmap = async ({
   cvText = "",
+  pineconeContext = [],
+  companyContext = "",
+  skillGap = [],
+  learningProfile = null,
+  planFocusAreas = [],
   trainingOn,
   expertise,
   level,
@@ -29,6 +34,9 @@ export const generateRoadmap = async ({
   console.log("   level            →", level);
   console.log("   trainingDuration →", trainingDuration);
   console.log("   cvText length    →", cvText?.length);
+  console.log("   companyContext length →", companyContext?.length);
+  console.log("   skillGap size    →", Array.isArray(skillGap) ? skillGap.length : 0);
+  console.log("   planFocusAreas   →", Array.isArray(planFocusAreas) ? planFocusAreas.length : 0);
 
   if (!cvText || cvText.trim().length < 50) {
     console.warn("⚠️ CV text is very small or empty");
@@ -41,6 +49,15 @@ export const generateRoadmap = async ({
   const safeExpertise = expertise ?? 1;
   const safeLevel = level || "Beginner";
   const safeDuration = trainingDuration;
+  const safeCompanyContext = companyContext || "";
+  const safeSkillGap = Array.isArray(skillGap) ? skillGap : [];
+  const safeFocusAreas = Array.isArray(planFocusAreas) ? planFocusAreas : [];
+  const safeLearningProfile = learningProfile || null;
+  const structuredCv = safeLearningProfile?.structuredCv || null;
+  const pineconeExcerpt = Array.isArray(pineconeContext)
+    ? pineconeContext.map((c) => c.text || "").join("\n").slice(0, 1200)
+    : "";
+  const effectiveCompanyContext = safeCompanyContext || pineconeExcerpt || "No company documents provided.";
 
   console.log("🧪 Normalized inputs:");
   console.log("   safeTrainingOn →", safeTrainingOn);
@@ -94,11 +111,32 @@ User Profile:
 - **User Background (CV):** ${cvText}
 - **Specific Pedagogical Instructions:** ${expertiseInstruction}
 
+Company Context:
+${effectiveCompanyContext}
+
+Skill Gap:
+${safeSkillGap.length ? safeSkillGap.join(", ") : "No explicit gaps detected."}
+
+Learning Profile:
+Summary: ${safeLearningProfile?.summary || "No prior learning history."}
+Struggling Areas: ${(safeLearningProfile?.strugglingAreas || []).join(", ")}
+Mastered Topics: ${(safeLearningProfile?.masteredTopics || []).join(", ")}
+Average Quiz Score: ${Number.isFinite(safeLearningProfile?.avgScore) ? safeLearningProfile.avgScore : "N/A"}
+
+Structured CV (redacted):
+${structuredCv ? JSON.stringify(structuredCv) : "Not available"}
+
+Plan Focus Areas:
+${safeFocusAreas.length ? safeFocusAreas.join(", ") : "No focus areas provided."}
+
 ### CRITICAL CONSTRAINTS
 1. **Gap Analysis:** Analyze the User CV against the Target Domain. DO NOT include foundational concepts the user already demonstrates mastery of in their CV.
+1.1 **Skill Gaps:** Prioritize modules that address the identified skill gaps and struggling areas from the learning profile.
+1.2 **Mastery Avoidance:** De-emphasize topics already mastered in the learning profile.
 2. **Scoping:** The sum of "estimatedDays" must logically fit within the total duration of ${safeDuration}.
 3. **Progression:** Modules must follow a Bloom's Taxonomy progression (from understanding to application/synthesis).
 4. **Specificity:** "description" must include 2-3 specific sub-topics or tools to be mastered.
+5. **Coverage:** Ensure at least one module explicitly covers each Plan Focus Area.
 
 Guidance:
 ${expertiseInstruction}
