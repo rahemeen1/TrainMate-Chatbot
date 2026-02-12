@@ -6,6 +6,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { CohereClient } from "cohere-ai";
 import dotenv from "dotenv";
 import { isDocAllowed } from "../utils/relevanceGuard.js";
+import { updateMemoryAfterChat, getAgentMemory } from "../services/memoryService.js";
 
 
 
@@ -258,16 +259,25 @@ export const chatController = async (req, res) => {
       await chatSessionRef.set({ startedAt: new Date(), messages: [] });
     }
 
-    /* ---------- MEMORY ---------- */
-    const memoryRef = roadmapRef
-      .doc(activeModuleDoc.id)
-      .collection("agentMemory")
-      .doc("summary");
-
-    const memorySnap = await memoryRef.get();
-    const agentMemory = memorySnap.exists
-      ? memorySnap.data().summary
-      : "No prior memory.";
+    /* ---------- MEMORY (DYNAMIC) ---------- */
+    const memoryData = await getAgentMemory({
+      userId,
+      companyId,
+      deptId,
+      moduleId: activeModuleDoc.id
+    });
+    
+    const agentMemory = memoryData.summary || "No prior memory.";
+    const strugglingAreas = memoryData.strugglingAreas || [];
+    const masteredTopics = memoryData.masteredTopics || [];
+    
+    console.log(`📝 Agent Memory: ${agentMemory.substring(0, 100)}...`);
+    if (strugglingAreas.length > 0) {
+      console.log(`⚠️  Struggling with: ${strugglingAreas.slice(0, 3).join(", ")}`);
+    }
+    if (masteredTopics.length > 0) {
+      console.log(`✅ Mastered: ${masteredTopics.slice(0, 3).join(", ")}`);
+    }
 
     /* ---------- PINECONE (SAFE) ---------- */
     let relevantDocs = [];
@@ -309,10 +319,12 @@ export const chatController = async (req, res) => {
     /* ---------- PROMPT ---------- */
     const finalPrompt = `
 SYSTEM ROLE:
-You are TrainMate, a goal-driven onboarding agent.
+You are TrainMate, a goal-driven onboarding agent focused on teaching concepts.
 
-AGENT MEMORY:
+LEARNING MEMORY (Topics & Patterns):
 ${agentMemory}
+${strugglingAreas.length > 0 ? `\nUser needs help with: ${strugglingAreas.slice(0, 3).join(", ")}` : ''}
+${masteredTopics.length > 0 ? `\nUser has learned: ${masteredTopics.slice(0, 3).join(", ")}` : ''}
 
 USER PROFILE:
 Name: ${userData.name || "User"}
@@ -323,15 +335,16 @@ ${moduleData.moduleTitle}
 
 Remaining Days: ${calculateTrainingProgress(moduleData).remainingDays}
 
-RULES:
-- Answer all questions related to the active module or department
-- Give examples when helpful
-- Never refuse module-related questions
+STRICT RULES:
+- Answer questions related to the active module or department ONLY
+- Give practical examples when helpful
 - Use HTML tags only (<strong>, <em>, <ul>, <li>)
-- Do NOT greet the user again and again. Do NOT say "hello", "hi", or any opening phrases. Get straight to the point. 
-- Do NOT say hello, hi, or any opening phrases.
-- If the question is not related to the module or department, politely refuse to answer and say "I’m here to help with your training module." Do NOT answer questions unrelated to the module or department. Always steer the conversation back to the training content.
-- Do not introduce yourself again and again. Avoid repetitive phrases.
+- NEVER repeat greetings or introductions
+- NEVER repeat step numbers or progress status (e.g., "You've completed 2 of 6 steps")
+- NEVER say "ready to dive", "let's move on", or similar transition phrases
+- Get straight to answering the question with teaching content
+- If off-topic, say: "I'm here to help with your training module."
+- Focus on teaching concepts, not announcing progress
 
 
 CONTEXT:
@@ -339,6 +352,8 @@ ${context}
 
 USER MESSAGE:
 ${newMessage}
+
+RESPOND WITH: Direct educational content addressing the question. No progress updates or step announcements.
 `;
 
     /* ---------- LLM ---------- */
@@ -354,6 +369,17 @@ ${newMessage}
         { from: "bot", text: botReply, timestamp: new Date() }
       ),
     });
+
+    /* ---------- UPDATE MEMORY (ASYNC) ---------- */
+    // Update memory in background without blocking response
+    updateMemoryAfterChat({
+      userId,
+      companyId,
+      deptId,
+      moduleId: activeModuleDoc.id,
+      userMessage: newMessage,
+      botReply: botReply
+    }).catch(err => console.warn("⚠️ Memory update skipped:", err.message));
 
     return res.json({
       reply: botReply,

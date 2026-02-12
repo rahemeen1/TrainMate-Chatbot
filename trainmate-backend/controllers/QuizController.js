@@ -3,6 +3,7 @@ import { db } from "../config/firebase.js";
 import { getPineconeIndex } from "../config/pinecone.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { CohereClient } from "cohere-ai";
+import { updateMemoryAfterQuiz } from "../services/memoryService.js";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const primaryModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
@@ -495,6 +496,20 @@ export const submitQuiz = async (req, res) => {
 				const moduleData = verifyModule.data();
 				console.log(`✓ Module state verified: quizPassed=${moduleData.quizPassed}, quizLocked=${moduleData.quizLocked}`);
 			}
+
+			// Update agent memory with quiz results (async, non-blocking)
+			updateMemoryAfterQuiz({
+				userId,
+				companyId,
+				deptId,
+				moduleId,
+				moduleTitle: quizData.moduleTitle || "Module",
+				score,
+				passed,
+				mcqResults,
+				oneLinerResults
+			}).catch(err => console.warn("⚠️ Memory update after quiz skipped:", err.message));
+
 		} catch (writeErr) {
 			console.error("Error writing quiz results to Firestore:", writeErr);
 			console.error("Error code:", writeErr.code);
