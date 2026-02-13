@@ -5,9 +5,17 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { CohereClient } from "cohere-ai";
 import { updateMemoryAfterQuiz } from "../services/memoryService.js";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const primaryModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-const fallbackModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+let primaryModel = null;
+let fallbackModel = null;
+
+function initializeQuizModels() {
+  if (!primaryModel || !fallbackModel) {
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    primaryModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    fallbackModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+  }
+  return { primaryModel, fallbackModel };
+}
 
 const cohere = new CohereClient({ token: process.env.COHERE_API_KEY });
 
@@ -392,10 +400,11 @@ function sleep(ms) {
 async function generateWithRetry(prompt) {
 	const attempts = 3;
 	let lastErr;
+	const { primaryModel: pm, fallbackModel: fm } = initializeQuizModels();
 
 	for (let i = 0; i < attempts; i += 1) {
 		try {
-			return await primaryModel.generateContent(prompt);
+			return await pm.generateContent(prompt);
 		} catch (err) {
 			lastErr = err;
 			const status = err?.status || err?.response?.status;
@@ -406,7 +415,7 @@ async function generateWithRetry(prompt) {
 	}
 
 	try {
-		return await fallbackModel.generateContent(prompt);
+		return await fm.generateContent(prompt);
 	} catch (err) {
 		throw lastErr || err;
 	}

@@ -13,8 +13,15 @@ import { updateMemoryAfterChat, getAgentMemory } from "../services/memoryService
 dotenv.config();
 
 /* ================= LLM ================= */
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+let model = null;
+
+function initializeChatModel() {
+  if (!model) {
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+  }
+  return model;
+}
 
 /* ================= COHERE ================= */
 const cohere = new CohereClient({ token: process.env.COHERE_API_KEY });
@@ -357,7 +364,7 @@ RESPOND WITH: Direct educational content addressing the question. No progress up
 `;
 
     /* ---------- LLM ---------- */
-    const completion = await model.generateContent(finalPrompt);
+    const completion = await initializeChatModel().generateContent(finalPrompt);
     const botReply =
       completion?.response?.text() ||
       "I’m here to help with your training module.";

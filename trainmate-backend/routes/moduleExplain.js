@@ -4,7 +4,16 @@ import admin from "firebase-admin";
 
 const router = express.Router();
 const db = admin.firestore();
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
+let moduleModel = null;
+
+function initializeModuleModel() {
+  if (!moduleModel) {
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    moduleModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+  }
+  return moduleModel;
+}
 
 router.post("/explain", async (req, res) => {
   try {
@@ -72,7 +81,7 @@ Do NOT wrap in markdown or code blocks.
 }
 `;
 
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const model = initializeModuleModel();
     const result = await model.generateContent(prompt);
 
     let text = result.response.text().trim();

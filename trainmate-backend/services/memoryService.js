@@ -3,8 +3,15 @@ import { db } from "../config/firebase.js";
 import admin from "firebase-admin";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+let model = null;
+
+function initializeMemoryModel() {
+  if (!model) {
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+  }
+  return model;
+}
 
 /**
  * Check if a message is a system status message (not learning content)
@@ -112,7 +119,7 @@ Return ONLY JSON:
 
     let extracted;
     try {
-      const result = await model.generateContent(extractionPrompt);
+      const result = await initializeMemoryModel().generateContent(extractionPrompt);
       const text = result?.response?.text()?.trim() || "{}";
       extracted = JSON.parse(text.replace(/```json|```/g, "").trim());
     } catch (err) {
@@ -163,7 +170,7 @@ Generate brief summary:
 
     let newSummary;
     try {
-      const summaryResult = await model.generateContent(summaryPrompt);
+      const summaryResult = await initializeMemoryModel().generateContent(summaryPrompt);
       newSummary = summaryResult?.response?.text()?.trim().substring(0, 300) || extracted.insights;
       
       // Remove any status phrases that might have slipped through
@@ -302,7 +309,7 @@ Generate a brief memory summary (max 500 chars) focusing on learning progress an
 
     let newSummary;
     try {
-      const summaryResult = await model.generateContent(summaryPrompt);
+      const summaryResult = await initializeMemoryModel().generateContent(summaryPrompt);
       newSummary = summaryResult?.response?.text()?.trim().substring(0, 500) || 
         `Quiz completed for ${moduleTitle}. Score: ${score}%. ${passed ? "Module passed." : "Needs improvement in: " + weakTopics.slice(0, 3).join(", ")}`;
     } catch (err) {

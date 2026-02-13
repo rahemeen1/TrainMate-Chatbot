@@ -7,8 +7,15 @@ import { extractSkillsFromText } from "../services/skillExtractor.service.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 //import { generateModuleInsights } from "../services/moduleInsightsService.js";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const roadmapModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+let roadmapModel = null;
+
+function initializeModel() {
+  if (!roadmapModel) {
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    roadmapModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+  }
+  return roadmapModel;
+}
 
 const ROADMAP_MAX_RETRIES = 2;
 const PLAN_MAX_QUERIES = 4;
@@ -66,10 +73,11 @@ function normalizeRoadmapModules(modules) {
 async function generateRoadmapModel(prompt) {
   const attempts = 3;
   let lastErr;
+  const model = initializeModel();
 
   for (let i = 0; i < attempts; i += 1) {
     try {
-      return await roadmapModel.generateContent(prompt);
+      return await model.generateContent(prompt);
     } catch (err) {
       lastErr = err;
       const status = err?.status || err?.response?.status;

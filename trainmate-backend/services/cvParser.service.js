@@ -3,8 +3,16 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { extractFileText } from "../utils/TextExtractor.js";
 
 console.log("DEBUG: Using API Key ->", process.env.GEMINI_API_KEY);
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const cvModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+let cvModel = null;
+
+function initializeCvModel() {
+  if (!cvModel) {
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    cvModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+  }
+  return cvModel;
+}
 
 const CV_MAX_RETRIES = 2;
 const MAX_CV_CHARS = 8000;
@@ -51,10 +59,11 @@ function validateStructuredCv(structured) {
 async function generateCvStructure(prompt) {
   const attempts = 3;
   let lastErr;
+  const model = initializeCvModel();
 
   for (let i = 0; i < attempts; i += 1) {
     try {
-      return await cvModel.generateContent(prompt);
+      return await model.generateContent(prompt);
     } catch (err) {
       lastErr = err;
       const status = err?.status || err?.response?.status;
