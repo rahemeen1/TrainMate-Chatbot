@@ -237,6 +237,14 @@ useEffect(() => {
     }
   };
 
+  const handleKeyDown = (e) => {
+    // Send on Ctrl+Enter or Command+Enter
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
   useEffect(() => {
   chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
 }, [messages, typing]);
@@ -244,6 +252,77 @@ useEffect(() => {
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#031C3A] text-white">
+      
+      {/* Add CSS for proper HTML rendering in chat */}
+      <style>
+        {`
+          .chat-message {
+            line-height: 1.6;
+            font-size: 0.95rem;
+          }
+          .chat-message ul {
+            list-style-type: disc;
+            margin-left: 1.5rem;
+            margin-top: 0.5rem;
+            margin-bottom: 0.5rem;
+          }
+          .chat-message ol {
+            list-style-type: decimal;
+            margin-left: 1.5rem;
+            margin-top: 0.5rem;
+            margin-bottom: 0.5rem;
+          }
+          .chat-message li {
+            margin-bottom: 0.35rem;
+            line-height: 1.5;
+          }
+          .chat-message li:last-child {
+            margin-bottom: 0;
+          }
+          .chat-message p {
+            margin-bottom: 0.75rem;
+            line-height: 1.6;
+          }
+          .chat-message p:last-child {
+            margin-bottom: 0;
+          }
+          .chat-message b, .chat-message strong {
+            font-weight: 600;
+            color: #00FFFF;
+          }
+          .chat-message i, .chat-message em {
+            font-style: italic;
+          }
+          .chat-message h3 {
+            font-size: 1.125rem;
+            font-weight: 600;
+            margin-top: 1rem;
+            margin-bottom: 0.5rem;
+            color: #00FFFF;
+          }
+          .chat-message h3:first-child {
+            margin-top: 0;
+          }
+          .chat-message code {
+            background-color: rgba(0, 255, 255, 0.15);
+            padding: 0.2rem 0.4rem;
+            border-radius: 0.25rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+          }
+          .chat-message pre {
+            background-color: rgba(0, 255, 255, 0.05);
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            overflow-x: auto;
+            margin: 0.75rem 0;
+          }
+          .chat-message pre code {
+            background-color: transparent;
+            padding: 0;
+          }
+        `}
+      </style>
 
       {/* SIDEBAR */}
      <div className="w-64 bg-[#021B36]/90 p-4 flex-none">
@@ -260,31 +339,25 @@ useEffect(() => {
       <div className="flex-1 flex flex-col overflow-hidden">
 
         {/* HEADER */}
-       <div className="bg-[#021B36]/90 p-4 border-b border-[#00FFFF50] flex justify-between items-center flex-none">
-
-          <div className="bg-[#021B36]/90 p-4 border-b border-[#00FFFF50] flex justify-between items-center flex-none">
-  <div>
-    <h2 className="text-2xl text-[#00FFFF]">TrainMate Chatbot</h2>
-    <p className="text-sm text-[#AFCBE3]">
-      {userData?.name} | {userData?.deptName} | {userData?.companyName}
-    </p>
-  </div>
-</div>
-
+        <div className="bg-[#021B36]/90 p-4 border-b border-[#00FFFF50] flex justify-between items-center flex-none">
+          <div>
+            <h2 className="text-2xl text-[#00FFFF]">TrainMate Chatbot</h2>
+            <p className="text-sm text-[#AFCBE3]">
+              {userData?.name} | {userData?.deptName} | {userData?.companyName}
+            </p>
+          </div>
 
           <div className="flex items-center gap-2 relative">
-         
             <button
-  onClick={() =>
-    navigate("/previous-chats", {
-      state: { userId, companyId, deptId, activeModuleId }
-    })
-  }
-  className="border border-cyan-400/40 px-3 py-1 rounded"
->
-  View Previous Chats
-</button>
-
+              onClick={() =>
+                navigate("/previous-chats", {
+                  state: { userId, companyId, deptId, activeModuleId }
+                })
+              }
+              className="border border-cyan-400/40 px-3 py-1 rounded"
+            >
+              View Previous Chats
+            </button>
 
             {showDropdown && (
               <div className="absolute right-0 mt-2 bg-[#021B36] border border-cyan-400/30 rounded w-44 z-10">
@@ -308,75 +381,91 @@ useEffect(() => {
       
      
 {/* CHAT CONTAINER */}
-<div className="flex-1 flex flex-col px-8 py-6 overflow-hidden">
+<div className="flex-1 flex flex-col overflow-hidden">
 
-  {/* ONLY THIS SCROLLS */}
-  <div className="flex-1 flex flex-col overflow-y-auto scroll-smooth">
+  {/* CHAT MESSAGES - SCROLLABLE */}
+  <div className="flex-1 overflow-y-auto scroll-smooth px-8 py-8">
    {messages.map((msg, i) => (
-  <div key={i} className="flex flex-col mb-3">
-    <div className={`flex items-end gap-2 ${msg.from === "user" ? "justify-end" : "justify-start"}`}>
+  <div key={i} className="mb-6">
+    <div className={`flex items-start gap-3 ${msg.from === "user" ? "justify-end" : "justify-start"}`}>
       {msg.from === "bot" && (
-        <CpuChipIcon className="w-7 h-7 text-cyan-400 flex-shrink-0" />
+        <CpuChipIcon className="w-8 h-8 text-cyan-400 flex-shrink-0 mt-1" />
       )}
 
       <div
         className={`
-          px-4 py-2 rounded-xl 
-          max-w-full sm:max-w-[75%] md:max-w-[65%] lg:max-w-[50%]
+          chat-message
+          px-5 py-4 rounded-lg
+          max-w-[75%]
+          break-words overflow-wrap-anywhere
+          shadow-lg
+          transition-all duration-200
           ${msg.from === "user"
-            ? "bg-[#00FFFF] text-[#031C3A] ml-auto"
-            : "bg-[#021B36] border border-cyan-400/30 text-[#AFCBE3] mr-auto"}
+            ? "bg-cyan-600/40 text-white border border-cyan-400/40"
+            : "bg-[#021B36] border border-cyan-400/30 text-[#E0EAF5]"}
           ${mode === "read" ? "opacity-50" : ""}
         `}
+        style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}
         dangerouslySetInnerHTML={{ __html: msg.text }}
       />
 
       {msg.from === "user" && (
-        <UserCircleIcon className="w-7 h-7 text-[#00FFFF] flex-shrink-0" />
+        <UserCircleIcon className="w-8 h-8 text-cyan-400 flex-shrink-0 mt-1" />
       )}
     </div>
   </div>
 ))}
 {typing && (
-  <div className="flex items-end gap-2 justify-start mb-2 animate-pulse">
-    {/* BOT ICON */}
-    <CpuChipIcon className="w-7 h-7 text-cyan-400 flex-shrink-0" />
+  <div className="mb-6 animate-pulse">
+    <div className="flex items-start gap-3">
+      {/* BOT ICON */}
+      <CpuChipIcon className="w-8 h-8 text-cyan-400 flex-shrink-0 mt-1" />
 
-    {/* TYPING BUBBLE */}
-    <div className="px-4 py-2 rounded-xl bg-[#021B36] border border-cyan-400/30 text-[#AFCBE3]">
-      <span className="flex gap-1">
-        <span className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce [animation-delay:0ms]" />
-        <span className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce [animation-delay:150ms]" />
-        <span className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce [animation-delay:300ms]" />
-      </span>
+      {/* TYPING BUBBLE */}
+      <div className="px-5 py-4 rounded-lg bg-[#021B36] border border-cyan-400/30 text-[#E0EAF5] shadow-lg">
+        <span className="flex gap-1.5">
+          <span className="w-2.5 h-2.5 bg-cyan-400 rounded-full animate-bounce [animation-delay:0ms]" />
+          <span className="w-2.5 h-2.5 bg-cyan-400 rounded-full animate-bounce [animation-delay:150ms]" />
+          <span className="w-2.5 h-2.5 bg-cyan-400 rounded-full animate-bounce [animation-delay:300ms]" />
+        </span>
+      </div>
     </div>
   </div>
 )}
 
-<div ref={chatEndRef} />
-  </div>
+          <div ref={chatEndRef} />
+        </div>
 
-</div>
         {/* INPUT */}
-       <div className="p-4 border-t border-[#00FFFF50] flex gap-2 items-center bg-[#021B36]/90 flex-none">
-  <input
-    disabled={mode === "read"}
-    value={input}
-    onChange={e => setInput(e.target.value)}
-    onKeyDown={e => e.key === "Enter" && handleSend()}
-    placeholder={mode === "read" ? "Read only chat" : "Type a message..."}
-    className="flex-1 px-4 py-2 rounded bg-[#021B36] border border-cyan-400/40"
-  />
-  <button
-    onClick={handleSend}
-    disabled={mode === "read"}
-    className="bg-cyan-400 p-3 rounded disabled:opacity-40"
-  >
-    <PaperAirplaneIcon className="w-5 h-5 text-[#031C3A]" />
-  </button>
-</div>
+        <div className="px-8 py-4 border-t border-[#00FFFF50] flex gap-2 items-end bg-[#021B36]/90 flex-none">
+          <textarea
+            disabled={mode === "read"}
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={mode === "read" ? "Read only chat" : "Type a message... (Ctrl+Enter to send)"}
+            rows={1}
+            className="flex-1 px-4 py-2 rounded bg-[#021B36] border border-cyan-400/40 resize-none overflow-hidden min-h-[42px] max-h-[120px]"
+            style={{
+              height: 'auto',
+              overflowY: input.split('\n').length > 3 ? 'auto' : 'hidden'
+            }}
+            onInput={(e) => {
+              e.target.style.height = 'auto';
+              e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
+            }}
+          />
+          <button
+            onClick={handleSend}
+            disabled={mode === "read"}
+            className="bg-cyan-400 p-3 rounded disabled:opacity-40 flex-shrink-0"
+          >
+            <PaperAirplaneIcon className="w-5 h-5 text-[#031C3A]" />
+          </button>
+        </div>
 
       </div>
+    </div>
     </div>
   );
 }

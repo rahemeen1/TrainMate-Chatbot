@@ -2,9 +2,17 @@ import axios from "axios";
 
 export async function searchMDN(query) {
   try {
-    const url = `https://developer.mozilla.org/api/v1/search?q=${encodeURIComponent(query)}&locale=en-US`;
-    const { data } = await axios.get(url);
-    if (data.documents) {
+    // MDN search API - using correct endpoint
+    const url = `https://developer.mozilla.org/api/v1/search`;
+    const { data } = await axios.get(url, {
+      params: {
+        q: query,
+        locale: 'en-US'
+      },
+      timeout: 5000
+    });
+    
+    if (data.documents && Array.isArray(data.documents)) {
       return data.documents.slice(0, 3).map(doc => ({
         title: doc.title,
         mdn_url: doc.mdn_url,
@@ -13,7 +21,10 @@ export async function searchMDN(query) {
     }
     return [];
   } catch (err) {
-    console.error("MDN error:", err.message);
+    // Silently fail - MDN is optional knowledge source
+    if (err.code !== 'ECONNABORTED') {
+      console.log("[MDN] Search unavailable, continuing without MDN results");
+    }
     return [];
   }
 }

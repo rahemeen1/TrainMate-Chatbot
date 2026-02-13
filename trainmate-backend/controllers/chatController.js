@@ -290,6 +290,35 @@ export const chatController = async (req, res) => {
     const userSnap = await userRef.get();
     const userData = userSnap.exists ? userSnap.data() : {};
 
+    /* ---------- COMPANY INFORMATION ---------- */
+    let companyInfo = "";
+    try {
+      const companyRef = db.collection("companies").doc(companyId).collection("onboardingAnswers");
+      const companySnap = await companyRef.get();
+      
+      if (!companySnap.empty) {
+        const companyDoc = companySnap.docs[0].data();
+        const answers = companyDoc.answers || {};
+        
+        const duration = answers['1'] || answers[1] || "Not specified";
+        const teamSize = answers['2'] || answers[2] || "Not specified";
+        const description = answers['3'] || answers[3] || "No description available";
+        
+        companyInfo = `
+COMPANY INFORMATION:
+Duration: ${duration}
+Team Size: ${teamSize}
+About: ${description}
+`;
+        
+        console.log("✅ Company info loaded:", description.substring(0, 50));
+      } else {
+        console.warn("⚠️ No company onboarding answers found");
+      }
+    } catch (err) {
+      console.warn("⚠️ Could not fetch company info:", err.message);
+    }
+
     /* ---------- ACTIVE MODULE ---------- */
     const roadmapRef = userRef.collection("roadmap");
     const roadmapSnap = await roadmapRef.get();
@@ -424,6 +453,7 @@ ${masteredTopics.length > 0 ? `\nUser has learned: ${masteredTopics.slice(0, 3).
 USER PROFILE:
 Name: ${userData.name || "User"}
 Department: ${userData.deptName || deptId}
+${companyInfo || "\nCOMPANY INFORMATION: Not available in system\n"}
 
 ACTIVE MODULE:
 ${moduleData.moduleTitle}
@@ -438,7 +468,10 @@ AGENTIC GUIDELINES:
 - Combine company knowledge with external expertise for richer answers
 
 STRICT RULES:
-- Answer questions related to the active module or department ONLY
+- Answer questions related to the active module, department, OR company information
+- When asked about the company, ALWAYS check the COMPANY INFORMATION section above first
+- If COMPANY INFORMATION shows "Not available", then say you don't have company details
+- If COMPANY INFORMATION has an "About" field, use that to answer questions about the company
 - Give practical examples when helpful
 - Use <b>, <i>, <ul>, <li>, <p> HTML tags for formatting
 - Do NOT use markdown formatting (no **, ##, __, etc.)
@@ -446,7 +479,7 @@ STRICT RULES:
 - NEVER repeat step numbers or progress status (e.g., "You've completed 2 of 6 steps")
 - NEVER say "ready to dive", "let's move on", or similar transition phrases
 - Get straight to answering the question with teaching content
-- If off-topic, say: "I'm here to help with your training module."
+- If completely off-topic (not module, company, or department related), say: "I'm here to help with your training module and answer questions about the company."
 - Focus on teaching concepts, not announcing progress
 
 
