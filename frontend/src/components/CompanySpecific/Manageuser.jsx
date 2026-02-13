@@ -42,7 +42,7 @@ export default function ManageUser() {
         db,
         "freshers",
         companyId,
-        "departments"
+        "departments" 
       );
 
       const deptSnap = await getDocs(departmentsRef);

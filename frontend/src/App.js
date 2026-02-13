@@ -20,7 +20,7 @@ import ProgressDetails from "./components/CompanySpecific/ProgressDetails";
 import ViewModuleDetails from "./components/Fresher/ViewModuleDetails";
 import ModuleQuiz from "./components/Fresher/ModuleQuiz";
 import ModuleQuizResults from "./components/Fresher/ModuleQuizResults";
-
+ 
 
 export default function App() {
   return (

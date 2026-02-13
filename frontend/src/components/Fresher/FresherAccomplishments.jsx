@@ -203,7 +203,7 @@ export default function FresherAccomplishments() {
                   {generatingId === m.id
                     ? "Generating summary..."
                     : "Generate accomplishment summary"}
-                </button>
+                </button> 
               )}
             </div>
 

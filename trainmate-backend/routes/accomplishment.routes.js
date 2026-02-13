@@ -6,4 +6,4 @@ const router = express.Router();
 
 router.post("/generate", generateAccomplishment);
 
-export default router;
+export default router; 

@@ -8,7 +8,7 @@ export async function generateAccomplishmentText(payload) {
     status,
     summary,
     strongAreas = [],
-    masteredTopics = [],
+    masteredTopics = [], 
     score = 0,
   } = payload;
 

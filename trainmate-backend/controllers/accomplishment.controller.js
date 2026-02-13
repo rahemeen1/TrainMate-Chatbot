@@ -11,7 +11,7 @@ export const generateAccomplishment = async (req, res) => {
       console.log("❌ Missing fields");
       return res.status(400).json({ error: "Missing required fields" });
     }
-    const roadmapRef = db
+    const roadmapRef = db 
       .collection("freshers").doc(companyId)
       .collection("departments").doc(deptId)
       .collection("users").doc(userId)

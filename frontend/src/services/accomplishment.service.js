@@ -5,7 +5,7 @@ export const generateAccomplishment = async ({
   deptId,
   userId,
   moduleId,
-}) => {
+}) => { 
   const res = await fetch(
     "http://localhost:5000/api/accomplishments/generate",
     {
