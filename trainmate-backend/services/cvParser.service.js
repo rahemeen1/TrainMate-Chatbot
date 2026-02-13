@@ -2,6 +2,7 @@ import axios from "axios";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { extractFileText } from "../utils/TextExtractor.js";
 
+console.log("DEBUG: Using API Key ->", process.env.GEMINI_API_KEY);
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const cvModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
