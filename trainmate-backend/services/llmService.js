@@ -105,11 +105,11 @@ STRICT RULES:
     ---------------------------------- */
     const prompt = `
 User Profile:
-- **Target Domain:** ${safeTrainingOn}
-- **Current Expertise:** ${safeExpertise} (${safeLevel})
-- **Time Constraint:** ${safeDuration}
-- **User Background (CV):** ${cvText}
-- **Specific Pedagogical Instructions:** ${expertiseInstruction}
+- <b>Target Domain:</b> ${safeTrainingOn}
+- <b>Current Expertise:</b> ${safeExpertise} (${safeLevel})
+- <b>Time Constraint:</b> ${safeDuration}
+- <b>User Background (CV):</b> ${cvText}
+- <b>Specific Pedagogical Instructions:</b> ${expertiseInstruction}
 
 Company Context:
 ${effectiveCompanyContext}
@@ -118,10 +118,10 @@ Skill Gap:
 ${safeSkillGap.length ? safeSkillGap.join(", ") : "No explicit gaps detected."}
 
 Learning Profile:
-Summary: ${safeLearningProfile?.summary || "No prior learning history."}
-Struggling Areas: ${(safeLearningProfile?.strugglingAreas || []).join(", ")}
-Mastered Topics: ${(safeLearningProfile?.masteredTopics || []).join(", ")}
-Average Quiz Score: ${Number.isFinite(safeLearningProfile?.avgScore) ? safeLearningProfile.avgScore : "N/A"}
+<b>Summary:</b> ${safeLearningProfile?.summary || "No prior learning history."}
+<b>Struggling Areas:</b> ${(safeLearningProfile?.strugglingAreas || []).join(", ")}
+<b>Mastered Topics:</b> ${(safeLearningProfile?.masteredTopics || []).join(", ")}
+<b>Average Quiz Score:</b> ${Number.isFinite(safeLearningProfile?.avgScore) ? safeLearningProfile.avgScore : "N/A"}
 
 Structured CV (redacted):
 ${structuredCv ? JSON.stringify(structuredCv) : "Not available"}
@@ -129,14 +129,14 @@ ${structuredCv ? JSON.stringify(structuredCv) : "Not available"}
 Plan Focus Areas:
 ${safeFocusAreas.length ? safeFocusAreas.join(", ") : "No focus areas provided."}
 
-### CRITICAL CONSTRAINTS
-1. **Gap Analysis:** Analyze the User CV against the Target Domain. DO NOT include foundational concepts the user already demonstrates mastery of in their CV.
-1.1 **Skill Gaps:** Prioritize modules that address the identified skill gaps and struggling areas from the learning profile.
-1.2 **Mastery Avoidance:** De-emphasize topics already mastered in the learning profile.
-2. **Scoping:** The sum of "estimatedDays" must logically fit within the total duration of ${safeDuration}.
-3. **Progression:** Modules must follow a Bloom's Taxonomy progression (from understanding to application/synthesis).
-4. **Specificity:** "description" must include 2-3 specific sub-topics or tools to be mastered.
-5. **Coverage:** Ensure at least one module explicitly covers each Plan Focus Area.
+CRITICAL CONSTRAINTS:
+1. <b>Gap Analysis:</b> Analyze the User CV against the Target Domain. DO NOT include foundational concepts the user already demonstrates mastery of in their CV.
+1.1 <b>Skill Gaps:</b> Prioritize modules that address the identified skill gaps and struggling areas from the learning profile.
+1.2 <b>Mastery Avoidance:</b> De-emphasize topics already mastered in the learning profile.
+2. <b>Scoping:</b> The sum of "estimatedDays" must logically fit within the total duration of ${safeDuration}.
+3. <b>Progression:</b> Modules must follow a Bloom's Taxonomy progression (from understanding to application/synthesis).
+4. <b>Specificity:</b> "description" must include 2-3 specific sub-topics or tools to be mastered.
+5. <b>Coverage:</b> Ensure at least one module explicitly covers each Plan Focus Area.
 
 Guidance:
 ${expertiseInstruction}

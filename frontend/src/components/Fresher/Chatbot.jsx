@@ -104,7 +104,14 @@ export default function FresherChatbot() {
       );
 
       const snap = await getDocs(roadmapRef);
-      const active = snap.docs.find(d => d.data().status === "in-progress");
+      // Sort by order and find first pending/in-progress module
+      const sortedDocs = snap.docs
+        .map((d) => ({ id: d.id, data: d.data() }))
+        .sort((a, b) => (a.data.order || 0) - (b.data.order || 0));
+      
+      const active = sortedDocs.find(m =>
+        ["pending", "in-progress"].includes(m.data.status)
+      );
       if (active) setActiveModuleId(active.id);
     };
 

@@ -240,7 +240,7 @@ export default function ViewModuleDetails() {
         className="md:col-span-2 bg-[#021B36]/80 border border-[#00FFFF30] rounded-xl p-6 hover:scale-[1.02] transition-transform duration-300"
       >
         <h3 className="text-lg text-[#00FFFF] font-semibold mb-2">Module Overview</h3>
-        <p className="text-[#AFCBE3] leading-relaxed">{aiData.overview}</p>
+        <div className="text-[#AFCBE3] leading-relaxed" dangerouslySetInnerHTML={{ __html: aiData.overview }}></div>
       </motion.div>
     )}
 
@@ -250,9 +250,9 @@ export default function ViewModuleDetails() {
         className="bg-[#021B36]/80 border border-[#00FFFF30] rounded-xl p-6 hover:scale-[1.02] transition-transform duration-300"
       >
         <h3 className="text-lg text-[#00FFFF] font-semibold mb-3">What You Will Learn</h3>
-        <ul className="list-disc list-inside text-[#AFCBE3] space-y-1">
+        <ul className="list-inside text-[#AFCBE3] space-y-2">
           {aiData.whatYouWillLearn.map((item, i) => (
-            <li key={i}>{item}</li>
+            <li key={i} dangerouslySetInnerHTML={{ __html: item }}></li>
           ))}
         </ul>
       </motion.div>
@@ -264,9 +264,9 @@ export default function ViewModuleDetails() {
         className="bg-[#021B36]/80 border border-[#00FFFF30] rounded-xl p-6 hover:scale-[1.02] transition-transform duration-300"
       >
         <h3 className="text-lg text-[#00FFFF] font-semibold mb-3">Skills Breakdown</h3>
-        <ul className="list-disc list-inside text-[#AFCBE3] space-y-1">
+        <ul className="list-inside text-[#AFCBE3] space-y-2">
           {aiData.skillsBreakdown.map((skill, i) => (
-            <li key={i}>{skill}</li>
+            <li key={i} dangerouslySetInnerHTML={{ __html: skill }}></li>
           ))}
         </ul>
       </motion.div>
@@ -278,7 +278,7 @@ export default function ViewModuleDetails() {
         className="bg-[#021B36]/80 border border-[#00FFFF30] rounded-xl p-6 hover:scale-[1.02] transition-transform duration-300"
       >
         <h3 className="text-lg text-[#00FFFF] font-semibold mb-2">Learning Outcome</h3>
-        <p className="text-[#AFCBE3]">{aiData.learningOutcome}</p>
+        <div className="text-[#AFCBE3]" dangerouslySetInnerHTML={{ __html: aiData.learningOutcome }}></div>
       </motion.div>
     )}
 
@@ -288,7 +288,7 @@ export default function ViewModuleDetails() {
         className="bg-[#021B36]/80 border border-[#00FFFF30] rounded-xl p-6 hover:scale-[1.02] transition-transform duration-300"
       >
         <h3 className="text-lg text-[#00FFFF] font-semibold mb-2">Real-World Application</h3>
-        <p className="text-[#AFCBE3]">{aiData.realWorldApplication}</p>
+        <div className="text-[#AFCBE3]" dangerouslySetInnerHTML={{ __html: aiData.realWorldApplication }}></div>
       </motion.div>
     )}
   </motion.div>

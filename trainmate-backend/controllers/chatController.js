@@ -7,8 +7,10 @@ import { CohereClient } from "cohere-ai";
 import dotenv from "dotenv";
 import { isDocAllowed } from "../utils/relevanceGuard.js";
 import { updateMemoryAfterChat, getAgentMemory } from "../services/memoryService.js";
-
-
+import { searchMDN } from "../knowledge/mdn.js";
+import { searchStackOverflow } from "../knowledge/stackoverflow.js";
+import { searchDevTo } from "../knowledge/devto.js";
+import { aggregateKnowledge } from "../knowledge/knowledgeAggregator.js";
 
 dotenv.config();
 
@@ -117,7 +119,51 @@ async function queryPinecone({ embedding, companyId, deptId, topK = 5 }) {
   }
 }
 
+/* ================= AGENTIC KNOWLEDGE FETCHER ================= */
+async function fetchAgenticKnowledge(query, companyDocs) {
+  try {
+    console.log("🤖 Agentic knowledge fetch initiated for:", query.substring(0, 50));
+    
+    // Parallel fetch from all sources
+    const [mdnResults, soResults, devtoResults] = await Promise.all([
+      searchMDN(query).catch(err => {
+        console.warn("⚠️ MDN fetch failed:", err.message);
+        return [];
+      }),
+      searchStackOverflow(query).catch(err => {
+        console.warn("⚠️ StackOverflow fetch failed:", err.message);
+        return [];
+      }),
+      searchDevTo(query).catch(err => {
+        console.warn("⚠️ Dev.to fetch failed:", err.message);
+        return [];
+      })
+    ]);
 
+    console.log(`📚 External sources: MDN=${mdnResults.length}, SO=${soResults.length}, DevTo=${devtoResults.length}`);
+
+    // Aggregate all sources with confidence scoring
+    const aggregated = aggregateKnowledge({
+      companyDocs,
+      mdn: mdnResults,
+      stackOverflow: soResults,
+      devto: devtoResults
+    });
+
+    return {
+      allResults: aggregated.allResults,
+      topResult: aggregated.topResult,
+      summary: aggregated.allResults.slice(0, 3) // Top 3 for LLM context
+    };
+  } catch (err) {
+    console.error("❌ Agentic knowledge fetch failed:", err.message);
+    return {
+      allResults: companyDocs,
+      topResult: companyDocs[0] || null,
+      summary: companyDocs.slice(0, 3)
+    };
+  }
+}
 
 /* ================= INIT CHAT ================= */
 export const initChat = async (req, res) => {
@@ -150,15 +196,22 @@ export const initChat = async (req, res) => {
       });
     }
 
-    const activeModuleDoc = roadmapSnap.docs.find(
-       (d) => d.data().status === "pending" || d.data().status === "in-progress"
+    // Sort by order field and find first pending/in-progress module
+    const sortedDocs = roadmapSnap.docs
+      .map((doc) => ({ id: doc.id, data: doc.data() }))
+      .sort((a, b) => (a.data.order || 0) - (b.data.order || 0));
+
+    const activeModule = sortedDocs.find(
+      (m) => m.data.status === "pending" || m.data.status === "in-progress"
     );
-    if (!activeModuleDoc) {
+
+    if (!activeModule) {
       return res.json({
-        reply: "You don’t have any active training module right now.",
+        reply: "You don't have any active training module right now.",
       });
     }
 
+    const activeModuleDoc = roadmapSnap.docs.find((d) => d.id === activeModule.id);
     const moduleData = activeModuleDoc.data();
     const { completedDays, remainingDays } =
     calculateTrainingProgress(moduleData);
@@ -245,14 +298,20 @@ export const chatController = async (req, res) => {
       return res.json({ reply: "Your roadmap does not exist." });
     }
 
-    const activeModuleDoc = roadmapSnap.docs.find(d =>
-      ["pending", "in-progress"].includes(d.data().status)
+    // Sort by order field and find first pending/in-progress module
+    const sortedDocs = roadmapSnap.docs
+      .map((doc) => ({ id: doc.id, data: doc.data() }))
+      .sort((a, b) => (a.data.order || 0) - (b.data.order || 0));
+
+    const activeModule = sortedDocs.find(m =>
+      ["pending", "in-progress"].includes(m.data.status)
     );
 
-    if (!activeModuleDoc) {
+    if (!activeModule) {
       return res.json({ reply: "No active training module." });
     }
 
+    const activeModuleDoc = roadmapSnap.docs.find((d) => d.id === activeModule.id);
     const moduleData = activeModuleDoc.data();
 
     /* ---------- CHAT SESSION ---------- */
@@ -309,12 +368,41 @@ export const chatController = async (req, res) => {
       console.warn("⚠️ Pinecone skipped:", err.message);
     }
 
+    /* ---------- AGENTIC KNOWLEDGE FETCH ---------- */
+    console.log("🤖 Fetching agentic knowledge from external sources...");
+    const agenticKnowledge = await fetchAgenticKnowledge(newMessage, relevantDocs);
+    
+    const topExternalSource = agenticKnowledge.topResult;
+    const externalSources = agenticKnowledge.summary || [];
+    
+    if (topExternalSource) {
+      console.log(`✅ Top external source: ${topExternalSource.source}`);
+    }
+
     /* ---------- CONTEXT ---------- */
     const contextParts = [];
 
     if (relevantDocs.length > 0) {
       contextParts.push(
-        `REFERENCE MATERIAL:\n${relevantDocs.map(d => d.text).join("\n")}`
+        `COMPANY TRAINING MATERIAL:\n${relevantDocs.map(d => d.text).join("\n")}`
+      );
+    }
+
+    // Add external knowledge sources
+    if (externalSources.length > 0) {
+      const externalContext = externalSources.map(doc => {
+        if (doc.source === 'mdn') {
+          return `📖 MDN: ${doc.title}\nURL: ${doc.mdn_url}\nSummary: ${doc.summary}`;
+        } else if (doc.source === 'stackOverflow') {
+          return `🔗 StackOverflow: ${doc.title}\nURL: ${doc.link}`;
+        } else if (doc.source === 'devto') {
+          return `📝 Dev.to: ${doc.title}\nURL: ${doc.link}`;
+        }
+        return `${doc.source}: ${doc.title || doc.text}`;
+      }).join("\n\n");
+      
+      contextParts.push(
+        `EXTERNAL KNOWLEDGE SOURCES (MDN, StackOverflow, Dev.to):\n${externalContext}`
       );
     }
 
@@ -342,10 +430,18 @@ ${moduleData.moduleTitle}
 
 Remaining Days: ${calculateTrainingProgress(moduleData).remainingDays}
 
+AGENTIC GUIDELINES:
+- You have access to company training materials AND external sources (MDN, StackOverflow, Dev.to)
+- Prioritize company training materials for module-specific content
+- Use external sources for general programming concepts, best practices, or when depth is needed
+- When external source is highly relevant, cite it: "<b>Source: MDN / StackOverflow / Dev.to</b>"
+- Combine company knowledge with external expertise for richer answers
+
 STRICT RULES:
 - Answer questions related to the active module or department ONLY
 - Give practical examples when helpful
-- Use HTML tags only (<strong>, <em>, <ul>, <li>)
+- Use <b>, <i>, <ul>, <li>, <p> HTML tags for formatting
+- Do NOT use markdown formatting (no **, ##, __, etc.)
 - NEVER repeat greetings or introductions
 - NEVER repeat step numbers or progress status (e.g., "You've completed 2 of 6 steps")
 - NEVER say "ready to dive", "let's move on", or similar transition phrases
@@ -360,7 +456,7 @@ ${context}
 USER MESSAGE:
 ${newMessage}
 
-RESPOND WITH: Direct educational content addressing the question. No progress updates or step announcements.
+RESPOND WITH: Direct educational content addressing the question, using both company materials and external sources intelligently. No progress updates or step announcements.
 `;
 
     /* ---------- LLM ---------- */

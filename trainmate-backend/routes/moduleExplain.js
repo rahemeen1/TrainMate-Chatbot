@@ -69,15 +69,17 @@ Duration: ${estimatedDays} days
 Skills: ${skillsCovered?.join(", ") || "Professional skills"}
 
 IMPORTANT:
-Return ONLY valid JSON.
-Do NOT wrap in markdown or code blocks.
+- Return ONLY valid JSON
+- Do NOT use markdown formatting (no **, ##, etc.)
+- Use HTML tags for formatting: <b>, <i>, <ul>, <li>, <p>, <h3>
+- Do NOT wrap in markdown or code blocks
 
 {
-  "overview": "string",
-  "whatYouWillLearn": ["string"],
-  "skillsBreakdown": ["string"],
-  "learningOutcome": "string",
-  "realWorldApplication": "string"
+  "overview": "<p>HTML formatted overview</p>",
+  "whatYouWillLearn": ["<li>Item with <b>HTML tags</b></li>"],
+  "skillsBreakdown": ["<li><b>Skill:</b> HTML formatted description</li>"],
+  "learningOutcome": "<p>HTML formatted outcome</p>",
+  "realWorldApplication": "<p>HTML formatted application</p>"
 }
 `;
 
