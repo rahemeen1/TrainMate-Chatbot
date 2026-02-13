@@ -51,7 +51,7 @@ export default function ManageUser() {
       // Fallback: if no departments found via collection, try common department names
       if (deptIds.length === 0) {
         console.log("No departments found via collection, trying known departments...");
-        const knownDepts = ["SOFTWAREDEVELOPMENT", "HR", "Finance", "Marketing", "IT"];
+        const knownDepts = ["HR", "SOFTWAREDEVELOPMENT", "AI", "ACCOUNTING", "MARKETING", "OPERATIONS", "DATASCIENCE","IT"];
         const existingDepts = [];
         
         for (const deptName of knownDepts) {
