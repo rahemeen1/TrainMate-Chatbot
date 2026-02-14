@@ -1,4 +1,4 @@
-// Roadmap.jsx
+﻿// Roadmap.jsx
 import { useEffect, useState } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { db } from "../../firebase";
@@ -190,12 +190,68 @@ const getUnlockedModules = () => {
     const unlocked = unlockedNext;
     if (!module.completed) unlockedNext = false;
 
+    // Calculate quiz unlock based on 50% of module time elapsed
+    const isQuizUnlocked = checkQuizUnlockBy50Percent(module);
+    const quizUnlockMessage = getQuizUnlockMessageBy50Percent(module);
+
     return {
       ...module,
       locked: !unlocked || (module.quizLocked && !module.completed),
+      quizTimeUnlocked: isQuizUnlocked,
+      quizUnlockMessage
     };
   });
 };
+
+// Check if quiz should be unlocked based on 50% of module time elapsed
+const checkQuizUnlockBy50Percent = (module) => {
+  if (module.completed) return true;
+  
+  // Try FirstTimeCreatedAt first, fallback to createdAt
+  let createdAtTimeStamp = module.FirstTimeCreatedAt || module.createdAt;
+  
+  if (!createdAtTimeStamp) {
+    console.warn("⚠️ Module has no FirstTimeCreatedAt or createdAt:", module.id);
+    return false; // Lock quiz if no timestamp available
+  }
+  
+  const startDate = createdAtTimeStamp.toDate 
+    ? createdAtTimeStamp.toDate() 
+    : new Date(createdAtTimeStamp);
+  
+  const today = new Date();
+  const daysPassed = Math.floor((today - startDate) / (1000 * 60 * 60 * 24));
+  const totalDays = module.estimatedDays || 1;
+  const fiftyPercentDays = totalDays / 2;
+  
+  console.log(`📊 Quiz Unlock Check - Module: ${module.moduleTitle}, Days: ${daysPassed}/${fiftyPercentDays}, Unlocked: ${daysPassed >= fiftyPercentDays}`);
+  
+  // Quiz unlocks when 50% of time has elapsed
+  return daysPassed >= fiftyPercentDays;
+};
+
+// Get message for quiz unlock based on 50% time rule
+const getQuizUnlockMessageBy50Percent = (module) => {
+  if (!module.FirstTimeCreatedAt) return "Quiz will unlock soon";
+  if (module.completed) return "Quiz available";
+  
+  const startDate = module.FirstTimeCreatedAt.toDate 
+    ? module.FirstTimeCreatedAt.toDate() 
+    : new Date(module.FirstTimeCreatedAt);
+  
+  const today = new Date();
+  const daysPassed = Math.floor((today - startDate) / (1000 * 60 * 60 * 24));
+  const totalDays = module.estimatedDays || 1;
+  const fiftyPercentDays = totalDays / 2;
+  const daysRemainingUntilQuizUnlock = Math.ceil(fiftyPercentDays - daysPassed);
+  
+  if (daysPassed >= fiftyPercentDays) {
+    return "Quiz is now available!";
+  }
+  
+  return `Quiz will unlock in ${daysRemainingUntilQuizUnlock} day(s) (${Math.round(daysPassed)}/${Math.round(fiftyPercentDays)} days completed)`;
+};
+
   // Navigate to fresher training page
   const viewDetails = (moduleId) => {
     navigate(`/fresher-training/${companyId}/${deptId}/${userId}/${moduleId}`);
@@ -330,19 +386,17 @@ if (!roadmap.length)
 
   {/* Status Badge */}
   {!module.locked && (
-    <span className={`absolute top-4 right-4 px-3 py-1 rounded-full text-xs
-      ${module.completed
-        ? "bg-green-500/20 text-green-400"
-        : "bg-yellow-500/20 text-yellow-400"}`}
-    >
-      {module.completed ? "Completed" : "in-progress"}
-    </span>
-  )}
-
-  {module.quizLocked && !module.completed && (
-    <span className="absolute top-4 right-4 px-3 py-1 rounded-full text-xs bg-red-500/20 text-red-300">
-      Quiz Locked
-    </span>
+    <>
+      <span className={`absolute top-4 right-4 px-3 py-1 rounded-full text-xs
+        ${module.completed
+          ? "bg-green-500/20 text-green-400"
+          : "bg-yellow-500/20 text-yellow-400"}`}
+      >
+        {module.completed ? "Completed" : "In Progress"}
+      </span>
+      
+      
+    </>
   )}
 
   {/* Actions */}
@@ -375,10 +429,25 @@ if (!roadmap.length)
             { state: { companyName } }
           )
         }
-        disabled={module.quizOpened || module.quizLocked}
-        className={`px-4 py-2 border border-[#00FFFF] text-[#00FFFF] rounded ${module.quizOpened || module.quizLocked ? "opacity-50 cursor-not-allowed" : ""}`}
+        disabled={module.quizLocked || !module.quizTimeUnlocked}
+        title={!module.quizTimeUnlocked ? module.quizUnlockMessage : (module.quizAttempts > 0 ? `Retry Quiz (Attempt ${module.quizAttempts + 1})` : "Take Quiz")}
+        className={`px-4 py-2 border border-[#00FFFF] text-[#00FFFF] rounded relative group
+          ${!module.quizTimeUnlocked || module.quizLocked ? "opacity-40 cursor-not-allowed grayscale" : "hover:bg-[#00FFFF]/10"}
+        `}
       >
-        {module.quizLocked ? "Quiz Locked" : module.quizOpened ? "Quiz Opened" : "Attempt Quiz"}
+        {!module.quizTimeUnlocked ? "🔒 Quiz Locked" : 
+         module.quizPassed ? "✅ Quiz Passed" :
+         module.quizAttempts > 0 ? `🔄 Retry Quiz (${module.quizAttempts}/3)` : 
+         "📝 Attempt Quiz"}
+        
+        {/* Tooltip on hover for locked quiz */}
+        {!module.quizTimeUnlocked && (
+          <div className="absolute left-full top-1/2 transform -translate-y-1/2 ml-3 hidden group-hover:block w-64 bg-[#021B36] border border-[#00FFFF] rounded-lg p-3 text-sm z-10 whitespace-normal">
+            <div className="text-[#00FFFF] font-semibold mb-1">Quiz Locked</div>
+            <div className="text-[#AFCBE3]">{module.quizUnlockMessage}</div>
+            <div className="absolute right-full top-1/2 transform -translate-y-1/2 w-0 h-0 border-t-8 border-b-8 border-r-8 border-transparent border-r-[#00FFFF]"></div>
+          </div>
+        )}
       </button>
 
     </div>
@@ -386,22 +455,7 @@ if (!roadmap.length)
 </div>
 
         ))}
-        {/* ===== Accomplishments Button (ALWAYS VISIBLE) ===== */}
-<div className="pt-4">
-  <button
-    onClick={() =>
-      navigate(
-        `/accomplishments/${companyId}/${deptId}/${userId}`,
-        { state: { companyName } }
-      )
-    }
-    className="px-6 py-3 bg-[#021B36] border border-[#00FFFF]
-    text-[#00FFFF] rounded-lg font-semibold
-    hover:bg-[#00FFFF]/10 transition"
-  >
-    🏆 View Your Accomplishments
-  </button>
-</div>
+    
 
       </div>
     </div>

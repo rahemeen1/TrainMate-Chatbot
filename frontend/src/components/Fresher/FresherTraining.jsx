@@ -15,8 +15,8 @@ export default function FresherTraining() {
 
   const [roadmap, setRoadmap] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [loadingModuleId, setLoadingModuleId] = useState(null);
   const [selectedModule, setSelectedModule] = useState(null);
+  const [showQuizConfirm, setShowQuizConfirm] = useState(false);
 
   // ===============================
   // 🔄 Load Roadmap
@@ -100,52 +100,20 @@ export default function FresherTraining() {
     }
   };
 
-  const markDone = async (moduleId) => {
-  try {
-    setLoadingModuleId(moduleId);
+  const takeQuiz = (moduleId) => {
+    setShowQuizConfirm(true);
+  };
 
-    const moduleRef = doc(
-      db,
-      "freshers",
-      companyId,
-      "departments",
-      deptId,
-      "users",
-      userId,
-      "roadmap",
-      moduleId
-    );
-
-    // ✅ UPDATE BOTH completed + status
-    await updateDoc(moduleRef, {
-      completed: true,
-      status: "completed",
+  const confirmQuiz = () => {
+    setShowQuizConfirm(false);
+    navigate(`/quiz/${companyId}/${deptId}/${userId}/${selectedModule.id}`, {
+      state: { companyName }
     });
+  };
 
-    // ✅ Update UI state
-    setRoadmap((prev) =>
-      prev.map((m) =>
-        m.id === moduleId
-          ? { ...m, completed: true, status: "completed" }
-          : m
-      )
-    );
-
-    if (selectedModule?.id === moduleId) {
-      setSelectedModule({
-        ...selectedModule,
-        completed: true,
-        status: "completed",
-      });
-    }
-
-    await updateProgress();
-  } catch (err) {
-    console.error("❌ Error marking module done:", err);
-  } finally {
-    setLoadingModuleId(null);
-  }
-};
+  const cancelQuiz = () => {
+    setShowQuizConfirm(false);
+  };
 
 
   // ===============================
@@ -236,21 +204,12 @@ return (
           <div className="flex flex-col gap-4">
             {!selectedModule.completed ? (
               <button
-                onClick={() => markDone(selectedModule.id)}
-                disabled={loadingModuleId === selectedModule.id}
+                onClick={() => takeQuiz()}
                 className="px-4 py-2 bg-[#00FFFF] text-[#031C3A]
                   rounded font-semibold flex items-center justify-center gap-2
-                  disabled:opacity-60"
+                  hover:bg-[#00FFFF]/90 transition"
               >
-                {loadingModuleId === selectedModule.id ? (
-                  <>
-                    <span className="h-4 w-4 border-2 border-[#031C3A]
-                      border-t-transparent rounded-full animate-spin" />
-                    Processing...
-                  </>
-                ) : (
-                  "Mark Module Done"
-                )}
+                Mark Module as Completed
               </button>
             ) : (
               <span className="text-green-400 font-semibold">
@@ -283,6 +242,39 @@ return (
         
       )}
       
+      {/* ===== Quiz Confirmation Modal ===== */}
+      {showQuizConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-[#021B36] border border-[#00FFFF] rounded-lg p-8 max-w-md shadow-xl">
+            <h3 className="text-2xl font-bold text-[#00FFFF] mb-4">
+              📝 Take Quiz
+            </h3>
+            <p className="text-[#AFCBE3] mb-6">
+              To mark this module as <span className="font-semibold text-white">completed</span>, you need to take and pass the quiz.
+            </p>
+            <p className="text-[#AFCBE3] mb-6">
+              Do you want me to redirect you to the quiz page?
+            </p>
+            
+            <div className="flex gap-4">
+              <button
+                onClick={confirmQuiz}
+                className="flex-1 px-4 py-2 bg-[#00FFFF] text-[#031C3A] 
+                  rounded font-semibold hover:bg-[#00FFFF]/90 transition"
+              >
+                Yes, Take Quiz
+              </button>
+              <button
+                onClick={cancelQuiz}
+                className="flex-1 px-4 py-2 border border-[#00FFFF] text-[#00FFFF] 
+                  rounded font-semibold hover:bg-[#00FFFF]/10 transition"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   </div>
 );

@@ -23,21 +23,7 @@ export default function ModuleQuiz() {
 		return companyId && deptId && userId && moduleId;
 	}, [companyId, deptId, userId, moduleId]);
 
-	useEffect(() => {
-		if (!companyId || !deptId || !userId || !moduleId) return;
-		const moduleRef = doc(
-			db,
-			"freshers",
-			companyId,
-			"departments",
-			deptId,
-			"users",
-			userId,
-			"roadmap",
-			moduleId
-		);
-		updateDoc(moduleRef, { quizOpened: true }).catch(() => {});
-	}, [companyId, deptId, userId, moduleId]);
+	// Don't set quizOpened anymore - allow retries by default
 
 	useEffect(() => {
 		if (!timerRunning) return undefined;
@@ -165,7 +151,18 @@ export default function ModuleQuiz() {
 		
 		if (submitting) {
 			return (
-				<div className="text-[#AFCBE3]">Submitting answers...</div>
+				<div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+					<div className="bg-[#021B36] border-2 border-[#00FFFF] rounded-xl p-8 shadow-2xl animate-pulse">
+						<div className="flex flex-col items-center gap-4">
+							<div className="relative w-16 h-16">
+								<div className="absolute inset-0 border-4 border-[#00FFFF]/30 rounded-full"></div>
+								<div className="absolute inset-0 border-4 border-t-[#00FFFF] rounded-full animate-spin"></div>
+							</div>
+							<p className="text-2xl font-bold text-[#00FFFF] animate-pulse">Submitting Quiz...</p>
+							<p className="text-[#AFCBE3]">Please wait while we process your answers</p>
+						</div>
+					</div>
+				</div>
 			);
 		}
 

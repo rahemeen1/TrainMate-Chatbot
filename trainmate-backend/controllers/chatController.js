@@ -38,6 +38,48 @@ async function embedText(text) {
 
 // ================= TRAINING PROGRESS =================
 
+/**
+ * Calculate progress based on skills covered vs mastered
+ * @param {Object} moduleData - Module data with skillsCovered
+ * @param {Array} masteredTopics - Topics/skills user has mastered
+ * @returns {Object} Progress metrics
+ */
+function calculateSkillBasedProgress(moduleData, masteredTopics = []) {
+  const moduleSkills = moduleData.skillsCovered || [];
+  
+  if (moduleSkills.length === 0) {
+    return {
+      totalSkills: 0,
+      masteredSkills: 0,
+      remainingSkills: 0,
+      progressPercentage: 0,
+      usingSkillTracking: false
+    };
+  }
+
+  // Normalize for case-insensitive matching
+  const normalizedModuleSkills = moduleSkills.map(s => s.toLowerCase().trim());
+  const normalizedMastered = masteredTopics.map(t => t.toLowerCase().trim());
+  
+  // Count how many module skills are in mastered topics
+  const masteredCount = normalizedModuleSkills.filter(skill => 
+    normalizedMastered.some(mastered => 
+      mastered.includes(skill) || skill.includes(mastered)
+    )
+  ).length;
+
+  const totalSkills = moduleSkills.length;
+  const remainingSkills = Math.max(0, totalSkills - masteredCount);
+  const progressPercentage = Math.round((masteredCount / totalSkills) * 100);
+
+  return {
+    totalSkills,
+    masteredSkills: masteredCount,
+    remainingSkills,
+    progressPercentage,
+    usingSkillTracking: true
+  };
+}
 
 function calculateTrainingProgress(moduleData) {
   const totalDays = moduleData.estimatedDays;
@@ -350,7 +392,10 @@ About: ${description}
       .collection("chatSessions")
       .doc(today);
 
-    if (!(await chatSessionRef.get()).exists) {
+    const chatSessionSnap = await chatSessionRef.get();
+    const isFirstMessageToday = !chatSessionSnap.exists;
+    
+    if (isFirstMessageToday) {
       await chatSessionRef.set({ startedAt: new Date(), messages: [] });
     }
 
@@ -372,6 +417,67 @@ About: ${description}
     }
     if (masteredTopics.length > 0) {
       console.log(`✅ Mastered: ${masteredTopics.slice(0, 3).join(", ")}`);
+    }
+
+    /* ---------- WEAKNESS ANALYSIS FOR WELCOME MESSAGE ---------- */
+    let weaknessWelcome = "";
+    
+    // Check if roadmap was recently regenerated and this is first chat after regeneration
+    if (isFirstMessageToday && userData.roadmapRegenerated && userData.weaknessAnalysis) {
+      const weakness = userData.weaknessAnalysis;
+      const generatedAt = weakness.generatedAt?.toDate ? weakness.generatedAt.toDate() : new Date(weakness.generatedAt);
+      const hoursSinceRegeneration = (new Date() - generatedAt) / (1000 * 60 * 60);
+      
+      // If regenerated within last 48 hours, show welcome message
+      if (hoursSinceRegeneration < 48) {
+        const topWeakConcepts = (weakness.concepts || []).slice(0, 5).map(w => w.concept).join(", ");
+        const wrongQuestionsPreview = (weakness.wrongQuestions || []).slice(0, 3)
+          .map(q => `- ${q.question.substring(0, 60)}...`)
+          .join("\n");
+        
+        weaknessWelcome = `
+🔄 ROADMAP REGENERATION CONTEXT:
+Your learning roadmap has been regenerated based on your quiz performance.
+
+AREAS YOU STRUGGLED WITH:
+${topWeakConcepts || "General concepts"}
+
+AVERAGE QUIZ SCORE: ${weakness.avgScore}%
+
+SAMPLE QUESTIONS YOU GOT WRONG:
+${wrongQuestionsPreview || "No specific questions available"}
+
+I will focus our conversation on strengthening these areas. Let's start from the fundamentals and build your understanding step by step.
+`;
+        
+        console.log(`👋 First chat after regeneration - will show weakness welcome`);
+        
+        // Clear the flag after showing welcome once
+        try {
+          await userRef.update({
+            'weaknessAnalysis.welcomed': true,
+            'weaknessAnalysis.welcomedAt': new Date(),
+          });
+        } catch (err) {
+          console.warn("Failed to update weakness welcome flag:", err.message);
+        }
+      }
+    }
+
+    /* ---------- SKILL-BASED PROGRESS ---------- */
+    const skillProgress = calculateSkillBasedProgress(moduleData, masteredTopics);
+    console.log(`📊 Skill Progress: ${skillProgress.masteredSkills}/${skillProgress.totalSkills} skills (${skillProgress.progressPercentage}%)`);
+    
+    // Update module progress in Firestore
+    if (skillProgress.usingSkillTracking) {
+      try {
+        await roadmapRef.doc(activeModuleDoc.id).update({
+          skillProgress: skillProgress.progressPercentage,
+          lastProgressUpdate: new Date()
+        });
+      } catch (err) {
+        console.warn("⚠️ Failed to update skill progress:", err.message);
+      }
     }
 
     /* ---------- PINECONE (SAFE) ---------- */
@@ -445,6 +551,7 @@ About: ${description}
 SYSTEM ROLE:
 You are TrainMate, a goal-driven onboarding agent focused on teaching concepts.
 
+${weaknessWelcome ? `${weaknessWelcome}\n` : ''}
 LEARNING MEMORY (Topics & Patterns):
 ${agentMemory}
 ${strugglingAreas.length > 0 ? `\nUser needs help with: ${strugglingAreas.slice(0, 3).join(", ")}` : ''}
@@ -458,7 +565,10 @@ ${companyInfo || "\nCOMPANY INFORMATION: Not available in system\n"}
 ACTIVE MODULE:
 ${moduleData.moduleTitle}
 
-Remaining Days: ${calculateTrainingProgress(moduleData).remainingDays}
+PROGRESS TRACKING:
+${skillProgress.usingSkillTracking 
+  ? `Skill-Based Progress: ${skillProgress.masteredSkills}/${skillProgress.totalSkills} skills mastered (${skillProgress.progressPercentage}%)` 
+  : `Time-Based Progress: ${calculateTrainingProgress(moduleData).remainingDays} days remaining`}
 
 AGENTIC GUIDELINES:
 - You have access to company training materials AND external sources (MDN, StackOverflow, Dev.to)
@@ -466,6 +576,7 @@ AGENTIC GUIDELINES:
 - Use external sources for general programming concepts, best practices, or when depth is needed
 - When external source is highly relevant, cite it: "<b>Source: MDN / StackOverflow / Dev.to</b>"
 - Combine company knowledge with external expertise for richer answers
+${weaknessWelcome ? '\n- Start this conversation by welcoming the user and acknowledging their quiz struggles\n- Explain you will help them master the weak concepts identified\n- Be encouraging and supportive about starting fresh with regenerated roadmap\n' : ''}
 
 STRICT RULES:
 - Answer questions related to the active module, department, OR company information
@@ -475,8 +586,7 @@ STRICT RULES:
 - Give practical examples when helpful
 - Use <b>, <i>, <ul>, <li>, <p> HTML tags for formatting
 - Do NOT use markdown formatting (no **, ##, __, etc.)
-- NEVER repeat greetings or introductions
-- NEVER repeat step numbers or progress status (e.g., "You've completed 2 of 6 steps")
+${weaknessWelcome ? '' : '- NEVER repeat greetings or introductions\n'}- NEVER repeat step numbers or progress status (e.g., "You've completed 2 of 6 steps")
 - NEVER say "ready to dive", "let's move on", or similar transition phrases
 - Get straight to answering the question with teaching content
 - If completely off-topic (not module, company, or department related), say: "I'm here to help with your training module and answer questions about the company."

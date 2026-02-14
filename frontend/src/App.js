@@ -14,7 +14,7 @@ import FresherTraining from "./components/Fresher/FresherTraining";
 import FresherProgress from "./components/Fresher/FresherProgress";
 import Roadmap from "./components/Fresher/Roadmap";
 import Chatbot from "./components/Fresher/Chatbot";
-import FresherAccomplishments from "./components/Fresher/FresherAccomplishments";
+
 import PreviousChats from "./components/Fresher/PreviousChats";
 import ProgressDetails from "./components/CompanySpecific/ProgressDetails";
 import ViewModuleDetails from "./components/Fresher/ViewModuleDetails";
@@ -41,7 +41,7 @@ export default function App() {
         <Route path="/fresher-progress" element={<FresherProgress />} />
         <Route path="/roadmap/:companyId/:deptId/:userId/:companyName" element={<Roadmap />} /> 
         <Route path="/chatbot" element={<Chatbot />} />
-        <Route path="/accomplishments/:companyId/:deptId/:userId" element={<FresherAccomplishments />} />
+      
         <Route path="/previous-chats" element={<PreviousChats />} />
         <Route path="/progress-details/:companyId/:deptName/:userId" element={<ProgressDetails />} />
         <Route path="/module-details/:companyId/:deptId/:userId/:moduleId/:companyName" element={<ViewModuleDetails />} />

@@ -4,6 +4,7 @@ import { getPineconeIndex } from "../config/pinecone.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { CohereClient } from "cohere-ai";
 import { updateMemoryAfterQuiz } from "../services/memoryService.js";
+import { evaluateCode } from "../services/codeEvaluator.service.js";
 
 let primaryModel = null;
 let fallbackModel = null;
@@ -19,10 +20,12 @@ function initializeQuizModels() {
 
 const cohere = new CohereClient({ token: process.env.COHERE_API_KEY });
 
-const QUIZ_COUNTS = { mcq: 15, oneLiners: 5 };
+// AI-decided quiz structure (no hardcoded counts)
 const QUIZ_MAX_RETRIES = 2;
 const PLAN_MAX_QUERIES = 4;
 const MAX_CONTEXT_CHARS = 8000;
+const QUIZ_PASS_THRESHOLD = 70; // Agentic threshold: 70%
+const MAX_QUIZ_ATTEMPTS = 3; // Allow up to 3 attempts
 
 async function embedText(text) {
 	const res = await cohere.embed({
@@ -74,16 +77,42 @@ function truncateText(text, maxChars) {
 	return text.length > maxChars ? text.slice(0, maxChars) : text;
 }
 
-function isQuizComplete(quiz) {
+/**
+ * Validate quiz structure (AI-decided, so flexible validation)
+ * @param {Object} quiz - Quiz object
+ * @param {boolean} allowCoding - Whether department allows coding questions
+ * @returns {boolean} - Whether quiz structure is valid
+ */
+function isQuizComplete(quiz, allowCoding = false) {
 	if (!quiz || !Array.isArray(quiz.mcq) || !Array.isArray(quiz.oneLiners)) {
 		return false;
 	}
-	if (quiz.mcq.length !== QUIZ_COUNTS.mcq || quiz.oneLiners.length !== QUIZ_COUNTS.oneLiners) {
+	
+	// AI decides counts, so just check minimum reasonable values
+	if (quiz.mcq.length < 5 || quiz.mcq.length > 25) return false;
+	if (quiz.oneLiners.length < 2 || quiz.oneLiners.length > 15) return false;
+	
+	const mcqValid = quiz.mcq.every((q) => 
+		Array.isArray(q.options) && 
+		q.options.length === 4 && 
+		Number.isInteger(q.correctIndex) && 
+		q.correctIndex >= 0 && 
+		q.correctIndex < 4
+	);
+	
+	const oneLinersValid = quiz.oneLiners.every((q) => q.question && q.answer);
+	
+	// Coding questions validation (only if department allows)
+	const codingValid = !Array.isArray(quiz.coding) || 
+		quiz.coding.length === 0 ||
+		(allowCoding && quiz.coding.every((q) => q.question && q.expectedApproach && q.language));
+	
+	// If coding exists but not allowed, fail validation
+	if (quiz.coding && quiz.coding.length > 0 && !allowCoding) {
 		return false;
 	}
-	const mcqValid = quiz.mcq.every((q) => Array.isArray(q.options) && q.options.length === 4 && Number.isInteger(q.correctIndex) && q.correctIndex >= 0 && q.correctIndex < 4);
-	const oneLinersValid = quiz.oneLiners.every((q) => q.question && q.answer);
-	return mcqValid && oneLinersValid;
+	
+	return mcqValid && oneLinersValid && codingValid;
 }
 
 function mergeDocs(docsList) {
@@ -164,7 +193,7 @@ async function fetchPlannedDocs({ queries, companyId, deptId }) {
 	return results;
 }
 
-async function critiqueQuiz({ title, quiz }) {
+async function critiqueQuiz({ title, quiz, allowCoding = false }) {
 	const prompt = `
 You are a strict quiz quality auditor.
 
@@ -174,10 +203,12 @@ QUIZ JSON:
 ${JSON.stringify(quiz)}
 
 Check for:
-- Exactly ${QUIZ_COUNTS.mcq} MCQs and ${QUIZ_COUNTS.oneLiners} one-liners
+- Appropriate number of MCQs (5-25) and one-liners (2-15)
 - Each MCQ has 4 options and one correct answer
 - Questions are specific to the module and advanced-level
 - No duplicate questions or options
+- Coding questions ${allowCoding ? 'are allowed and should be relevant' : 'should NOT be present'}
+- Total question count is reasonable (10-40 questions total)
 
 Return JSON only:
 {
@@ -198,16 +229,30 @@ Return JSON only:
 		console.warn("Quiz critique failed:", err.message);
 	}
 
-	return { pass: isQuizComplete(quiz), issues: ["Critique unavailable"], score: isQuizComplete(quiz) ? 80 : 40 };
+	return { pass: isQuizComplete(quiz, allowCoding), issues: ["Critique unavailable"], score: isQuizComplete(quiz, allowCoding) ? 80 : 40 };
 }
 
-function buildQuizPrompt({ title, context, critiqueIssues }) {
+function buildQuizPrompt({ title, context, critiqueIssues, allowCoding = false, moduleDescription = "" }) {
 	const critiqueBlock = critiqueIssues && critiqueIssues.length
 		? `\n\nCRITIQUE ISSUES TO FIX:\n- ${critiqueIssues.join("\n- ")}`
 		: "";
+	
+	const codingBlock = allowCoding ? `
+4. <b>Coding Questions (OPTIONAL - YOU DECIDE HOW MANY if needed)</b>:
+   - Include coding challenges ONLY if "${title}" involves programming/technical implementation
+   - Decide the count based on module complexity (typically 0-3 questions)
+   - Each coding question should test problem-solving and implementation skills
+   - Include expected approach and programming language
+   - Focus on real-world scenarios from the training materials` : `
+4. <b>NO CODING QUESTIONS</b>:
+   - This department does NOT allow coding questions
+   - Do NOT include any "coding" field in your response
+   - Focus only on MCQs and one-liner questions`;
 
 	return `
 You are an expert corporate trainer creating an assessment for: "${title}"
+
+MODULE DESCRIPTION: ${moduleDescription}
 
 Your task is to generate a comprehensive quiz that evaluates the trainee's understanding of this specific module.
 
@@ -215,16 +260,25 @@ CONTEXT SOURCES:
 ${context}
 
 QUIZ GENERATION INSTRUCTIONS:
-1. Focus Questions on Module: All questions must be directly related to "${title}"
-2. Source Weighting:
+1. <b>AI-DECIDED STRUCTURE</b>: YOU decide the optimal number of questions based on:
+   - Module complexity and scope
+   - Content depth from training materials
+   - Recommended ranges: MCQs (8-20), One-liners (3-10), Coding (0-3 if allowed)
+   - Adjust counts to ensure comprehensive coverage without overwhelming the trainee
+
+2. Focus Questions on Module: All questions must be directly related to "${title}"
+
+3. Source Weighting:
    - 90% of questions should come from the COMPANY TRAINING MATERIALS (official policies, procedures, technical details)
    - 10% can incorporate insights from PERSONALIZED LEARNING CONTEXT (if available)
-3. Question Quality:
+
+4. Question Quality:
    - Create advanced-level questions that test practical application, not just memorization
    - Include scenario-based questions relevant to "${title}"
    - Cover key concepts, definitions, best practices, and procedures
    - Each MCQ must have 4 distinct options with only one correct answer
    - One-liner questions should test specific knowledge and skills
+${codingBlock}
 ${critiqueBlock}
 
 REQUIRED OUTPUT FORMAT (JSON only):
@@ -237,7 +291,7 @@ REQUIRED OUTPUT FORMAT (JSON only):
 			"correctIndex": 0,
 			"explanation": "string (brief explanation of correct answer)"
 		}
-		// ... exactly ${QUIZ_COUNTS.mcq} MCQs total
+		// ... YOU DECIDE how many MCQs (8-20 recommended)
 	],
 	"oneLiners": [
 		{
@@ -246,20 +300,38 @@ REQUIRED OUTPUT FORMAT (JSON only):
 			"answer": "string (concise correct answer)",
 			"explanation": "string (why this is correct)"
 		}
-		// ... exactly ${QUIZ_COUNTS.oneLiners} one-liners total
-	]
+		// ... YOU DECIDE how many one-liners (3-10 recommended)
+	]${allowCoding ? `,
+	"coding": [
+		{
+			"id": "code-1",
+			"question": "string (coding challenge related to ${title})",
+			"expectedApproach": "string (describe the expected solution approach)",
+			"language": "JavaScript|Python|Java|etc",
+			"sampleInput": "string (optional test case input)",
+			"sampleOutput": "string (optional expected output)",
+			"hints": ["string"] (optional hints for the trainee)
+		}
+		// ... ONLY if module involves coding (0-3 questions, YOU DECIDE)
+	]` : ''}
 }
 
-Generate exactly ${QUIZ_COUNTS.mcq} MCQs and ${QUIZ_COUNTS.oneLiners} one-liner questions. Return ONLY valid JSON, no other text.
+Return ONLY valid JSON with the structure above. YOU DECIDE the optimal question counts within the recommended ranges.
 `;
 }
 
-async function generateQuizAgentic({ title, context }) {
+async function generateQuizAgentic({ title, context, allowCoding = false, moduleDescription = "" }) {
 	let lastQuiz = null;
 	let critique = null;
 
 	for (let attempt = 0; attempt < QUIZ_MAX_RETRIES; attempt += 1) {
-		const prompt = buildQuizPrompt({ title, context, critiqueIssues: critique?.issues || [] });
+		const prompt = buildQuizPrompt({ 
+			title, 
+			context, 
+			critiqueIssues: critique?.issues || [], 
+			allowCoding,
+			moduleDescription 
+		});
 		const result = await generateWithRetry(prompt);
 		const text = result?.response?.text()?.trim() || "";
 		const parsed = safeParseJson(text);
@@ -268,15 +340,15 @@ async function generateQuizAgentic({ title, context }) {
 			continue;
 		}
 
-		const quiz = shapeQuizPayload(parsed);
+		const quiz = shapeQuizPayload(parsed, allowCoding);
 		lastQuiz = quiz;
-		const localValid = isQuizComplete(quiz);
+		const localValid = isQuizComplete(quiz, allowCoding);
 		if (!localValid) {
 			critique = { pass: false, issues: ["Incomplete quiz structure"], score: 40 };
 			continue;
 		}
 
-		critique = await critiqueQuiz({ title, quiz });
+		critique = await critiqueQuiz({ title, quiz, allowCoding });
 		if (critique?.pass) {
 			return { quiz, critique };
 		}
@@ -371,11 +443,12 @@ Format: CORRECT|reason or INCORRECT|reason`;
 	}
 }
 
-function shapeQuizPayload(raw) {
+function shapeQuizPayload(raw, allowCoding = false) {
 	const mcq = Array.isArray(raw?.mcq) ? raw.mcq : [];
 	const oneLiners = Array.isArray(raw?.oneLiners) ? raw.oneLiners : [];
+	const coding = allowCoding && Array.isArray(raw?.coding) ? raw.coding : [];
 
-	const shapedMcq = mcq.slice(0, QUIZ_COUNTS.mcq).map((q, i) => ({
+	const shapedMcq = mcq.map((q, i) => ({
 		id: q.id || `mcq-${i + 1}`,
 		question: q.question || "",
 		options: Array.isArray(q.options) ? q.options.slice(0, 4) : [],
@@ -383,18 +456,66 @@ function shapeQuizPayload(raw) {
 		explanation: q.explanation || "",
 	}));
 
-	const shapedOneLiners = oneLiners.slice(0, QUIZ_COUNTS.oneLiners).map((q, i) => ({
+	const shapedOneLiners = oneLiners.map((q, i) => ({
 		id: q.id || `ol-${i + 1}`,
 		question: q.question || "",
 		answer: q.answer || "",
 		explanation: q.explanation || "",
 	}));
+	
+	const shapedCoding = coding.map((q, i) => ({
+		id: q.id || `code-${i + 1}`,
+		question: q.question || "",
+		expectedApproach: q.expectedApproach || "",
+		language: q.language || "JavaScript",
+		sampleInput: q.sampleInput || "",
+		sampleOutput: q.sampleOutput || "",
+		hints: Array.isArray(q.hints) ? q.hints : [],
+	}));
 
-	return { mcq: shapedMcq, oneLiners: shapedOneLiners };
+	return { mcq: shapedMcq, oneLiners: shapedOneLiners, coding: shapedCoding };
 }
 
 function sleep(ms) {
 	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Fetch department settings for quiz configuration
+ * @param {string} companyId - Company ID
+ * @param {string} deptId - Department ID
+ * @returns {Promise<Object>} - Department settings
+ */
+async function getDepartmentSettings(companyId, deptId) {
+	try {
+		const deptRef = db
+			.collection("freshers")
+			.doc(companyId)
+			.collection("departments")
+			.doc(deptId);
+		
+		const deptSnap = await deptRef.get();
+		
+		if (deptSnap.exists) {
+			const deptData = deptSnap.data();
+			return {
+				allowCodingQuestions: deptData.quizSettings?.allowCodingQuestions ?? true, // Default true
+				quizPreferences: deptData.quizSettings || {},
+			};
+		}
+		
+		console.log(`Department ${deptId} not found or no settings. Using defaults.`);
+		return {
+			allowCodingQuestions: true, // Default: allow coding questions
+			quizPreferences: {},
+		};
+	} catch (err) {
+		console.warn(`Failed to fetch department settings: ${err.message}`);
+		return {
+			allowCodingQuestions: true, // Fallback: allow coding questions
+			quizPreferences: {},
+		};
+	}
 }
 
 async function generateWithRetry(prompt) {
@@ -445,7 +566,14 @@ export const generateQuiz = async (req, res) => {
 		const moduleSnap = await moduleRef.get();
 		const moduleData = moduleSnap.exists ? moduleSnap.data() : {};
 		const title = moduleTitle || moduleData?.moduleTitle || "Training Module";
+		const description = moduleData?.description || "";
 		console.log(`Module title: ${title}`);
+		
+		// Fetch department settings for quiz configuration
+		console.log(`Fetching department settings...`);
+		const deptSettings = await getDepartmentSettings(companyId, deptId);
+		const allowCoding = deptSettings.allowCodingQuestions;
+		console.log(`Department allows coding questions: ${allowCoding ? "YES" : "NO"}`);
 
 		// Fetch agent memory summary for personalized context (10% weight)
 		let agentMemoryContext = "";
@@ -489,9 +617,14 @@ ${agentMemorySnippet}` : ""}`;
 
 		console.log(`Context built: ${companyDocsContext.length} chars from docs, ${agentMemorySnippet.length} chars from memory`);
 
-		console.log(`Generating quiz with agentic loop...`);
-		const { quiz, critique } = await generateQuizAgentic({ title, context });
-		console.log(`✓ Quiz parsed: ${quiz.mcq.length} MCQs, ${quiz.oneLiners.length} one-liners (critique pass=${critique?.pass})`);
+		console.log(`Generating quiz with agentic loop (AI decides structure)...`);
+		const { quiz, critique } = await generateQuizAgentic({ 
+			title, 
+			context, 
+			allowCoding,
+			moduleDescription: description 
+		});
+		console.log(`✓ Quiz parsed: ${quiz.mcq.length} MCQs, ${quiz.oneLiners.length} one-liners, ${quiz.coding?.length || 0} coding questions (critique pass=${critique?.pass})`);
 
 		try {
 			// Ensure module document exists before writing to subcollection
@@ -523,12 +656,19 @@ ${agentMemorySnippet}` : ""}`;
 					planFocusAreas: plan.focusAreas,
 					critiqueScore: critique?.score || null,
 					critiquePass: critique?.pass || false,
+					aiDecidedStructure: true, // AI decided question counts
+					allowCodingQuestions: allowCoding,
+					questionCounts: {
+						mcq: quiz.mcq.length,
+						oneLiners: quiz.oneLiners.length,
+						coding: quiz.coding?.length || 0,
+					},
 				},
 			};
 			
 			await quizRef.set(quizData);
 			console.log(`✓ Quiz document written successfully`);
-			console.log(`✓ Quiz data: ${quiz.mcq.length} MCQs, ${quiz.oneLiners.length} one-liners`);
+			console.log(`✓ Quiz data: ${quiz.mcq.length} MCQs, ${quiz.oneLiners.length} one-liners, ${quiz.coding?.length || 0} coding questions`);
 
 			// Verify the write immediately
 			await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms for write to propagate
@@ -567,6 +707,8 @@ ${agentMemorySnippet}` : ""}`;
 			moduleTitle: title,
 			mcq: quiz.mcq.map(({ correctIndex, explanation, ...rest }) => rest),
 			oneLiners: quiz.oneLiners.map(({ answer, explanation, ...rest }) => rest),
+			coding: (quiz.coding || []).map(({ expectedApproach, ...rest }) => rest), // Hide solution from client
+			hasCoding: (quiz.coding || []).length > 0,
 		};
 
 		console.log(`=== GENERATE QUIZ COMPLETE ===\n`);
@@ -609,9 +751,18 @@ export const submitQuiz = async (req, res) => {
 		console.log(`✓ Quiz document found`);
 
 		const quizData = quizSnap.data();
+		
+		// Get quiz attempt count
+		const attemptsRef = moduleRef.collection("quizAttempts");
+		const attemptsSnap = await attemptsRef.get();
+		const attemptNumber = attemptsSnap.size + 1;
+		console.log(`📝 Quiz attempt #${attemptNumber} of ${MAX_QUIZ_ATTEMPTS} allowed`);
+		
 		const mcqAnswers = Array.isArray(answers?.mcq) ? answers.mcq : [];
 		const oneLinerAnswers = Array.isArray(answers?.oneLiners) ? answers.oneLiners : [];
+		const codingAnswers = Array.isArray(answers?.coding) ? answers.coding : [];
 
+		// Evaluate MCQs
 		const mcqResults = quizData.mcq.map((q) => {
 			const submitted = mcqAnswers.find((a) => a.id === q.id);
 			const selectedIndex = Number.isInteger(submitted?.selectedIndex)
@@ -629,13 +780,11 @@ export const submitQuiz = async (req, res) => {
 				explanation: q.explanation || "",
 			};
 		});
-
-		// Evaluate MCQs (simple index comparison)
 		console.log(`Evaluating ${mcqResults.length} MCQ answers...`);
 		const mcqCorrect = mcqResults.filter((r) => r.isCorrect).length;
 		console.log(`✓ MCQs: ${mcqCorrect}/${mcqResults.length} correct`);
 
-		// Evaluate one-liners with LLM for semantic correctness
+		// Evaluate one-liners with LLM
 		console.log(`Evaluating ${quizData.oneLiners.length} one-liner answers with LLM...`);
 		const oneLinerResults = await Promise.all(
 			quizData.oneLiners.map(async (q) => {
@@ -659,22 +808,108 @@ export const submitQuiz = async (req, res) => {
 		const oneLinerCorrect = oneLinerResults.filter((r) => r.isCorrect).length;
 		console.log(`✓ One-liners: ${oneLinerCorrect}/${oneLinerResults.length} correct`);
 
-		const totalQuestions = mcqResults.length + oneLinerResults.length;
-		const correctCount =
-			mcqResults.filter((r) => r.isCorrect).length +
-			oneLinerResults.filter((r) => r.isCorrect).length;
-		const score = totalQuestions > 0 ? Math.round((correctCount / totalQuestions) * 100) : 0;
-		const passed = score >= 80;
-		const message = passed
-			? "You passed the quiz. Great job!"
-			: "You failed the quiz. Please contact your company admin to allow another attempt.";
+		// Evaluate coding questions if present
+		let codingResults = [];
+		let codingCorrect = 0;
+		if (Array.isArray(quizData.coding) && quizData.coding.length > 0) {
+			console.log(`Evaluating ${quizData.coding.length} coding questions with AI...`);
+			codingResults = await Promise.all(
+				quizData.coding.map(async (q) => {
+					const submitted = codingAnswers.find((a) => a.id === q.id);
+					const code = submitted?.code || "";
+					
+					const evaluation = await evaluateCode({
+						question: q.question,
+						code,
+						expectedApproach: q.expectedApproach,
+						language: q.language,
+					});
+					
+					return {
+						id: q.id,
+						question: q.question,
+						code,
+						expectedApproach: q.expectedApproach,
+						language: q.language,
+						isCorrect: evaluation.isCorrect,
+						score: evaluation.score,
+						feedback: evaluation.feedback,
+						strengths: evaluation.strengths,
+						improvements: evaluation.improvements,
+					};
+				})
+			);
+			codingCorrect = codingResults.filter((r) => r.isCorrect).length;
+			console.log(`✓ Coding: ${codingCorrect}/${codingResults.length} correct`);
+		}
+
+		// Calculate comprehensive score
+		const mcqWeight = 0.5; // 50%
+		const oneLinerWeight = 0.25; // 25%
+		const codingWeight = 0.25; // 25%
+		
+		const mcqScore = mcqResults.length > 0 ? (mcqCorrect / mcqResults.length) * 100 : 0;
+		const oneLinerScore = oneLinerResults.length > 0 ? (oneLinerCorrect / oneLinerResults.length) * 100 : 0;
+		const codingScore = codingResults.length > 0
+			? codingResults.reduce((sum, r) => sum + r.score, 0) / codingResults.length
+			: 0;
+			
+		const hasCodingQuestions = codingResults.length > 0;
+		const finalScore = hasCodingQuestions
+			? Math.round(mcqScore * mcqWeight + oneLinerScore * oneLinerWeight + codingScore * codingWeight)
+			: Math.round(mcqScore * 0.65 + oneLinerScore * 0.35); // Redistribute weights if no coding
+			
+		const passed = finalScore >= QUIZ_PASS_THRESHOLD;
+		console.log(`📊 Final Score: ${finalScore}% (Threshold: ${QUIZ_PASS_THRESHOLD}%) - ${passed ? "PASSED ✓" : "FAILED ✗"}`);
+		
+		// Determine action based on pass/fail and attempts
+		let message = "";
+		let allowRetry = false;
+		let requiresRoadmapRegeneration = false;
+		let unlockEverything = false;
+		let contactAdmin = false;
+		
+		if (passed) {
+			message = `🎉 Congratulations! You passed the quiz with ${finalScore}%. Excellent work!`;
+		} else {
+			// REGENERATE ROADMAP AFTER EVERY FAILED ATTEMPT
+			requiresRoadmapRegeneration = true;
+			
+			if (attemptNumber < MAX_QUIZ_ATTEMPTS) {
+				// Still have attempts remaining
+				allowRetry = true;
+				const remainingAttempts = MAX_QUIZ_ATTEMPTS - attemptNumber;
+				message = `You scored ${finalScore}%, which is below the ${QUIZ_PASS_THRESHOLD}% threshold. Your learning roadmap has been regenerated based on your performance. Take your time to review the new materials and attempt the quiz again when you feel ready. (${remainingAttempts} attempt(s) remaining)`;
+				console.log(`🔄 Roadmap will regenerate after attempt ${attemptNumber}/${MAX_QUIZ_ATTEMPTS}`);
+			} else {
+				// Final attempt exhausted - unlock everything
+				allowRetry = false;
+				unlockEverything = true;
+				contactAdmin = true;
+				message = `You scored ${finalScore}% after ${MAX_QUIZ_ATTEMPTS} attempts. The system has regenerated your roadmap and unlocked all learning resources (quiz, module, chatbot) for your continued learning. Please contact your company admin for additional guidance and support.`;
+				console.log(`🔓 Unlocking everything after ${MAX_QUIZ_ATTEMPTS} failed attempts`);
+			}
+		}
 
 		try {
+			// Store attempt
+			const attemptRef = attemptsRef.doc(`attempt-${attemptNumber}`);
+			await attemptRef.set({
+				attemptNumber,
+				answers: answers || {},
+				score: finalScore,
+				passed,
+				mcqScore,
+				oneLinerScore,
+				codingScore: hasCodingQuestions ? codingScore : null,
+				submittedAt: admin.firestore.FieldValue.serverTimestamp(),
+			});
+			console.log(`✓ Attempt #${attemptNumber} stored`);
+			
 			const resultRef = quizRef.collection("results").doc("latest");
 			const resultPath = `freshers/${companyId}/departments/${deptId}/users/${userId}/roadmap/${moduleId}/quiz/${quizId}/results/latest`;
 			console.log(`Attempting to store results at: ${resultPath}`);
 			
-			// Ensure quiz parent document exists
 			const quizDocSnap = await quizRef.get();
 			if (!quizDocSnap.exists) {
 				console.error(`✗ CRITICAL: Quiz parent document doesn't exist at quiz/${quizId}`);
@@ -684,82 +919,77 @@ export const submitQuiz = async (req, res) => {
 			
 			const resultData = {
 				answers: answers || {},
-				score,
+				score: finalScore,
 				passed,
 				message,
-				mcq: mcqResults,
-				oneLiners: oneLinerResults,
-				submittedAt: admin.firestore.FieldValue.serverTimestamp(),
-			};
-			
-			await resultRef.set(resultData);
-			console.log(`✓ Results document written successfully: score=${score}, passed=${passed}`);
+				allowRetry,
+				attemptNumber,
+				maxAttempts: MAX_QUIZ_ATTEMPTS,
+				requiresRoadmapRegeneration,
+					unlockEverything,
+					contactAdmin,
+					mcq: mcqResults,
+					oneLiners: oneLinerResults,
+					coding: codingResults,
+					scoreBreakdown: {
+						mcqScore,
+						oneLinerScore,
+						codingScore: hasCodingQuestions ? codingScore : null,
+					},
+					submittedAt: admin.firestore.FieldValue.serverTimestamp(),
+				};
+				
+				await resultRef.set(resultData);
+				console.log(`✓ Results document written successfully: score=${finalScore}, passed=${passed}`);
 
-			// Verify the write immediately
-			await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms for write to propagate
-			const verifyResult = await resultRef.get();
-			if (verifyResult.exists) {
-				const resultVerifyData = verifyResult.data();
-				console.log(`✓ Results verified in Firestore at: ${resultPath}`);
-				console.log(`✓ Verified score: ${resultVerifyData.score}, passed: ${resultVerifyData.passed}`);
-			} else {
-				console.error(`✗ CRITICAL: Results document NOT found after write at: ${resultPath}`);
-				console.error(`✗ This may indicate a Firestore permission or configuration issue`);
+				await new Promise(resolve => setTimeout(resolve, 500));
+				const verifyResult = await resultRef.get();
+				if (verifyResult.exists) {
+					const resultVerifyData = verifyResult.data();
+					console.log(`✓ Results verified in Firestore at: ${resultPath}`);
+					console.log(`✓ Verified score: ${resultVerifyData.score}, passed: ${resultVerifyData.passed}`);
+				} else {
+					console.error(`✗ CRITICAL: Results document NOT found after write at: ${resultPath}`);
+				}
+
+				if (passed) {
+					await moduleRef.set({
+						completed: true,
+						status: "completed",
+						progress: 100,
+						quizLocked: false,
+						quizPassed: true,
+						quizAttempts: attemptNumber,
+						lastQuizSubmitted: admin.firestore.FieldValue.serverTimestamp(),
+					}, { merge: true });
+					console.log(`✓ Module updated: quiz passed`);
+				} else {
+					// Update module based on whether everything should be unlocked
+					if (unlockEverything) {
+						// After 3rd attempt: unlock everything (quiz, module, chatbot)
+						await moduleRef.set({
+							quizLocked: false, // ← Unlock quiz
+							moduleLocked: false, // ← Unlock module
+							chatbotLocked: false, // ← Unlock chatbot
+							quizPassed: false,
+							quizAttempts: attemptNumber,
+							requiresAdminContact: true, // ← Flag for admin contact
+							lastQuizSubmitted: admin.firestore.FieldValue.serverTimestamp(),
+						}, { merge: true });
+						console.log(`✓ Module updated: everything unlocked after ${attemptNumber} attempts`);
+					} else {
+						// Normal retry flow: keep locked, allow retry
+						await moduleRef.set({
+							quizLocked: false, // Always unlock for retry
+							quizPassed: false,
+							quizAttempts: attemptNumber,
+							lastQuizSubmitted: admin.firestore.FieldValue.serverTimestamp(),
+						}, { merge: true });
+						console.log(`✓ Module updated: quiz unlocked for retry after roadmap regeneration`);
+					}
 			}
-
-			if (passed) {
-				await moduleRef.set({
-					completed: true,
-					status: "completed",
-					progress: 100,
-					quizLocked: false,
-					quizPassed: true,
-					lastQuizSubmitted: admin.firestore.FieldValue.serverTimestamp(),
-				}, { merge: true });
-				console.log(`✓ Module updated: quiz passed`);
-			} else {
-				await moduleRef.set({
-					quizLocked: true,
-					quizPassed: false,
-					lastQuizSubmitted: admin.firestore.FieldValue.serverTimestamp(),
-				}, { merge: true });
-				console.log(`✓ Module updated: quiz locked`);
-
-				const remediationPlan = await generateRemediationPlan({
-					title: quizData.moduleTitle || "Module",
-					mcqResults,
-					oneLinerResults,
-				});
-				const remediationRef = quizRef.collection("remediation").doc("latest");
-				await remediationRef.set({
-					...remediationPlan,
-					createdAt: admin.firestore.FieldValue.serverTimestamp(),
-				});
-				console.log(`✓ Remediation plan stored`);
-			}
-			
-			// Verify module update
-			const verifyModule = await moduleRef.get();
-			if (verifyModule.exists) {
-				const moduleData = verifyModule.data();
-				console.log(`✓ Module state verified: quizPassed=${moduleData.quizPassed}, quizLocked=${moduleData.quizLocked}`);
-			}
-
-			// Update agent memory with quiz results (async, non-blocking)
-			updateMemoryAfterQuiz({
-				userId,
-				companyId,
-				deptId,
-				moduleId,
-				moduleTitle: quizData.moduleTitle || "Module",
-				score,
-				passed,
-				mcqResults,
-				oneLinerResults
-			}).catch(err => console.warn("⚠️ Memory update after quiz skipped:", err.message));
-
 		} catch (writeErr) {
-			console.error("Error writing quiz results to Firestore:", writeErr);
+			console.error("Error storing quiz results:", writeErr);
 			console.error("Error code:", writeErr.code);
 			console.error("Error details:", writeErr.details);
 			throw new Error(`Firestore write failed: ${writeErr.message}`);
@@ -767,11 +997,23 @@ export const submitQuiz = async (req, res) => {
 
 		console.log(`=== SUBMIT QUIZ COMPLETE ===\n`);
 		return res.json({
-			score,
+			score: finalScore,
 			passed,
 			message,
+			allowRetry,
+			attemptNumber,
+			maxAttempts: MAX_QUIZ_ATTEMPTS,
+			requiresRoadmapRegeneration,
+			unlockEverything, // NEW: Flag to unlock quiz, module, chatbot after 3rd attempt
+			contactAdmin, // NEW: Flag to show "contact admin" message
 			mcq: mcqResults,
 			oneLiners: oneLinerResults,
+			coding: codingResults,
+			scoreBreakdown: {
+				mcqScore,
+				oneLinerScore,
+				codingScore: hasCodingQuestions ? codingScore : null,
+			},
 		});
 	} catch (err) {
 		console.error("Quiz submission error:", err);

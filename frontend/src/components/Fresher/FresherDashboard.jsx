@@ -64,45 +64,44 @@ useEffect(() => {
 
       const snap = await getDocs(roadmapRef);
       
-      // Calculate progress based on chatbot usage days
-      const modulesWithProgress = await Promise.all(
-        snap.docs.map(async (moduleDoc) => {
-          const moduleData = { id: moduleDoc.id, ...moduleDoc.data() };
-          
-          // Count unique chat session days for this module
-          const chatSessionsRef = collection(
-            db,
-            "freshers",
-            companyId,
-            "departments",
-            deptId,
-            "users",
-            userId,
-            "roadmap",
-            moduleDoc.id,
-            "chatSessions"
-          );
-          
-          const chatSessionsSnap = await getDocs(chatSessionsRef);
-          const daysUsed = chatSessionsSnap.size;
-          
-          const estimatedDays = moduleData.estimatedDays || 1;
-          
-          return {
-            ...moduleData,
-            daysUsed,
-            estimatedDays,
-          };
-        })
-      );
+      const modulesData = snap.docs.map((moduleDoc) => ({
+        id: moduleDoc.id,
+        ...moduleDoc.data(),
+      }));
 
-      setRoadmap(modulesWithProgress);
+      // Get roadmap creation date from FirstTimeCreatedAt
+      let roadmapCreatedDate = null;
+      if (modulesData.length > 0) {
+        // Find the earliest FirstTimeCreatedAt
+        const validDates = modulesData
+          .map((m) => m.FirstTimeCreatedAt)
+          .filter((date) => date && date instanceof Date || typeof date === "object")
+          .map((date) => {
+            // Handle Firestore Timestamp objects
+            if (date?.toDate && typeof date.toDate === "function") {
+              return date.toDate();
+            }
+            return new Date(date);
+          });
 
-      // Calculate overall progress as (total days used / total estimated days) * 100
-      const totalDaysUsed = modulesWithProgress.reduce((sum, m) => sum + m.daysUsed, 0);
-      const totalEstimatedDays = modulesWithProgress.reduce((sum, m) => sum + m.estimatedDays, 0);
+        if (validDates.length > 0) {
+          roadmapCreatedDate = new Date(Math.min(...validDates.map((d) => d.getTime())));
+        }
+      }
+
+      // Calculate days elapsed since roadmap creation
+      let daysElapsed = 0;
+      let totalEstimatedDays = modulesData.reduce((sum, m) => sum + (m.estimatedDays || 1), 0);
+      
+      if (roadmapCreatedDate) {
+        const currentDate = new Date();
+        const timeDifference = currentDate - roadmapCreatedDate;
+        daysElapsed = Math.floor(timeDifference / (1000 * 60 * 60 * 24)); // Convert to days
+      }
+
+      // Calculate progress as percentage of days elapsed vs estimated days
       const percent = totalEstimatedDays > 0 
-        ? Math.min(Math.round((totalDaysUsed / totalEstimatedDays) * 100), 100)
+        ? Math.min(Math.round((daysElapsed / totalEstimatedDays) * 100), 100)
         : 0;
 
       setProgressPercent(percent);

@@ -26,6 +26,9 @@ export default function OnboardingPage({
   const [cvUploaded, setCvUploaded] = useState(false);
   const [expertise, setExpertise] = useState(null);
   const [level, setLevel] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [savingError, setSavingError] = useState("");
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   const storage = getStorage();
 
@@ -83,18 +86,28 @@ export default function OnboardingPage({
   // =====================================================
   const saveAndContinue = async () => {
     try {
+      setSaving(true);
+      setSavingError("");
+      setSaveSuccess(false);
+
       let cvUrl = "";
 
       // Upload CV if selected
       if (cvFile) {
-        
-        const extension = cvFile.name.split(".").pop();
-        const storageRef = ref(storage, `cvs/${companyId}/${deptId}/${userId}.${extension}`);
-        console.log("⬆️ Uploading CV to Storage:", storageRef.fullPath);
-        await uploadBytes(storageRef, cvFile);
-        cvUrl = await getDownloadURL(storageRef);
-        console.log("✅ CV uploaded. URL:", cvUrl);
-        setCvUploaded(true);
+        try {
+          const extension = cvFile.name.split(".").pop();
+          const storageRef = ref(storage, `cvs/${companyId}/${deptId}/${userId}.${extension}`);
+          console.log("⬆️ Uploading CV to Storage:", storageRef.fullPath);
+          await uploadBytes(storageRef, cvFile);
+          cvUrl = await getDownloadURL(storageRef);
+          console.log("✅ CV uploaded. URL:", cvUrl);
+          setCvUploaded(true);
+        } catch (uploadErr) {
+          console.error("❌ CV upload failed:", uploadErr);
+          setSavingError("Failed to upload CV. Please try again.");
+          setSaving(false);
+          return;
+        }
       }
 
       // Save onboarding info + CV URL
@@ -125,9 +138,17 @@ export default function OnboardingPage({
       );
 
       console.log("📄 Onboarding saved for user:", userId);
-      if (onFinish) onFinish();
+      setSaveSuccess(true);
+      setSaving(false);
+      
+      // Call onFinish after slight delay for success feedback
+      setTimeout(() => {
+        if (onFinish) onFinish();
+      }, 500);
     } catch (err) {
       console.error("Error saving onboarding:", err);
+      setSavingError(err.message || "Failed to save onboarding. Please try again.");
+      setSaving(false);
     }
   };
 
@@ -273,12 +294,26 @@ export default function OnboardingPage({
             </>
           )}
 
+          {/* ERROR MESSAGE */}
+          {savingError && (
+            <div className="mb-6 p-4 bg-red-500/20 border border-red-500 rounded-lg">
+              <p className="text-red-300 font-semibold">⚠️ {savingError}</p>
+            </div>
+          )}
+
+          {/* SUCCESS MESSAGE */}
+          {saveSuccess && (
+            <div className="mb-6 p-4 bg-green-500/20 border border-green-500 rounded-lg">
+              <p className="text-green-300 font-semibold">✅ Onboarding saved! Redirecting...</p>
+            </div>
+          )}
+
           {/* NAVIGATION */}
           <div className="flex justify-between mt-10">
-            {step > 1 && (
+            {step > 1 && !saving && (
               <button
                 onClick={() => setStep(step - 1)}
-                className="px-5 py-2 bg-[#021B36] rounded-lg"
+                className="px-5 py-2 bg-[#021B36] rounded-lg hover:bg-[#021B36]/80 transition"
               >
                 ← Back
               </button>
@@ -288,10 +323,10 @@ export default function OnboardingPage({
               <button
                 onClick={() => setStep(step + 1)}
                 disabled={
-                  (step === 1 && !cvFile) || (step === 2 && expertise === null)
+                  (step === 1 && !cvFile) || (step === 2 && expertise === null) || saving
                 }
                 className={`ml-auto px-6 py-2 rounded-lg font-semibold ${
-                  (step === 1 && !cvFile) || (step === 2 && expertise === null)
+                  (step === 1 && !cvFile) || (step === 2 && expertise === null) || saving
                     ? "bg-gray-500 cursor-not-allowed"
                     : "bg-[#00FFFF] text-[#031C3A] hover:bg-[#00e0e0]"
                 }`}
@@ -303,14 +338,25 @@ export default function OnboardingPage({
             {step === 3 && (
               <button
                 onClick={saveAndContinue}
-                disabled={!level}
-                className={`ml-auto px-6 py-2 rounded-lg font-semibold ${
-                  !level
+                disabled={!level || saving}
+                className={`ml-auto px-6 py-2 rounded-lg font-semibold flex items-center gap-2 ${
+                  !level || saving
                     ? "bg-gray-500 cursor-not-allowed"
+                    : saveSuccess
+                    ? "bg-green-500 text-white"
                     : "bg-[#00FFFF] text-[#031C3A] hover:bg-[#00e0e0]"
                 }`}
               >
-                Save & Continue
+                {saving ? (
+                  <>
+                    <span className="inline-block h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Saving...
+                  </>
+                ) : saveSuccess ? (
+                  <>✅ Saved!</>
+                ) : (
+                  "Save & Continue"
+                )}
               </button>
             )}
           </div>

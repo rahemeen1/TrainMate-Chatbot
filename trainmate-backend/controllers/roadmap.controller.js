@@ -5,7 +5,8 @@ import { retrieveDeptDocsFromPinecone } from "../services/pineconeService.js";
 import { generateRoadmap } from "../services/llmService.js";
 import { extractSkillsFromText } from "../services/skillExtractor.service.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-//import { generateModuleInsights } from "../services/moduleInsightsService.js";
+
+const MAX_QUIZ_ATTEMPTS = 3; // Must match QuizController.js
 
 let roadmapModel = null;
 
@@ -58,7 +59,12 @@ function safeParseJson(text) {
 
 function isRoadmapComplete(modules) {
   if (!Array.isArray(modules) || modules.length === 0) return false;
-  return modules.every((m) => m.moduleTitle && m.description && Number.isFinite(m.estimatedDays));
+  return modules.every((m) => 
+    m.moduleTitle && 
+    m.description && 
+    Number.isFinite(m.estimatedDays) &&
+    Array.isArray(m.skillsCovered) && m.skillsCovered.length > 0
+  );
 }
 
 function normalizeRoadmapModules(modules) {
@@ -67,6 +73,7 @@ function normalizeRoadmapModules(modules) {
     moduleTitle: module.moduleTitle ?? `Module ${idx + 1}`,
     description: module.description ?? "No description provided",
     estimatedDays: Number.isFinite(module.estimatedDays) ? module.estimatedDays : 1,
+    skillsCovered: Array.isArray(module.skillsCovered) ? module.skillsCovered : []
   }));
 }
 
@@ -90,6 +97,11 @@ async function generateRoadmapModel(prompt) {
 }
 
 async function generateRoadmapPlan({ trainingOn, cvText, skillGap, learningProfile }) {
+  const weakConcepts = learningProfile?.weakConcepts || [];
+  const weaknessRelatedSkills = learningProfile?.weaknessRelatedSkills || [];
+  const otherCompanySkills = learningProfile?.otherCompanySkills || [];
+  const balancedApproach = learningProfile?.balancedApproach || false;
+  
   const prompt = `
 You are a planning agent for personalized training roadmaps.
 
@@ -98,12 +110,35 @@ TARGET DOMAIN: "${trainingOn || "General"}"
 CV SUMMARY (partial):
 ${truncateText(cvText, 1200)}
 
-SKILL GAP: ${Array.isArray(skillGap) ? skillGap.slice(0, 12).join(", ") : "None"}
+SKILL GAP: ${Array.isArray(skillGap) ? skillGap.slice(0, 15).join(", ") : "None"}
+
+${weakConcepts.length > 0 ? `WEAK CONCEPTS (from quiz failures): ${weakConcepts.slice(0, 8).join(", ")}` : ''}
+
+${weaknessRelatedSkills.length > 0 ? `WEAKNESS-RELATED COMPANY SKILLS: ${weaknessRelatedSkills.slice(0, 8).join(", ")}` : ''}
+
+${otherCompanySkills.length > 0 ? `OTHER COMPANY REQUIREMENTS: ${otherCompanySkills.slice(0, 10).join(", ")}` : ''}
 
 LEARNING PROFILE:
 ${learningProfile?.summary || "No prior learning history."}
+${learningProfile?.regenerationContext || ''}
 
-Create a compact retrieval plan with targeted search queries and focus areas.
+${balancedApproach ? `
+⚖️ BALANCED APPROACH REQUIRED:
+Create queries that cover BOTH:
+- Weak concepts from quiz failures (50% of queries)
+- General company requirements and topics (50% of queries)
+` : ''}
+
+Create a compact retrieval plan with targeted search queries focusing on:
+${balancedApproach ? `
+1. Weak concepts from quiz failures (half of queries)
+2. Company requirements not related to weaknesses (half of queries)
+3. Ensure balanced coverage of both areas
+` : `
+1. Weak concepts identified from quiz failures
+2. Company-specific implementations of those concepts
+3. Skills from company documentation related to weak areas
+`}
 
 Return JSON only:
 {
@@ -114,6 +149,7 @@ Return JSON only:
 
 Constraints:
 - 2 to ${PLAN_MAX_QUERIES} queries
+${balancedApproach ? '- Split queries 50/50: half for weaknesses, half for company requirements' : '- Prioritize queries about weak concepts in company context'}
 - Keep queries concise and specific to the domain
 - Output valid JSON only
 `;
@@ -155,11 +191,19 @@ async function fetchPlannedDocs({ queries, companyId, deptName }) {
   return results;
 }
 
-async function buildLearningProfile({ userRef }) {
+async function buildLearningProfile({ userRef, moduleId = null }) {
   try {
     const roadmapSnap = await userRef.collection("roadmap").orderBy("createdAt", "desc").limit(5).get();
     if (roadmapSnap.empty) {
-      return { summary: "No prior learning history.", strugglingAreas: [], masteredTopics: [], avgScore: null };
+      return { 
+        summary: "No prior learning history.", 
+        strugglingAreas: [], 
+        masteredTopics: [], 
+        avgScore: null,
+        quizAttempts: [],
+        wrongQuestions: [],
+        weakConcepts: []
+      };
     }
 
     const memorySnaps = await Promise.all(
@@ -170,7 +214,11 @@ async function buildLearningProfile({ userRef }) {
     const strugglingAreas = [];
     const masteredTopics = [];
     const scores = [];
+    const allQuizAttempts = [];
+    const wrongQuestions = [];
+    const weakConceptsMap = new Map();
 
+    // Collect memory data
     for (const snap of memorySnaps) {
       if (!snap.exists) continue;
       const data = snap.data() || {};
@@ -180,7 +228,103 @@ async function buildLearningProfile({ userRef }) {
       if (Number.isFinite(data.lastQuizScore)) scores.push(data.lastQuizScore);
     }
 
-    const uniqueStruggling = Array.from(new Set(strugglingAreas)).slice(0, 12);
+    // Analyze quiz attempts for weakness patterns
+    for (const moduleDoc of roadmapSnap.docs) {
+      const quizAttemptsSnap = await moduleDoc.ref
+        .collection("quiz")
+        .doc("current")
+        .collection("quizAttempts")
+        .orderBy("attemptNumber", "desc")
+        .limit(3)
+        .get();
+
+      for (const attemptDoc of quizAttemptsSnap.docs) {
+        const attemptData = attemptDoc.data();
+        allQuizAttempts.push({
+          moduleId: moduleDoc.id,
+          moduleTitle: moduleDoc.data().moduleTitle,
+          score: attemptData.score,
+          attemptNumber: attemptData.attemptNumber,
+          submittedAt: attemptData.submittedAt,
+        });
+
+        // Analyze results to find wrong questions
+        const resultsSnap = await moduleDoc.ref
+          .collection("quiz")
+          .doc("current")
+          .collection("results")
+          .doc("latest")
+          .get();
+
+        if (resultsSnap.exists) {
+          const results = resultsSnap.data();
+          
+          // Collect wrong MCQ questions
+          if (Array.isArray(results.mcq)) {
+            results.mcq.forEach(q => {
+              if (!q.isCorrect) {
+                wrongQuestions.push({
+                  type: "MCQ",
+                  question: q.question,
+                  correctAnswer: q.correctAnswer,
+                  moduleTitle: moduleDoc.data().moduleTitle,
+                });
+                // Extract concepts from wrong questions
+                const concepts = extractConceptsFromQuestion(q.question);
+                concepts.forEach(concept => {
+                  weakConceptsMap.set(concept, (weakConceptsMap.get(concept) || 0) + 1);
+                });
+              }
+            });
+          }
+
+          // Collect wrong one-liner questions
+          if (Array.isArray(results.oneLiners)) {
+            results.oneLiners.forEach(q => {
+              if (!q.isCorrect) {
+                wrongQuestions.push({
+                  type: "One-Liner",
+                  question: q.question,
+                  correctAnswer: q.correctAnswer,
+                  moduleTitle: moduleDoc.data().moduleTitle,
+                });
+                const concepts = extractConceptsFromQuestion(q.question);
+                concepts.forEach(concept => {
+                  weakConceptsMap.set(concept, (weakConceptsMap.get(concept) || 0) + 1);
+                });
+              }
+            });
+          }
+
+          // Collect failed coding questions
+          if (Array.isArray(results.coding)) {
+            results.coding.forEach(q => {
+              if (!q.isCorrect || (q.score && q.score < 70)) {
+                wrongQuestions.push({
+                  type: "Coding",
+                  question: q.question,
+                  feedback: q.feedback,
+                  improvements: q.improvements,
+                  moduleTitle: moduleDoc.data().moduleTitle,
+                });
+                const concepts = extractConceptsFromQuestion(q.question);
+                concepts.forEach(concept => {
+                  weakConceptsMap.set(concept, (weakConceptsMap.get(concept) || 0) + 2); // Weight coding more
+                });
+              }
+            });
+          }
+        }
+      }
+    }
+
+    // Sort weak concepts by frequency
+    const weakConcepts = Array.from(weakConceptsMap.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([concept, count]) => ({ concept, frequency: count }));
+
+    const uniqueStruggling = Array.from(new Set([...strugglingAreas, ...weakConcepts.map(w => w.concept)])).slice(0, 15);
     const uniqueMastered = Array.from(new Set(masteredTopics)).slice(0, 12);
     const avgScore = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
 
@@ -189,11 +333,41 @@ async function buildLearningProfile({ userRef }) {
       strugglingAreas: uniqueStruggling,
       masteredTopics: uniqueMastered,
       avgScore,
+      quizAttempts: allQuizAttempts,
+      wrongQuestions: wrongQuestions.slice(0, 20), // Last 20 wrong questions
+      weakConcepts: weakConcepts,
+      totalAttempts: allQuizAttempts.length,
     };
   } catch (err) {
     console.warn("Failed to build learning profile:", err.message);
-    return { summary: "No prior learning history.", strugglingAreas: [], masteredTopics: [], avgScore: null };
+    return { 
+      summary: "No prior learning history.", 
+      strugglingAreas: [], 
+      masteredTopics: [], 
+      avgScore: null,
+      quizAttempts: [],
+      wrongQuestions: [],
+      weakConcepts: []
+    };
   }
+}
+
+function extractConceptsFromQuestion(questionText) {
+  if (!questionText) return [];
+  
+  // Extract technical terms (capitalized words, camelCase, technical patterns)
+  const concepts = [];
+  
+  // Match capitalized words (like React, JavaScript, API)
+  const capitalizedWords = questionText.match(/\b[A-Z][a-z]+(?:[A-Z][a-z]+)*\b/g) || [];
+  concepts.push(...capitalizedWords);
+  
+  // Match common technical terms
+  const technicalTerms = questionText.match(/\b(function|class|object|array|string|method|property|component|hook|state|props|async|await|promise|callback|API|REST|HTTP|JSON|CSS|HTML|DOM|event|handler|lifecycle|render|virtual|real)\b/gi) || [];
+  concepts.push(...technicalTerms);
+  
+  // Remove duplicates and return lowercase
+  return Array.from(new Set(concepts.map(c => c.toLowerCase()))).filter(c => c.length > 2);
 }
 
 async function critiqueRoadmap({ trainingOn, modules, trainingDuration }) {
@@ -252,7 +426,8 @@ Return ONLY the corrected JSON array with this schema:
   {
     "moduleTitle": "string",
     "description": "string",
-    "estimatedDays": number
+    "estimatedDays": number,
+    "skillsCovered": ["skill1", "skill2", "skill3"]
   }
 ]
 `;
@@ -543,6 +718,7 @@ console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboa
         completed: false, 
         status: "pending",
         createdAt: new Date(),
+        FirstTimeCreatedAt: new Date(),
       });
     }
 
@@ -567,3 +743,356 @@ console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboa
     });
   }
 };
+
+/**
+ * Regenerate roadmap after failed quiz attempts
+ * Calculates days already spent and generates new roadmap with remaining time
+ */
+export const regenerateRoadmapAfterFailure = async (req, res) => {
+  try {
+    const { companyId, deptId, userId, moduleId } = req.body;
+
+    if (!companyId || !deptId || !userId || !moduleId) {
+      return res.status(400).json({ error: "Missing required IDs" });
+    }
+
+    console.log("🔄 === ROADMAP REGENERATION START ===");
+    console.log(`CompanyId: ${companyId}, DeptId: ${deptId}, UserId: ${userId}, FailedModuleId: ${moduleId}`);
+
+    const userRef = db
+      .collection("freshers")
+      .doc(companyId)
+      .collection("departments")
+      .doc(deptId)
+      .collection("users")
+      .doc(userId);
+
+    const userSnap = await userRef.get();
+    if (!userSnap.exists) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const user = userSnap.data();
+    console.log("✅ User fetched:", user.name);
+
+    // Get failed module
+    const failedModuleRef = userRef.collection("roadmap").doc(moduleId);
+    const failedModuleSnap = await failedModuleRef.get();
+    
+    if (!failedModuleSnap.exists) {
+      return res.status(404).json({ error: "Module not found" });
+    }
+    
+    const failedModuleData = failedModuleSnap.data();
+    console.log(`📚 Failed module: ${failedModuleData.moduleTitle}`);
+
+    // Get original training duration
+    const onboardingRef = db
+      .collection("companies")
+      .doc(companyId)
+      .collection("onboardingAnswers");
+
+    const onboardingSnap = await onboardingRef
+      .orderBy("createdAt", "desc")
+      .limit(1)
+      .get();
+
+    let originalTrainingDuration = 90; // Default 90 days
+    if (!onboardingSnap.empty) {
+      const onboardingData = onboardingSnap.docs[0].data();
+      originalTrainingDuration = parseInt(onboardingData?.answers?.["1"]) || 90;
+    }
+    console.log(`⏱️ Original training duration: ${originalTrainingDuration} days`);
+
+    // Calculate days already spent
+    const roadmapSnap = await userRef.collection("roadmap")
+      .orderBy("createdAt", "asc")
+      .limit(1)
+      .get();
+
+    let daysSpent = 0;
+    if (!roadmapSnap.empty) {
+      const firstModule = roadmapSnap.docs[0];
+      const firstModuleData = firstModule.data();
+      
+      if (firstModuleData.createdAt) {
+        const startDate = firstModuleData.createdAt.toDate
+          ? firstModuleData.createdAt.toDate()
+          : new Date(firstModuleData.createdAt);
+        const today = new Date();
+        daysSpent = Math.floor((today - startDate) / (1000 * 60 * 60 * 24));
+      }
+    }
+    
+    const remainingDays = Math.max(7, originalTrainingDuration - daysSpent); // Minimum 7 days
+    console.log(`📅 Days spent: ${daysSpent}, Remaining days: ${remainingDays}`);
+
+    // Get all modules to find completed ones
+    const allModulesSnap = await userRef.collection("roadmap").get();
+    const completedModules = [];
+    const incompletModules = [];
+    
+    allModulesSnap.forEach((doc) => {
+      const moduleData = doc.data();
+      if (moduleData.completed) {
+        completedModules.push({ id: doc.id, ...moduleData });
+      } else {
+        incompletModules.push(doc.id);
+      }
+    });
+    
+    console.log(`✅ Completed modules: ${completedModules.length}`);
+    console.log(`❌ Incomplete modules: ${incompletModules.length}`);
+
+    // Build comprehensive learning profile with quiz weakness analysis
+    const learningProfile = await buildLearningProfile({ userRef, moduleId });
+    const masteredTopics = learningProfile.masteredTopics || [];
+    const strugglingAreas = learningProfile.strugglingAreas || [];
+    const wrongQuestions = learningProfile.wrongQuestions || [];
+    const weakConcepts = learningProfile.weakConcepts || [];
+    
+    console.log(`🧩 Mastered topics: ${masteredTopics.length}`);
+    console.log(`⚠️ Struggling areas: ${strugglingAreas.length}`);
+    console.log(`❌ Wrong questions analyzed: ${wrongQuestions.length}`);
+    console.log(`🎯 Weak concepts identified: ${weakConcepts.map(w => `${w.concept}(${w.frequency})`).join(", ")}`);
+
+    // Get CV text
+    if (!user.cvUrl) {
+      return res.status(400).json({ error: "CV URL not found. Cannot regenerate roadmap." });
+    }
+
+    console.log("📄 Parsing CV...");
+    const cvParseResult = await parseCvFromUrl(user.cvUrl);
+    const cvText = cvParseResult?.rawText || "";
+    
+    if (!cvText) {
+      throw new Error("CV text extraction failed");
+    }
+
+    // Fetch company context - both general and weakness-specific
+    console.log("🔎 Fetching company training materials...");
+    const basePineconeContext = await retrieveDeptDocsFromPinecone({
+      queryText: cvText,
+      companyId,
+      deptName: deptId,
+    });
+
+    // ENHANCED: Fetch company docs specifically about weak concepts
+    console.log("🎯 Fetching company docs for weak concepts...");
+    const weakConceptQueries = weakConcepts.slice(0, 5).map(w => w.concept);
+    const weaknessSpecificDocs = [];
+    
+    for (const concept of weakConceptQueries) {
+      try {
+        const docs = await retrieveDeptDocsFromPinecone({
+          queryText: `${concept} ${user.trainingOn} implementation best practices examples`,
+          companyId,
+          deptName: deptId,
+        });
+        weaknessSpecificDocs.push(...docs);
+        console.log(`  ✓ Fetched ${docs.length} docs for "${concept}"`);
+      } catch (err) {
+        console.warn(`  ✗ Failed to fetch docs for "${concept}":`, err.message);
+      }
+    }
+
+    const baseDocsText = Array.isArray(basePineconeContext)
+      ? basePineconeContext.map((c) => c.text || "").join("\n")
+      : "";
+    
+    const weaknessDocsText = weaknessSpecificDocs
+      .map((c) => c.text || "").join("\n");
+
+    const baseCompanySkills = extractSkillsFromText(baseDocsText);
+    const weaknessCompanySkills = extractSkillsFromText(weaknessDocsText);
+    const cvSkills = extractSkillsFromText(cvText);
+    
+    // Calculate skill gap: company skills MINUS (CV skills + mastered topics)
+    const allMasteredSkills = [...new Set([...cvSkills, ...masteredTopics])];
+    const allCompanySkills = [...new Set([...baseCompanySkills, ...weaknessCompanySkills])];
+    const skillGap = allCompanySkills.filter((skill) => !allMasteredSkills.includes(skill));
+    
+    // Identify company skills related to weak concepts (for prioritization, not exclusivity)
+    const weaknessRelatedGap = skillGap.filter(skill => 
+      weakConcepts.some(w => 
+        skill.toLowerCase().includes(w.concept.toLowerCase()) ||
+        w.concept.toLowerCase().includes(skill.toLowerCase())
+      )
+    );
+    
+    // Get remaining company skills (not related to weaknesses)
+    const otherCompanySkills = skillGap.filter(s => !weaknessRelatedGap.includes(s));
+    
+    console.log(`⚡ Total skill gap: ${skillGap.length} skills`);
+    console.log(`🎯 Weakness-related skills: ${weaknessRelatedGap.length} - ${weaknessRelatedGap.slice(0, 5).join(", ")}`);
+    console.log(`📚 Other company skills: ${otherCompanySkills.length} - ${otherCompanySkills.slice(0, 5).join(", ")}`);
+    console.log(`🔀 Strategy: Mix of ${Math.round(weaknessRelatedGap.length / skillGap.length * 100)}% weakness-related and ${Math.round(otherCompanySkills.length / skillGap.length * 100)}% general company skills`);
+
+    // Generate agentic plan with BALANCED focus: weak areas + company requirements
+    const weaknessContext = `
+QUIZ WEAKNESS ANALYSIS:
+${weakConcepts.map(w => `- ${w.concept} (failed ${w.frequency} times)`).join("\n")}
+
+WRONG QUESTIONS PATTERNS:
+${wrongQuestions.slice(0, 10).map(q => `- [${q.type}] ${q.question.substring(0, 80)}...`).join("\n")}
+
+STRUGGLING AREAS: ${strugglingAreas.join(", ")}
+AVERAGE QUIZ SCORE: ${learningProfile.avgScore}%
+
+WEAKNESS-RELATED COMPANY SKILLS: ${weaknessRelatedGap.slice(0, 8).join(", ")}
+OTHER COMPANY REQUIREMENTS: ${otherCompanySkills.slice(0, 8).join(", ")}`;
+
+    const plan = await generateRoadmapPlan({
+      trainingOn: user.trainingOn || "General",
+      cvText,
+      skillGap: skillGap, // Use ALL skills, not prioritized
+      learningProfile: {
+        ...learningProfile,
+        regenerationContext: `Regenerating roadmap after ${MAX_QUIZ_ATTEMPTS} failed quiz attempts. Create a BALANCED roadmap that addresses user weaknesses AND covers remaining company requirements. ${weaknessContext}`,
+        weakConcepts: weakConcepts.map(w => w.concept),
+        weaknessRelatedSkills: weaknessRelatedGap,
+        otherCompanySkills: otherCompanySkills,
+        balancedApproach: true,
+      },
+    });
+
+    console.log(`🧭 Regeneration plan created with ${plan.queries.length} queries targeting weak areas`);
+
+    // Fetch additional planned docs
+    const plannedDocs = await fetchPlannedDocs({
+      queries: plan.queries,
+      companyId,
+      deptName: deptId,
+    });
+
+    // Merge ALL docs: base + weakness-specific + planned
+    const mergedDocs = mergeDocs([
+      ...(basePineconeContext || []), 
+      ...weaknessSpecificDocs,
+      ...plannedDocs
+    ]);
+    
+    console.log(`📄 Total context docs: ${mergedDocs.length} (${basePineconeContext.length} base + ${weaknessSpecificDocs.length} weakness-specific + ${plannedDocs.length} planned)`);
+    
+    const companyDocsText = truncateText(
+      mergedDocs.map((c) => c.text || "").join("\n"),
+      MAX_CONTEXT_CHARS
+    );
+
+    const companyContext = `COMPANY DOCUMENTS (Including weakness-specific materials):\n${companyDocsText || "No company documents available."}\n\nCOMPANY SKILLS TO FOCUS ON: ${weaknessRelatedGap.slice(0, 15).join(", ")}`;
+
+    // Generate new roadmap with BALANCED approach: weak areas + company requirements
+    console.log("🤖 Generating new roadmap via agentic loop...");
+    const { modules: roadmapModules, critique } = await generateRoadmapAgentic({
+      cvText,
+      pineconeContext: mergedDocs,
+      companyContext,
+      expertise: user.expertise || 1,
+      trainingOn: user.trainingOn || "General",
+      level: user.level || "Beginner",
+      trainingDuration: remainingDays,
+      skillGap: skillGap, // All skills, not prioritized
+      learningProfile: {
+        ...learningProfile,
+        structuredCv: cvParseResult?.structured || null,
+        weakConcepts: weakConcepts.map(w => w.concept),
+        weaknessRelatedSkills: weaknessRelatedGap,
+        otherCompanySkills: otherCompanySkills,
+        balancedApproach: true,
+      },
+      planFocusAreas: [...(weakConcepts.slice(0, 3).map(w => w.concept)), ...plan.focusAreas], // Mix weak concepts + plan areas
+    });
+
+    if (!Array.isArray(roadmapModules) || roadmapModules.length === 0) {
+      throw new Error("❌ LLM did not return roadmap modules");
+    }
+
+    console.log(`✅ New roadmap generated: ${roadmapModules.length} modules`);
+
+    // Delete incomplete modules
+    console.log(`🗑️ Deleting ${incompletModules.length} incomplete modules...`);
+    const deletePromises = incompletModules.map((id) =>
+      userRef.collection("roadmap").doc(id).delete()
+    );
+    await Promise.all(deletePromises);
+    console.log(`✅ Incomplete modules deleted`);
+
+    // Store new roadmap modules
+    console.log("💾 Saving new roadmap to Firestore...");
+    const roadmapCollection = userRef.collection("roadmap");
+    const startOrder = completedModules.length + 1;
+
+    for (let i = 0; i < roadmapModules.length; i++) {
+      await roadmapCollection.add({
+        ...roadmapModules[i],
+        skillsCovered: roadmapModules[i].skillsCovered || [],
+        order: startOrder + i,
+        completed: false,
+        status: "pending",
+        createdAt: new Date(),
+        FirstTimeCreatedAt: new Date(),
+        regenerated: true,
+        regenerationReason: `Quiz failure after ${MAX_QUIZ_ATTEMPTS} attempts`,
+      });
+    }
+
+    // Store comprehensive regeneration metadata including weakness analysis
+    try {
+      await userRef.set({
+        roadmapRegenerated: true,
+        lastRegenerationDate: new Date(),
+        regenerationCount: (user.regenerationCount || 0) + 1,
+        roadmapAgentic: {
+          planQueries: plan.queries,
+          planFocusAreas: plan.focusAreas,
+          critiqueScore: critique?.score || null,
+          critiquePass: critique?.pass || false,
+          learningProfile: {
+            summary: learningProfile.summary,
+            strugglingAreas: learningProfile.strugglingAreas,
+            masteredTopics: learningProfile.masteredTopics,
+            avgScore: learningProfile.avgScore,
+            weakConcepts: learningProfile.weakConcepts,
+            wrongQuestionsCount: learningProfile.wrongQuestions.length,
+            totalQuizAttempts: learningProfile.totalAttempts,
+          },
+          regeneratedAfterFailure: true,
+          remainingDays,
+          originalDays: originalTrainingDuration,
+          daysSpent,
+        },
+        // Store weakness summary for chatbot welcome
+        weaknessAnalysis: {
+          concepts: weakConcepts,
+          wrongQuestions: wrongQuestions.slice(0, 5), // Store top 5 for chatbot
+          strugglingAreas: strugglingAreas,
+          avgScore: learningProfile.avgScore,
+          generatedAt: new Date(),
+        },
+      }, { merge: true });
+    } catch (err) {
+      console.warn("⚠️ Failed to store regeneration metadata:", err.message);
+    }
+
+    console.log("🎉 Roadmap regeneration complete!");
+    console.log(`=== ROADMAP REGENERATION END ===\n`);
+
+    return res.json({
+      success: true,
+      message: `Roadmap regenerated successfully with ${roadmapModules.length} new modules based on your performance.`,
+      modules: roadmapModules,
+      daysSpent,
+      remainingDays,
+      completedModules: completedModules.length,
+      newModules: roadmapModules.length,
+    });
+
+  } catch (error) {
+    console.error("🔥 Roadmap regeneration failed:");
+    console.error(error);
+    return res.status(500).json({
+      error: error.message || "Roadmap regeneration failed",
+    });
+  }
+};
+

@@ -103,6 +103,51 @@ STRICT RULES:
     /* ---------------------------------
        5️⃣ PROMPT BUILD
     ---------------------------------- */
+    const isRegeneration = safeLearningProfile?.regenerationContext;
+    const weakConcepts = safeLearningProfile?.weakConcepts || [];
+    const weaknessRelatedSkills = safeLearningProfile?.weaknessRelatedSkills || [];
+    const otherCompanySkills = safeLearningProfile?.otherCompanySkills || [];
+    const balancedApproach = safeLearningProfile?.balancedApproach || false;
+    
+    const regenerationGuidance = isRegeneration ? `
+🔄 <b>REGENERATION MODE - BALANCED APPROACH:</b>
+This roadmap is being regenerated after quiz failures. You MUST create a BALANCED mix of modules:
+
+<b>⚖️ BALANCE REQUIREMENT (50/50 Split):</b>
+1. <b>~50% Weak Areas Focus:</b> Create modules addressing concepts from quiz failures:
+   ${weakConcepts.length ? weakConcepts.slice(0, 8).join(", ") : "None identified"}
+   Related company skills: ${weaknessRelatedSkills.length ? weaknessRelatedSkills.slice(0, 5).join(", ") : "Use general content"}
+
+2. <b>~50% Company Requirements:</b> Create modules covering essential skills from company docs that user still needs:
+   ${otherCompanySkills.length ? otherCompanySkills.slice(0, 10).join(", ") : "Cover general company requirements"}
+
+<b>📋 MODULE DISTRIBUTION STRATEGY:</b>
+- If time allows 6 modules: 3 for weak areas, 3 for company requirements
+- If time allows 4 modules: 2 for weak areas, 2 for company requirements
+- Alternate between weakness and requirement modules for balanced progression
+
+<b>🎯 MODULE DESIGN RULES:</b>
+1. <b>Weakness Modules:</b> 
+   - Title format: "Mastering [Weak Concept] in [Company Context]"
+   - Start with fundamentals of weak concept
+   - Use company-specific examples and implementations
+   - Include practical exercises related to company work
+
+2. <b>Company Requirement Modules:</b>
+   - Title format: "[Company Skill/Tool] Essentials" or "Advanced [Company Practice]"
+   - Cover skills from company documentation not related to weaknesses
+   - Focus on company standards, procedures, and best practices
+   - Ensure comprehensive coverage of company tech stack
+
+<b>❌ AVOID:</b>
+- Making ALL modules about weaknesses (this creates gaps in company knowledge)
+- Making ALL modules about company requirements (this doesn't address learning gaps)
+- Overlapping content between weakness and requirement modules
+
+<b>Context from Failed Attempts:</b>
+${safeLearningProfile.regenerationContext || ""}
+` : '';
+    
     const prompt = `
 User Profile:
 - <b>Target Domain:</b> ${safeTrainingOn}
@@ -122,6 +167,7 @@ Learning Profile:
 <b>Struggling Areas:</b> ${(safeLearningProfile?.strugglingAreas || []).join(", ")}
 <b>Mastered Topics:</b> ${(safeLearningProfile?.masteredTopics || []).join(", ")}
 <b>Average Quiz Score:</b> ${Number.isFinite(safeLearningProfile?.avgScore) ? safeLearningProfile.avgScore : "N/A"}
+${weakConcepts.length ? `<b>Weak Concepts (Quiz Failures):</b> ${weakConcepts.join(", ")}` : ''}
 
 Structured CV (redacted):
 ${structuredCv ? JSON.stringify(structuredCv) : "Not available"}
@@ -129,17 +175,21 @@ ${structuredCv ? JSON.stringify(structuredCv) : "Not available"}
 Plan Focus Areas:
 ${safeFocusAreas.length ? safeFocusAreas.join(", ") : "No focus areas provided."}
 
+${regenerationGuidance}
+
 CRITICAL CONSTRAINTS:
 1. <b>Gap Analysis:</b> Analyze the User CV against the Target Domain. DO NOT include foundational concepts the user already demonstrates mastery of in their CV.
-1.1 <b>Skill Gaps:</b> Prioritize modules that address the identified skill gaps and struggling areas from the learning profile.
+1.1 <b>Skill Gaps:</b> ${isRegeneration && balancedApproach ? 'BALANCED PRIORITY: Address 50% weak concepts from quiz failures + 50% remaining company requirements.' : isRegeneration ? 'Address weak concepts from quiz failures using company-specific knowledge.' : 'Prioritize modules that address the identified skill gaps and struggling areas from the learning profile.'}
 1.2 <b>Mastery Avoidance:</b> De-emphasize topics already mastered in the learning profile.
+${isRegeneration && balancedApproach ? '1.3 <b>Balance Requirement:</b> Create equal number of modules for weaknesses and company requirements. If 6 modules, split 3-3. If 5 modules, split 3-2 or 2-3.' : isRegeneration ? '1.3 <b>Company Integration:</b> Every module MUST reference and use concepts from the Company Context section above.' : ''}
 2. <b>Scoping:</b> The sum of "estimatedDays" must logically fit within the total duration of ${safeDuration}.
-3. <b>Progression:</b> Modules must follow a Bloom's Taxonomy progression (from understanding to application/synthesis).
-4. <b>Specificity:</b> "description" must include 2-3 specific sub-topics or tools to be mastered.
-5. <b>Coverage:</b> Ensure at least one module explicitly covers each Plan Focus Area.
+3. <b>Progression:</b> ${isRegeneration && balancedApproach ? 'Alternate between weakness remediation and company requirement modules for balanced skill development.' : isRegeneration ? 'Start with weak concepts fundamentals, then progress to company-specific applications.' : 'Modules must follow a Bloom\'s Taxonomy progression (from understanding to application/synthesis).'}
+4. <b>Specificity:</b> "description" must include 2-3 specific sub-topics or tools to be mastered ${isRegeneration ? '(preferably from company documentation)' : ''}.
+5. <b>Coverage:</b> ${isRegeneration && balancedApproach ? 'Ensure coverage of ALL weak concepts AND critical company requirements.' : 'Ensure at least one module explicitly covers each Plan Focus Area'} ${isRegeneration && !balancedApproach ? 'and each weak concept' : ''}.
 
 Guidance:
 ${expertiseInstruction}
+${isRegeneration && balancedApproach ? '\n⚖️ REMEMBER: Create a 50/50 BALANCED roadmap - half for remediating weaknesses, half for covering company requirements. Don\'t make everything about quiz failures.' : isRegeneration ? '\n🎯 REMEMBER: This is a remedial roadmap. Focus intensely on teaching the weak concepts using the company\'s actual tools, frameworks, and examples from the documentation.' : ''}
 
 User CV:
 ${cvText}
@@ -152,9 +202,15 @@ JSON FORMAT:
   {
     "moduleTitle": "string",
     "description": "string",
-    "estimatedDays": number
+    "estimatedDays": number,
+    "skillsCovered": ["skill1", "skill2", "skill3"]
   }
 ]
+
+IMPORTANT: 
+- Include 3-5 specific skills in the "skillsCovered" array for each module. These should be measurable skills or concepts the user will master.
+${isRegeneration ? '- Module titles should reflect both the weak concept AND company context (e.g., "Mastering Async/Await in [Company Stack]")' : ''}
+${isRegeneration ? '- Prioritize skills from the "Company-specific skills to teach" list above' : ''}
 `;
 
     console.log("📨 Prompt built");
@@ -196,6 +252,7 @@ JSON FORMAT:
       moduleTitle: module.moduleTitle ?? `Module ${idx + 1}`,
       description: module.description ?? "No description provided",
       estimatedDays: module.estimatedDays ?? 1,
+      skillsCovered: Array.isArray(module.skillsCovered) ? module.skillsCovered : []
     }));
 
     console.log("🧩 Roadmap modules generated:", roadmap.length);

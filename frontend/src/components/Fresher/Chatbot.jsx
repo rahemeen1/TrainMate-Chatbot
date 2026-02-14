@@ -321,6 +321,24 @@ useEffect(() => {
             background-color: transparent;
             padding: 0;
           }
+          
+          /* Scrollbar Styling */
+          ::-webkit-scrollbar {
+            width: 12px;
+          }
+          
+          ::-webkit-scrollbar-track {
+            background: rgba(2, 27, 54, 0.5);
+          }
+          
+          ::-webkit-scrollbar-thumb {
+            background: #00FFFF;
+            border-radius: 6px;
+          }
+          
+          ::-webkit-scrollbar-thumb:hover {
+            background: #00e0e0;
+          }
         `}
       </style>
 
