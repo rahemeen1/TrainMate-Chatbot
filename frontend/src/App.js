@@ -9,7 +9,7 @@ import FresherSettings from "./components/Fresher/FresherSettings";
 import UserProfile from "./components/CompanySpecific/UserProfile";
 import Manageuser from "./components/CompanySpecific/Manageuser";
 import CompanySettings from "./components/CompanySpecific/CompanySettings";
-
+import CompanyDetails from "./components/CompanySpecific/CompanyDetails";
 import FresherTraining from "./components/Fresher/FresherTraining";
 import FresherProgress from "./components/Fresher/FresherProgress";
 import Roadmap from "./components/Fresher/Roadmap";
@@ -20,7 +20,7 @@ import ProgressDetails from "./components/CompanySpecific/ProgressDetails";
 import ViewModuleDetails from "./components/Fresher/ViewModuleDetails";
 import ModuleQuiz from "./components/Fresher/ModuleQuiz";
 import ModuleQuizResults from "./components/Fresher/ModuleQuizResults";
-//import QuizPage from "./components/Fresher/QuizPage";
+ 
 
 export default function App() {
   return (
@@ -47,7 +47,7 @@ export default function App() {
         <Route path="/module-details/:companyId/:deptId/:userId/:moduleId/:companyName" element={<ViewModuleDetails />} />
         <Route path="/quiz/:companyId/:deptId/:userId/:moduleId" element={<ModuleQuiz />} />
         <Route path="/quiz-results/:companyId/:deptId/:userId/:moduleId" element={<ModuleQuizResults />} />
-        {/* <Route path="/quiz/:companyId/:deptId/:userId/:moduleId" element={<QuizPage />} /> */}
+        <Route path="/CompanySpecific/CompanyDetails" element={<CompanyDetails />} />
       </Routes>
     </BrowserRouter>
   );
