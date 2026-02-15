@@ -25,7 +25,6 @@ export default function OnboardingPage({
   const [cvFile, setCvFile] = useState(null);
   const [cvUploaded, setCvUploaded] = useState(false);
   const [expertise, setExpertise] = useState(null);
-  const [level, setLevel] = useState("");
   const [saving, setSaving] = useState(false);
   const [savingError, setSavingError] = useState("");
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -127,7 +126,6 @@ export default function OnboardingPage({
           onboarding: {
             cvUploaded: !!cvUrl,
             expertise,
-            level,
             onboardingCompleted: true,
             completedAt: new Date(),
           
@@ -189,12 +187,12 @@ export default function OnboardingPage({
           {/* PROGRESS */}
           <div className="mb-6">
             <div className="flex justify-between text-sm text-[#AFCBE3] mb-2">
-              <span>Question {step} of 3</span>
+              <span>Question {step} of 2</span>
             </div>
             <div className="w-full h-3 rounded-full bg-[#021B36] overflow-hidden">
               <div
                 className="h-full bg-gradient-to-r from-[#00FFFF] to-[#007BFF]"
-                style={{ width: `${(step / 3) * 100}%` }}
+                style={{ width: `${(step / 2) * 100}%` }}
               />
             </div>
           </div>
@@ -270,30 +268,6 @@ export default function OnboardingPage({
             </>
           )}
 
-          {/* STEP 3 */}
-          {step === 3 && (
-            <>
-              <h3 className="text-[#00FFFF] text-lg font-semibold mb-4">
-                Select your training level
-              </h3>
-              <div className="flex gap-4">
-                {["Basic", "Medium", "Hard"].map((lvl) => (
-                  <button
-                    key={lvl}
-                    onClick={() => setLevel(lvl)}
-                    className={`px-6 py-3 rounded-lg ${
-                      level === lvl
-                        ? "bg-[#00FFFF] text-[#031C3A]"
-                        : "bg-[#021B36] border border-[#00FFFF30]"
-                    }`}
-                  >
-                    {lvl}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-
           {/* ERROR MESSAGE */}
           {savingError && (
             <div className="mb-6 p-4 bg-red-500/20 border border-red-500 rounded-lg">
@@ -319,7 +293,7 @@ export default function OnboardingPage({
               </button>
             )}
 
-            {step < 3 && (
+            {step < 2 && (
               <button
                 onClick={() => setStep(step + 1)}
                 disabled={
@@ -335,12 +309,12 @@ export default function OnboardingPage({
               </button>
             )}
 
-            {step === 3 && (
+            {step === 2 && (
               <button
                 onClick={saveAndContinue}
-                disabled={!level || saving}
+                disabled={expertise === null || saving}
                 className={`ml-auto px-6 py-2 rounded-lg font-semibold flex items-center gap-2 ${
-                  !level || saving
+                  expertise === null || saving
                     ? "bg-gray-500 cursor-not-allowed"
                     : saveSuccess
                     ? "bg-green-500 text-white"

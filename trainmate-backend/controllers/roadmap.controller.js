@@ -5,6 +5,9 @@ import { retrieveDeptDocsFromPinecone } from "../services/pineconeService.js";
 import { generateRoadmap } from "../services/llmService.js";
 import { extractSkillsFromText } from "../services/skillExtractor.service.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { sendRoadmapEmail } from "../services/emailService.js";
+import { generateRoadmapPDF } from "../services/pdfService.js";
+import { createDailyModuleReminder, createQuizUnlockReminder } from "../services/calendarService.js";
 
 const MAX_QUIZ_ATTEMPTS = 3; // Must match QuizController.js
 
@@ -729,6 +732,93 @@ console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboa
       console.warn("⚠️ Failed to set initial progress on user doc:", err.message || err);
     }
     console.log("🎉 Roadmap saved successfully");
+
+    // 📧 Send email with PDF attachment (async, non-blocking)
+    try {
+      console.log("📧 Generating PDF and sending email...");
+      
+      // Get company details
+      const companyRef = db.collection("companies").doc(companyId);
+      const companySnap = await companyRef.get();
+      const companyName = companySnap.exists ? companySnap.data().name || "Your Company" : "Your Company";
+      
+      // Generate PDF
+      const pdfBuffer = await generateRoadmapPDF({
+        userName: user.name || "Trainee",
+        companyName: companyName,
+        trainingTopic: trainingOn,
+        modules: roadmapModules,
+      });
+      
+      // Send email
+      if (user.email) {
+        await sendRoadmapEmail({
+          userEmail: user.email,
+          userName: user.name || "Trainee",
+          companyName: companyName,
+          trainingTopic: trainingOn,
+          moduleCount: roadmapModules.length,
+          pdfBuffer: pdfBuffer,
+        });
+        console.log("✅ Roadmap email sent successfully to:", user.email);
+      } else {
+        console.warn("⚠️ User email not found, skipping email");
+      }
+    } catch (emailErr) {
+      console.warn("⚠️ Email sending failed (non-critical):", emailErr.message);
+      // Don't fail the request if email fails
+    }
+
+    // 📅 Schedule Google Calendar notifications for ACTIVE module only
+    try {
+      const timeZone = process.env.DEFAULT_TIMEZONE || "Asia/Karachi";
+      const reminderTime = process.env.DAILY_REMINDER_TIME || "15:00";
+      const calendarId = process.env.GOOGLE_CALENDAR_ID || "primary";
+      const testRecipient = process.env.TEST_NOTIFICATION_EMAIL || null;
+      const attendeeEmail = testRecipient || user.email;
+
+      if (!attendeeEmail) {
+        console.warn("⚠️ User email not found, skipping calendar notifications");
+      } else {
+        const moduleStartDate = new Date();
+        const activeModule = roadmapModules[0];
+
+        if (!activeModule) {
+          console.warn("⚠️ No modules available, skipping calendar scheduling");
+        } else {
+          const estimatedDays = activeModule.estimatedDays || 1;
+          const unlockDays = Math.max(1, Math.ceil(estimatedDays / 2));
+          const unlockDate = new Date(
+            moduleStartDate.getTime() + unlockDays * 24 * 60 * 60 * 1000
+          );
+
+          await createDailyModuleReminder({
+            calendarId,
+            moduleTitle: activeModule.moduleTitle,
+            companyName: companyName,
+            startDate: moduleStartDate,
+            occurrenceCount: estimatedDays,
+            reminderTime,
+            timeZone,
+            attendeeEmail,
+          });
+
+          await createQuizUnlockReminder({
+            calendarId,
+            moduleTitle: activeModule.moduleTitle,
+            companyName: companyName,
+            unlockDate,
+            reminderTime,
+            timeZone,
+            attendeeEmail,
+          });
+
+          console.log("✅ Calendar notifications scheduled for active module:", activeModule.moduleTitle);
+        }
+      }
+    } catch (calErr) {
+      console.warn("⚠️ Calendar scheduling failed (non-critical):", calErr.message);
+    }
 
     return res.json({
       success: true,

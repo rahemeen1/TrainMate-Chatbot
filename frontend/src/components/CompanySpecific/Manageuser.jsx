@@ -138,24 +138,18 @@ export default function ManageUser() {
     try {
       setDeletingUserId(user.id);
       setDeleteSuccessMsg("");
-      await fetch(
+      
+      const deleteRes = await fetch(
         `http://localhost:5000/api/company/users/${encodeURIComponent(
           user.email
         )}`,
         { method: "DELETE" }
       );
 
-      await deleteDoc(
-        doc(
-          db,
-          "freshers",
-          companyId,
-          "departments",
-          user.deptName,
-          "users",
-          user.id
-        )
-      );
+      if (!deleteRes.ok) {
+        const errText = await deleteRes.text();
+        throw new Error(errText || "Delete failed");
+      }
 
       fetchUsers();
       setDeleteSuccessMsg(`✅ ${user.name} deleted successfully`);

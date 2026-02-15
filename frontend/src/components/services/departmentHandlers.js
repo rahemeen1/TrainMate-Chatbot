@@ -175,7 +175,7 @@ export const addFresherUser = async ({
   deptName,
   newUser,
 }) => {
-  const { name, phone, trainingOn = true } = newUser;
+  const { name, phone, trainingOn = true, trainingLevel = "basic" } = newUser;
 
   if (!name || !phone) throw new Error("Name & phone required");
   if (!/^[0-9]{11}$/.test(phone))
@@ -193,10 +193,14 @@ export const addFresherUser = async ({
   const randomNum = Math.floor(1000 + Math.random() * 9000);
   const userId = `${firstName}-${deptShort}-${companyShort}-${randomNum}`;
 
-  // 🔹 Email
   const companyDomain =
     companyName.toLowerCase().replace(/\s+/g, "") + ".com";
-  const email = `${userId}@${companyDomain}`;
+  const emailLocal = userId
+    .toLowerCase()
+    .replace(/[^a-z0-9.]/g, ".")
+    .replace(/\.+/g, ".")
+    .replace(/^\.|\.$/g, "") || `user.${randomNum}`;
+  const email = `${emailLocal}@${companyDomain}`;
 
   const password = generatePassword();
 
@@ -221,6 +225,7 @@ export const addFresherUser = async ({
       progress: 0,               // ✅ backend controls
       trainingStatus: "ongoing", // ✅ synced with progress
       trainingOn,
+      trainingLevel,
 
       onboarding: {
         onboardingCompleted: false,
@@ -237,6 +242,7 @@ export const addFresherUser = async ({
     password,
     companyName,
     deptName,
+    trainingLevel,
   };
 };
 

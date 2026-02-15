@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { doc, updateDoc, getDoc, collection, getDocs } from "firebase/firestore";
+import { doc, updateDoc, getDoc } from "firebase/firestore";
 import { db } from "../../firebase";
 
 export default function ModuleQuizResults() {
@@ -9,9 +9,6 @@ export default function ModuleQuizResults() {
   const navigate = useNavigate();
   const results = location.state?.results;
   const companyName = location.state?.companyName;
-  const [requestSent, setRequestSent] = useState(false);
-  const [regenerating, setRegenerating] = useState(false);
-  const [regenerated, setRegenerated] = useState(false);
   const [moduleMarkedComplete, setModuleMarkedComplete] = useState(false);
 
   // ===============================
@@ -61,72 +58,6 @@ export default function ModuleQuizResults() {
     navigate(-1);
   };
 
-  const regenerateRoadmap = async () => {
-    setRegenerating(true);
-    try {
-      // Get first module to calculate days spent
-      const roadmapRef = collection(
-        db,
-        "freshers",
-        companyId,
-        "departments",
-        deptId,
-        "users",
-        userId,
-        "roadmap"
-      );
-      const roadmapSnap = await getDocs(roadmapRef);
-      
-      const response = await fetch("http://localhost:5000/api/roadmap/regenerate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          companyId,
-          deptId,
-          userId,
-          moduleId,
-        }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || "Roadmap regeneration failed");
-      }
-
-      setRegenerated(true);
-    } catch (err) {
-      console.error("Roadmap regeneration error:", err);
-    } finally {
-      setRegenerating(false);
-    }
-  };
-
-  useEffect(() => {
-    if (results?.requiresRoadmapRegeneration && !regenerated && !regenerating) {
-      regenerateRoadmap();
-    }
-  }, [results]);
-
-  const requestUnlock = async () => {
-    try {
-      const moduleRef = doc(
-        db,
-        "freshers",
-        companyId,
-        "departments",
-        deptId,
-        "users",
-        userId,
-        "roadmap",
-        moduleId
-      );
-      await updateDoc(moduleRef, { quizUnlockRequested: true });
-      setRequestSent(true);
-    } catch (err) {
-      setRequestSent(false);
-    }
-  };
-
   if (!results) {
     return (
       <div className="min-h-screen bg-[#031C3A] text-white p-8">
@@ -168,54 +99,119 @@ export default function ModuleQuizResults() {
           </p>
         )}
         
-        {/* Roadmap Regeneration Status */}
-        {results.requiresRoadmapRegeneration && (
-          <div className="mt-4 p-4 bg-[#00FFFF]/10 border border-[#00FFFF] rounded-lg">
+        {/* Success Message */}
+        {results.passed && (
+          <div className="mt-4 p-4 bg-green-500/20 border border-green-500 rounded-lg">
             <div className="flex items-center gap-3">
-              {regenerating ? (
-                <>
-                  <div className="w-5 h-5 border-2 border-[#00FFFF] border-t-transparent rounded-full animate-spin"></div>
-                  <span className="text-[#00FFFF] font-semibold">Regenerating your learning roadmap...</span>
-                </>
-              ) : regenerated ? (
-                <>
-                  <span className="text-2xl">✅</span>
-                  <span className="text-green-300 font-semibold">Roadmap regenerated successfully!</span>
-                </>
-              ) : null}
+              <span className="text-3xl">🎉</span>
+              <div>
+                <h3 className="text-green-300 font-bold mb-1">Congratulations!</h3>
+                <p className="text-[#AFCBE3] text-sm">
+                  You've successfully completed this module. The next module in your roadmap is now unlocked!
+                </p>
+              </div>
             </div>
-            {regenerated && (
-              <p className="text-[#AFCBE3] text-sm mt-2">Your learning path has been optimized based on remaining time and your performance.</p>
-            )}
           </div>
         )}
         
-        {/* Unlock Everything Message (After 3rd Attempt) */}
-        {results.unlockEverything && (
-          <div className="mt-4 p-4 bg-yellow-500/20 border border-yellow-500 rounded-lg">
-            <h3 className="text-yellow-300 font-bold mb-2">🔓 All Resources Unlocked</h3>
-            <ul className="text-[#AFCBE3] text-sm space-y-1 ml-4 list-disc">
-              <li>Quiz is now unlocked for further practice</li>
-              <li>Module content remains accessible</li>
-              <li>Chatbot is available for assistance</li>
-            </ul>
+        {/* AI Recommendations */}
+        {!results.passed && results.recommendations && results.recommendations.length > 0 && (
+          <div className="mt-4 p-4 bg-purple-500/20 border border-purple-500 rounded-lg">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">🤖</span>
+              <div className="flex-1">
+                <h3 className="text-purple-300 font-bold mb-2">AI Recommendations</h3>
+                <ul className="text-[#AFCBE3] text-sm space-y-1">
+                  {results.recommendations.map((rec, idx) => (
+                    <li key={idx} className="flex items-start gap-2">
+                      <span className="text-purple-400">•</span>
+                      <span>{rec}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
           </div>
         )}
         
-        {/* Contact Admin Message */}
-        {results.contactAdmin && (
-          <div className="mt-4 p-4 bg-red-500/20 border border-red-500 rounded-lg">
-            <h3 className="text-red-300 font-bold mb-2">⚠️ Additional Support Needed</h3>
-            <p className="text-[#AFCBE3] text-sm">Please contact your company admin for personalized guidance and support.</p>
-          </div>
-        )}
-        
-        {/* Retry Information */}
-        {!results.passed && results.allowRetry && (
+        {/* Retry Information - Dynamic based on AI decision */}
+        {!results.passed && results.allowRetry && results.retriesGranted > 0 && (
           <div className="mt-4 p-4 bg-blue-500/20 border border-blue-500 rounded-lg">
-            <h3 className="text-blue-300 font-bold mb-2">🔄 Retry Available</h3>
-            <p className="text-[#AFCBE3] text-sm">Attempt {results.attemptNumber} of {results.maxAttempts}</p>
-            <p className="text-[#AFCBE3] text-sm mt-1">Review the new roadmap and try again when you feel ready!</p>
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">🔄</span>
+              <div>
+                <h3 className="text-blue-300 font-bold mb-2">Retry Granted by AI</h3>
+                <p className="text-[#AFCBE3] text-sm mb-2">
+                  <span className="text-[#00FFFF] font-semibold">{results.retriesGranted}</span> {results.retriesGranted === 1 ? 'retry' : 'retries'} granted based on your performance analysis
+                </p>
+                <p className="text-[#AFCBE3] text-sm">
+                  Current attempt: {results.attemptNumber} | Max attempts: {results.maxAttempts}
+                </p>
+                <p className="text-[#AFCBE3] text-sm mt-2">
+                  Review the materials and recommendations above. Remember to complete within the module timeframe!
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* Roadmap Regeneration Notice */}
+        {!results.passed && results.requiresRoadmapRegeneration && (
+          <div className="mt-4 p-4 bg-orange-500/20 border border-orange-500 rounded-lg">
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">🔄</span>
+              <div>
+                <h3 className="text-orange-300 font-bold mb-2">Learning Path Adjustment</h3>
+                <p className="text-[#AFCBE3] text-sm">
+                  Based on your performance, the AI has recommended adjusting your learning roadmap to better address knowledge gaps.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* Module Locked After All Attempts */}
+        {!results.passed && results.lockModule && (
+          <div className="mt-4 p-4 bg-red-500/20 border border-red-500 rounded-lg">
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">🔒</span>
+              <div>
+                <h3 className="text-red-300 font-bold mb-2">Module Locked</h3>
+                <p className="text-[#AFCBE3] text-sm mb-2">
+                  After {results.attemptNumber} attempts, the AI has determined that this module needs to be locked.
+                </p>
+                {results.contactAdmin && (
+                  <div className="mt-3 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded">
+                    <p className="text-yellow-400 text-xs font-semibold">
+                      📞 Please contact your company admin for personalized support and next steps.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* Resources Unlocked */}
+        {!results.passed && results.unlockResources && results.unlockResources.length > 0 && (
+          <div className="mt-4 p-4 bg-green-500/20 border border-green-500 rounded-lg">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">🔓</span>
+              <div>
+                <h3 className="text-green-300 font-bold mb-2">Resources Unlocked</h3>
+                <p className="text-[#AFCBE3] text-sm mb-2">
+                  The AI has unlocked additional resources to support your learning:
+                </p>
+                <ul className="text-[#AFCBE3] text-sm space-y-1">
+                  {results.unlockResources.map((resource, idx) => (
+                    <li key={idx} className="flex items-center gap-2">
+                      <span className="text-green-400">✓</span>
+                      <span className="capitalize">{resource}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
           </div>
         )}
       </div>

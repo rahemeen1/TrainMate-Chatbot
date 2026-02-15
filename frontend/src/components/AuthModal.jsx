@@ -136,7 +136,9 @@ const resetForm = () => {
             <form onSubmit={handleSubmit} className="space-y-5 animate-fade-in-up w-full">
               <div>
                 <label className="block text-sm font-medium text-[#AFCBE3] mb-1.5">
-                  {userType === "admin" ? "Username / Company ID" : "Email ID"}
+                  {userType === "admin"
+                    ? "Username / Company ID"
+                    : "Email ID (letters, numbers, dots)"}
                 </label>
                 <div className="relative">
                   {userType === "admin" ? (
@@ -147,9 +149,31 @@ const resetForm = () => {
                   <input
                     type="text"
                     value={formData.emailOrUsername}
-                    onChange={(e) => setFormData({ ...formData, emailOrUsername: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        emailOrUsername:
+                          userType === "fresher"
+                            ? e.target.value.toLowerCase()
+                            : e.target.value,
+                      })
+                    }
                     className="w-full pl-11 pr-4 py-2.5 bg-[#021B36]/60 border border-[#00FFFF30] text-white rounded-lg focus:border-[#00FFFF]"
-                    placeholder={userType === "admin" ? "company_username" : "your_email_id"}
+                    placeholder={
+                      userType === "admin"
+                        ? "company_username"
+                        : "Enter your email (e.g. john.doe)"
+                    }
+                    pattern={
+                      userType === "fresher"
+                        ? "[a-z0-9.]+@[a-z0-9.-]+\\.[a-z]{2,}"
+                        : undefined
+                    }
+                    title={
+                      userType === "fresher"
+                        ? "Use only letters, numbers, and periods before @"
+                        : undefined
+                    }
                     required
                   />
                 </div>

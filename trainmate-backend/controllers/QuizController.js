@@ -5,6 +5,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { CohereClient } from "cohere-ai";
 import { updateMemoryAfterQuiz } from "../services/memoryService.js";
 import { evaluateCode } from "../services/codeEvaluator.service.js";
+import { createDailyModuleReminder, createQuizUnlockReminder } from "../services/calendarService.js";
 
 let primaryModel = null;
 let fallbackModel = null;
@@ -20,12 +21,12 @@ function initializeQuizModels() {
 
 const cohere = new CohereClient({ token: process.env.COHERE_API_KEY });
 
-// AI-decided quiz structure (no hardcoded counts)
+// Agentic quiz system - AI makes dynamic decisions
 const QUIZ_MAX_RETRIES = 2;
 const PLAN_MAX_QUERIES = 4;
 const MAX_CONTEXT_CHARS = 8000;
-const QUIZ_PASS_THRESHOLD = 70; // Agentic threshold: 70%
-const MAX_QUIZ_ATTEMPTS = 3; // Allow up to 3 attempts
+const QUIZ_PASS_THRESHOLD = 70; // Base threshold, AI can adjust
+const MAX_QUIZ_ATTEMPTS = 3; // Maximum possible attempts (AI decides actual count)
 
 async function embedText(text) {
 	const res = await cohere.embed({
@@ -230,6 +231,122 @@ Return JSON only:
 	}
 
 	return { pass: isQuizComplete(quiz, allowCoding), issues: ["Critique unavailable"], score: isQuizComplete(quiz, allowCoding) ? 80 : 40 };
+}
+
+/**
+ *  AGENTIC DECISION MAKER
+ * AI analyzes quiz performance and makes intelligent decisions about:
+ * - Number of retry attempts to grant
+ * - Whether roadmap regeneration is needed
+ * - What resources to unlock
+ * - Personalized recommendations
+ */
+async function makeAgenticDecision({ 
+	score, 
+	attemptNumber, 
+	mcqScore, 
+	oneLinerScore, 
+	codingScore,
+	weakAreas = [],
+	moduleTitle = "",
+	timeRemaining = null,
+	previousAttempts = []
+}) {
+	const { primaryModel } = initializeQuizModels();
+	
+	const attemptsHistory = previousAttempts.map((att, idx) => 
+		`Attempt ${idx + 1}: Score ${att.score}%`
+	).join(", ");
+	
+	const prompt = `
+You are an intelligent learning assessment agent. Analyze this learner's quiz performance and make strategic decisions.
+
+MODULE: "${moduleTitle}"
+CURRENT ATTEMPT: ${attemptNumber}
+CURRENT SCORE: ${score}%
+PASS THRESHOLD: ${QUIZ_PASS_THRESHOLD}%
+
+SCORE BREAKDOWN:
+- MCQ Score: ${mcqScore}%
+- One-liner Score: ${oneLinerScore}%
+${codingScore !== null ? `- Coding Score: ${codingScore}%` : ''}
+
+${attemptsHistory ? `PREVIOUS ATTEMPTS: ${attemptsHistory}` : 'This is the first attempt'}
+
+${weakAreas.length > 0 ? `WEAK AREAS: ${weakAreas.join(", ")}` : ''}
+
+${timeRemaining ? `TIME REMAINING IN MODULE: ${timeRemaining}` : 'No time constraint'}
+
+ANALYZE AND DECIDE:
+
+1. **Retry Strategy**: Based on the score gap (${QUIZ_PASS_THRESHOLD - score}%), learning trajectory, and improvement potential:
+   - If score is close to passing (60-69%): Recommend 1-2 more attempts
+   - If score shows learning gaps (40-59%): May need roadmap adjustment + retries
+   - If score is very low (<40%): Consider intensive intervention
+   
+2. **Roadmap Regeneration**: Determine if learner needs adjusted learning path:
+   - YES if there are significant knowledge gaps
+   - NO if just minor review needed
+   
+3. **Resource Allocation**: What should be unlocked for continued learning?
+
+4. **Personalized Message**: Provide encouraging, specific feedback
+
+Return JSON only:
+{
+  "allowRetry": true|false,
+  "retriesGranted": 1-2,
+  "requiresRoadmapRegeneration": true|false,
+  "unlockResources": ["quiz", "module", "chatbot"],
+  "lockModule": true|false,
+  "contactAdmin": true|false,
+  "message": "Personalized message",
+  "recommendations": ["specific action items"],
+  "reasoning": "Brief explanation of decision"
+}
+
+CONSTRAINTS:
+- Maximum ${MAX_QUIZ_ATTEMPTS} total attempts allowed
+- Be encouraging but realistic
+- Focus on learner's growth and improvement
+- Consider time constraints if provided
+`;
+
+	try {
+		const result = await primaryModel.generateContent(prompt);
+		const text = result?.response?.text()?.trim() || "";
+		const parsed = safeParseJson(text);
+		
+		if (parsed && typeof parsed.allowRetry === "boolean") {
+			console.log("🤖 Agentic Decision:", parsed.reasoning || "Decision made");
+			return parsed;
+		}
+	} catch (err) {
+		console.warn("⚠️ Agentic decision failed, using fallback logic:", err.message);
+	}
+	
+	// Fallback logic if AI fails
+	const scoreGap = QUIZ_PASS_THRESHOLD - score;
+	const allowRetry = attemptNumber < MAX_QUIZ_ATTEMPTS && scoreGap < 30;
+	const needsRegeneration = scoreGap > 20 && attemptNumber < MAX_QUIZ_ATTEMPTS;
+	
+	return {
+		allowRetry,
+		retriesGranted: allowRetry ? 1 : 0,
+		requiresRoadmapRegeneration: needsRegeneration,
+		unlockResources: allowRetry ? ["quiz"] : [],
+		lockModule: !allowRetry && attemptNumber >= MAX_QUIZ_ATTEMPTS,
+		contactAdmin: !allowRetry,
+		message: allowRetry 
+			? `You scored ${score}%. Review the materials and try again - you're getting closer!`
+			: `After ${attemptNumber} attempts, please contact your admin for additional support.`,
+		recommendations: [
+			"Review weak areas identified in the results",
+			"Use the chatbot for clarification",
+			"Take notes on key concepts"
+		],
+		reasoning: "Fallback decision logic applied"
+	};
 }
 
 function buildQuizPrompt({ title, context, critiqueIssues, allowCoding = false, moduleDescription = "" }) {
@@ -742,6 +859,9 @@ export const submitQuiz = async (req, res) => {
 			.doc(moduleId);
 
 		const quizRef = moduleRef.collection("quiz").doc(quizId);
+		const moduleSnap = await moduleRef.get();
+		const moduleData = moduleSnap.exists ? moduleSnap.data() : {};
+		const moduleTitle = moduleData.moduleTitle || "Current Module";
 
 		const quizSnap = await quizRef.get();
 		if (!quizSnap.exists) {
@@ -862,33 +982,78 @@ export const submitQuiz = async (req, res) => {
 		const passed = finalScore >= QUIZ_PASS_THRESHOLD;
 		console.log(`📊 Final Score: ${finalScore}% (Threshold: ${QUIZ_PASS_THRESHOLD}%) - ${passed ? "PASSED ✓" : "FAILED ✗"}`);
 		
-		// Determine action based on pass/fail and attempts
+		// 🤖 AGENTIC DECISION MAKING
 		let message = "";
 		let allowRetry = false;
 		let requiresRoadmapRegeneration = false;
-		let unlockEverything = false;
+		let unlockResources = [];
+		let lockModule = false;
 		let contactAdmin = false;
+		let recommendations = [];
+		let retriesGranted = 0;
 		
 		if (passed) {
 			message = `🎉 Congratulations! You passed the quiz with ${finalScore}%. Excellent work!`;
 		} else {
-			// REGENERATE ROADMAP AFTER EVERY FAILED ATTEMPT
-			requiresRoadmapRegeneration = true;
+			// Get previous attempts for AI analysis
+			const previousAttempts = [];
+			const prevAttemptsSnap = await attemptsRef.get();
+			prevAttemptsSnap.forEach(doc => {
+				const data = doc.data();
+				if (data.score !== undefined) {
+					previousAttempts.push({ score: data.score, passed: data.passed });
+				}
+			});
 			
-			if (attemptNumber < MAX_QUIZ_ATTEMPTS) {
-				// Still have attempts remaining
-				allowRetry = true;
-				const remainingAttempts = MAX_QUIZ_ATTEMPTS - attemptNumber;
-				message = `You scored ${finalScore}%, which is below the ${QUIZ_PASS_THRESHOLD}% threshold. Your learning roadmap has been regenerated based on your performance. Take your time to review the new materials and attempt the quiz again when you feel ready. (${remainingAttempts} attempt(s) remaining)`;
-				console.log(`🔄 Roadmap will regenerate after attempt ${attemptNumber}/${MAX_QUIZ_ATTEMPTS}`);
-			} else {
-				// Final attempt exhausted - unlock everything
-				allowRetry = false;
-				unlockEverything = true;
-				contactAdmin = true;
-				message = `You scored ${finalScore}% after ${MAX_QUIZ_ATTEMPTS} attempts. The system has regenerated your roadmap and unlocked all learning resources (quiz, module, chatbot) for your continued learning. Please contact your company admin for additional guidance and support.`;
-				console.log(`🔓 Unlocking everything after ${MAX_QUIZ_ATTEMPTS} failed attempts`);
+			// Get module info for context (already fetched above)
+			
+			// Calculate time remaining (if available)
+			let timeRemaining = null;
+			if (moduleData.FirstTimeCreatedAt && moduleData.estimatedDays) {
+				const startDate = moduleData.FirstTimeCreatedAt.toDate();
+				const totalDays = moduleData.estimatedDays;
+				const deadlineDate = new Date(startDate.getTime() + totalDays * 24 * 60 * 60 * 1000);
+				const now = new Date();
+				const msRemaining = deadlineDate - now;
+				if (msRemaining > 0) {
+					const daysRemaining = Math.floor(msRemaining / (1000 * 60 * 60 * 24));
+					const hoursRemaining = Math.floor((msRemaining % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+					timeRemaining = `${daysRemaining}d ${hoursRemaining}h`;
+				} else {
+					timeRemaining = "Expired";
+				}
 			}
+			
+			// Identify weak areas
+			const weakAreas = [];
+			if (mcqScore < 60) weakAreas.push("Multiple Choice Questions");
+			if (oneLinerScore < 60) weakAreas.push("Short Answer Questions");
+			if (hasCodingQuestions && codingScore < 60) weakAreas.push("Coding Challenges");
+			
+			console.log("🤖 Invoking Agentic Decision Maker...");
+			const agenticDecision = await makeAgenticDecision({
+				score: finalScore,
+				attemptNumber,
+				mcqScore,
+				oneLinerScore,
+				codingScore: hasCodingQuestions ? codingScore : null,
+				weakAreas,
+				moduleTitle,
+				timeRemaining,
+				previousAttempts
+			});
+			
+			// Apply agentic decisions
+			allowRetry = agenticDecision.allowRetry;
+			retriesGranted = agenticDecision.retriesGranted || 0;
+			requiresRoadmapRegeneration = agenticDecision.requiresRoadmapRegeneration;
+			unlockResources = agenticDecision.unlockResources || [];
+			lockModule = agenticDecision.lockModule;
+			contactAdmin = agenticDecision.contactAdmin;
+			message = agenticDecision.message;
+			recommendations = agenticDecision.recommendations || [];
+			
+			console.log(`✓ Agentic Decision Applied: allowRetry=${allowRetry}, retriesGranted=${retriesGranted}, regenerate=${requiresRoadmapRegeneration}, lock=${lockModule}`);
 		}
 
 		try {
@@ -925,15 +1090,18 @@ export const submitQuiz = async (req, res) => {
 				allowRetry,
 				attemptNumber,
 				maxAttempts: MAX_QUIZ_ATTEMPTS,
+				retriesGranted,
 				requiresRoadmapRegeneration,
-					unlockEverything,
-					contactAdmin,
-					mcq: mcqResults,
-					oneLiners: oneLinerResults,
-					coding: codingResults,
-					scoreBreakdown: {
-						mcqScore,
-						oneLinerScore,
+				unlockResources,
+				lockModule,
+				contactAdmin,
+				recommendations,
+				mcq: mcqResults,
+				oneLiners: oneLinerResults,
+				coding: codingResults,
+				scoreBreakdown: {
+					mcqScore,
+					oneLinerScore,
 						codingScore: hasCodingQuestions ? codingScore : null,
 					},
 					submittedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -960,34 +1128,108 @@ export const submitQuiz = async (req, res) => {
 						quizLocked: false,
 						quizPassed: true,
 						quizAttempts: attemptNumber,
+						retriesGranted: 0,
 						lastQuizSubmitted: admin.firestore.FieldValue.serverTimestamp(),
 					}, { merge: true });
 					console.log(`✓ Module updated: quiz passed`);
-				} else {
-					// Update module based on whether everything should be unlocked
-					if (unlockEverything) {
-						// After 3rd attempt: unlock everything (quiz, module, chatbot)
-						await moduleRef.set({
-							quizLocked: false, // ← Unlock quiz
-							moduleLocked: false, // ← Unlock module
-							chatbotLocked: false, // ← Unlock chatbot
-							quizPassed: false,
-							quizAttempts: attemptNumber,
-							requiresAdminContact: true, // ← Flag for admin contact
-							lastQuizSubmitted: admin.firestore.FieldValue.serverTimestamp(),
-						}, { merge: true });
-						console.log(`✓ Module updated: everything unlocked after ${attemptNumber} attempts`);
-					} else {
-						// Normal retry flow: keep locked, allow retry
-						await moduleRef.set({
-							quizLocked: false, // Always unlock for retry
-							quizPassed: false,
-							quizAttempts: attemptNumber,
-							lastQuizSubmitted: admin.firestore.FieldValue.serverTimestamp(),
-						}, { merge: true });
-						console.log(`✓ Module updated: quiz unlocked for retry after roadmap regeneration`);
+
+					// Schedule calendar reminders for next active module
+					try {
+						const timeZone = process.env.DEFAULT_TIMEZONE || "Asia/Karachi";
+						const reminderTime = process.env.DAILY_REMINDER_TIME || "15:00";
+						const calendarId = process.env.GOOGLE_CALENDAR_ID || "primary";
+						const testRecipient = process.env.TEST_NOTIFICATION_EMAIL || null;
+
+						const userRef = db
+							.collection("freshers")
+							.doc(companyId)
+							.collection("departments")
+							.doc(deptId)
+							.collection("users")
+							.doc(userId);
+
+						const userSnap = await userRef.get();
+						const userEmail = testRecipient || userSnap.data()?.email;
+
+						if (!userEmail) {
+							console.warn("⚠️ User email not found, skipping calendar notifications");
+						} else {
+							const roadmapSnap = await userRef.collection("roadmap").orderBy("order").get();
+							const modules = roadmapSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+							const currentOrder = moduleData?.order ?? modules.find(m => m.id === moduleId)?.order ?? 0;
+							const nextModule = modules.find(m => (m.order || 0) > currentOrder && !m.completed);
+
+							if (!nextModule) {
+								console.log("ℹ️ No next module found to schedule reminders");
+							} else {
+								const companySnap = await db.collection("companies").doc(companyId).get();
+								const companyName = companySnap.exists ? companySnap.data().name || "TrainMate" : "TrainMate";
+
+								const startDate = new Date();
+								const estimatedDays = nextModule.estimatedDays || 1;
+								const unlockDays = Math.max(1, Math.ceil(estimatedDays / 2));
+								const unlockDate = new Date(
+									startDate.getTime() + unlockDays * 24 * 60 * 60 * 1000
+								);
+
+								await createDailyModuleReminder({
+									calendarId,
+									moduleTitle: nextModule.moduleTitle,
+									companyName,
+									startDate,
+									occurrenceCount: estimatedDays,
+									reminderTime,
+									timeZone,
+									attendeeEmail: userEmail,
+								});
+
+								await createQuizUnlockReminder({
+									calendarId,
+									moduleTitle: nextModule.moduleTitle,
+									companyName,
+									unlockDate,
+									reminderTime,
+									timeZone,
+									attendeeEmail: userEmail,
+								});
+
+								console.log("✅ Calendar notifications scheduled for next active module:", nextModule.moduleTitle);
+							}
+						}
+					} catch (calErr) {
+						console.warn("⚠️ Calendar scheduling failed (non-critical):", calErr.message);
 					}
-			}
+				} else {
+					// 🤖 Apply agentic decisions to module state
+					const updateData = {
+						quizPassed: false,
+						quizAttempts: attemptNumber,
+						retriesGranted,
+						lastQuizSubmitted: admin.firestore.FieldValue.serverTimestamp(),
+					};
+					
+					// Lock/unlock based on agentic decision
+					if (lockModule) {
+						updateData.quizLocked = true;
+						updateData.moduleLocked = true;
+						updateData.requiresAdminContact = contactAdmin;
+						console.log(`🤖 Module locked by AI decision after ${attemptNumber} attempts`);
+					} else if (allowRetry) {
+						updateData.quizLocked = false; // Unlock for retry
+						console.log(`🤖 Quiz unlocked for retry by AI decision (${retriesGranted} retries granted)`);
+					}
+					
+					// Unlock specific resources if AI decided
+					if (unlockResources.includes("module")) {
+						updateData.moduleLocked = false;
+					}
+					if (unlockResources.includes("chatbot")) {
+						updateData.chatbotLocked = false;
+					}
+					
+					await moduleRef.set(updateData, { merge: true });
+					console.log(`✓ Module updated with agentic decisions`);
+				}
 		} catch (writeErr) {
 			console.error("Error storing quiz results:", writeErr);
 			console.error("Error code:", writeErr.code);
@@ -995,6 +1237,21 @@ export const submitQuiz = async (req, res) => {
 			throw new Error(`Firestore write failed: ${writeErr.message}`);
 		}
 
+		// 🧠 Update agent memory with quiz results (async, non-blocking)
+		updateMemoryAfterQuiz({
+			userId,
+			companyId,
+			deptId,
+			moduleId,
+			moduleTitle: moduleData.moduleTitle,
+			score: finalScore,
+			passed,
+			mcqResults,
+			oneLinerResults
+		}).catch(err => {
+			console.warn("⚠️ Memory update after quiz failed (non-critical):", err.message);
+		});
+		
 		console.log(`=== SUBMIT QUIZ COMPLETE ===\n`);
 		return res.json({
 			score: finalScore,
@@ -1003,9 +1260,12 @@ export const submitQuiz = async (req, res) => {
 			allowRetry,
 			attemptNumber,
 			maxAttempts: MAX_QUIZ_ATTEMPTS,
+			retriesGranted,
 			requiresRoadmapRegeneration,
-			unlockEverything, // NEW: Flag to unlock quiz, module, chatbot after 3rd attempt
-			contactAdmin, // NEW: Flag to show "contact admin" message
+			unlockResources,
+			lockModule,
+			contactAdmin,
+			recommendations,
 			mcq: mcqResults,
 			oneLiners: oneLinerResults,
 			coding: codingResults,

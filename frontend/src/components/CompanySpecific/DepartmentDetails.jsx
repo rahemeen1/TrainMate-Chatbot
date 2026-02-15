@@ -38,6 +38,7 @@ const [deletingDocId, setDeletingDocId] = useState(null);
     name: "",
     phone: "",
     trainingOn: "",
+    trainingLevel: "basic",
     cvFile: null,
   });
 
@@ -82,7 +83,13 @@ const [deletingDocId, setDeletingDocId] = useState(null);
 
       setLastAddedUser(result);
       setUserAddedSuccess(true);
-      setNewUser({ name: "", phone: "", trainingOn: "", cvFile: null });
+      setNewUser({
+        name: "",
+        phone: "",
+        trainingOn: "",
+        trainingLevel: "basic",
+        cvFile: null,
+      });
       setUsers(await fetchDepartmentUsers(companyId, deptId));
     } catch (err) {
       alert(err.message);
@@ -285,8 +292,10 @@ const closeAddUserModal = () => {
               <thead className="bg-[#021B36] text-[#00FFFF]">
   <tr>
     <th className="p-2 text-center">Name</th>
+    <th className="p-2 text-center">Email</th>
     <th className="p-2 text-center">Phone</th>
     <th className="p-2 text-center">Training On</th>
+    <th className="p-2 text-center">Level</th>
   </tr>
 </thead>
 
@@ -296,11 +305,19 @@ const closeAddUserModal = () => {
       <td className="p-2">{(u.name || "").toUpperCase()}</td>
 
       <td className="p-2 text-center">
+        {u.email || "—"}
+      </td>
+
+      <td className="p-2 text-center">
         {u.phone || "—"}
       </td>
 
       <td className="p-2 text-center capitalize">
         {u.trainingOn || "—"}
+      </td>
+
+      <td className="p-2 text-center capitalize">
+        {u.trainingLevel || "—"}
       </td>
     </tr>
   ))}
@@ -321,6 +338,7 @@ const closeAddUserModal = () => {
               placeholder="Name"
               className="w-full p-2 mb-2 bg-[#031C3A]"
               value={newUser.name}
+              required
               onChange={(e) =>
                 setNewUser({ ...newUser, name: e.target.value })
               }
@@ -329,6 +347,7 @@ const closeAddUserModal = () => {
               placeholder="Phone"
               className="w-full p-2 mb-2 bg-[#031C3A]"
               value={newUser.phone}
+              required
               onChange={(e) =>
                 setNewUser({ ...newUser, phone: e.target.value })
               }
@@ -337,10 +356,23 @@ const closeAddUserModal = () => {
               placeholder="Training On"
               className="w-full p-2 mb-2 bg-[#031C3A]"
               value={newUser.trainingOn}
+              required
               onChange={(e) =>
                 setNewUser({ ...newUser, trainingOn: e.target.value })
               }
             />
+            <select
+              className="w-full p-2 mb-2 bg-[#031C3A]"
+              value={newUser.trainingLevel}
+              required
+              onChange={(e) =>
+                setNewUser({ ...newUser, trainingLevel: e.target.value })
+              }
+            >
+              <option value="basic">Basic</option>
+              <option value="medium">Medium</option>
+              <option value="hard">Hard</option>
+            </select>
 {userAddedSuccess && (
   <div className="mb-4 p-3 bg-green-600/20 border border-green-500 rounded-lg">
     <p className="text-green-400 font-semibold">
@@ -362,10 +394,10 @@ const closeAddUserModal = () => {
 
               <button
   onClick={handleAddUser}
-  disabled={addingUser}
+  disabled={addingUser || !newUser.name.trim() || !newUser.phone.trim() || !newUser.trainingOn.trim()}
   className={`px-4 py-2 rounded font-semibold transition
     ${
-      addingUser
+      addingUser || !newUser.name.trim() || !newUser.phone.trim() || !newUser.trainingOn.trim()
         ? "bg-gray-500 text-white cursor-not-allowed"
         : "bg-[#00FFFF] text-[#031C3A]"
     }

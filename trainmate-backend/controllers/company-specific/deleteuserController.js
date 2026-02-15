@@ -32,17 +32,23 @@ export const deleteUser = async (req, res) => {
     const { email } = req.params;
     if (!email) return res.status(400).json({ error: "Email missing" });
 
-    // Delete from Auth
-    const user = await admin.auth().getUserByEmail(email);
-    await admin.auth().deleteUser(user.uid);
+    // Delete from Auth (if exists)
+    try {
+      const user = await admin.auth().getUserByEmail(email);
+      await admin.auth().deleteUser(user.uid);
+    } catch (authErr) {
+      if (authErr.code !== "auth/user-not-found") {
+        throw authErr; // Re-throw if not "user not found" error
+      }
+      console.log(`User not found in Firebase Auth: ${email}. Continuing with Firestore deletion.`);
+    }
 
     // Delete from Firestore
     const usersSnap = await db.collectionGroup("users").where("email", "==", email).get();
-    usersSnap.forEach(async (docSnap) => {
-      await docSnap.ref.delete();
-    });
+    const deletePromises = usersSnap.docs.map((docSnap) => docSnap.ref.delete());
+    await Promise.all(deletePromises);
 
-    res.status(200).json({ message: "User deleted from Auth + Firestore" });
+    res.status(200).json({ message: "User deleted successfully" });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });

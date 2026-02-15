@@ -292,7 +292,6 @@ export const initChat = async (req, res) => {
     // First time today reply (without company info)
     if (firstTimeToday) {
       const reply = `
- Welcome to TrainMate!
 
 Hi! Your active module is "${moduleData.moduleTitle}".
 In this module, you will learn: ${moduleData.description || "details coming soon"}.
@@ -563,12 +562,18 @@ Department: ${userData.deptName || deptId}
 ${companyInfo || "\nCOMPANY INFORMATION: Not available in system\n"}
 
 ACTIVE MODULE:
-${moduleData.moduleTitle}
+Title: ${moduleData.moduleTitle}
+Description: ${moduleData.description || "No description available"}
+Skills to Learn: ${moduleData.skillsCovered ? moduleData.skillsCovered.join(", ") : "Not specified"}
+Estimated Duration: ${moduleData.estimatedDays || "N/A"} days
+Days Completed: ${calculateTrainingProgress(moduleData).completedDays} days
+Days Remaining: ${calculateTrainingProgress(moduleData).remainingDays} days
 
 PROGRESS TRACKING:
 ${skillProgress.usingSkillTracking 
-  ? `Skill-Based Progress: ${skillProgress.masteredSkills}/${skillProgress.totalSkills} skills mastered (${skillProgress.progressPercentage}%)` 
-  : `Time-Based Progress: ${calculateTrainingProgress(moduleData).remainingDays} days remaining`}
+  ? `Skill-Based Progress: ${skillProgress.masteredSkills}/${skillProgress.totalSkills} skills mastered (${skillProgress.progressPercentage}%)
+Skills Remaining to Learn: ${moduleData.skillsCovered ? moduleData.skillsCovered.filter((_, i) => i >= skillProgress.masteredSkills).join(", ") : "N/A"}` 
+  : `Time-Based Progress: ${calculateTrainingProgress(moduleData).remainingDays} days remaining to complete this module`}
 
 AGENTIC GUIDELINES:
 - You have access to company training materials AND external sources (MDN, StackOverflow, Dev.to)
@@ -583,6 +588,10 @@ STRICT RULES:
 - When asked about the company, ALWAYS check the COMPANY INFORMATION section above first
 - If COMPANY INFORMATION shows "Not available", then say you don't have company details
 - If COMPANY INFORMATION has an "About" field, use that to answer questions about the company
+- When asked about "how many days left", "time remaining", or "deadline", use the "Days Remaining" value from ACTIVE MODULE section
+- When asked about "what will I learn", "module content", or "skills to cover", reference the "Skills to Learn" and "Description" from ACTIVE MODULE section
+- When asked to create a learning plan or divide remaining time, use the "Days Remaining" and "Skills to Learn" to create a structured day-by-day plan
+- For learning plan requests: Break down skills across available days, prioritize fundamentals first, include practice time
 - Give practical examples when helpful
 - Use <b>, <i>, <ul>, <li>, <p> HTML tags for formatting
 - Do NOT use markdown formatting (no **, ##, __, etc.)
