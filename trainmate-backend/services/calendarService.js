@@ -5,7 +5,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const DEFAULT_TIMEZONE = process.env.DEFAULT_TIMEZONE || "Asia/Karachi";
-const DEFAULT_REMINDER_TIME = process.env.DAILY_REMINDER_TIME || "15:00";
+const DEFAULT_REMINDER_TIME = process.env.DAILY_REMINDER_TIME || "22:30";
 const DEFAULT_CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID || "primary";
 
 function getOAuthClient() {
@@ -82,6 +82,16 @@ export async function createDailyModuleReminder({
   const startDateTime = buildDateTime(startDate, reminderTime);
   const endDateTime = new Date(startDateTime.getTime() + 60 * 60 * 1000);
 
+  console.log("📅 Creating daily reminder event", {
+    calendarId,
+    moduleTitle,
+    companyName,
+    start: startDateTime.toISOString(),
+    timeZone,
+    occurrenceCount,
+    attendeeEmail: attendeeEmail || "none",
+  });
+
   const event = {
     summary: `TrainMate: ${moduleTitle} Daily Learning`,
     description: `Daily learning reminder for ${moduleTitle} at ${companyName}.`,
@@ -100,6 +110,12 @@ export async function createDailyModuleReminder({
     requestBody: event,
     sendUpdates: attendeeEmail ? "all" : "none",
   });
+
+  console.log("✅ Daily reminder event created", {
+    moduleTitle,
+    occurrenceCount,
+    reminderTime: reminderTime || DEFAULT_REMINDER_TIME,
+  });
 }
 
 export async function createQuizUnlockReminder({
@@ -114,6 +130,15 @@ export async function createQuizUnlockReminder({
   const calendar = getCalendarClient();
   const startDateTime = buildDateTime(unlockDate, reminderTime);
   const endDateTime = new Date(startDateTime.getTime() + 30 * 60 * 1000);
+
+  console.log("📅 Creating quiz unlock event", {
+    calendarId,
+    moduleTitle,
+    companyName,
+    unlockDate: startDateTime.toISOString(),
+    timeZone,
+    attendeeEmail: attendeeEmail || "none",
+  });
 
   const event = {
     summary: `TrainMate: Quiz Unlocked - ${moduleTitle}`,
@@ -131,5 +156,58 @@ export async function createQuizUnlockReminder({
     calendarId,
     requestBody: event,
     sendUpdates: attendeeEmail ? "all" : "none",
+  });
+
+  console.log("✅ Quiz unlock event created", {
+    moduleTitle,
+    reminderTime: reminderTime || DEFAULT_REMINDER_TIME,
+  });
+}
+
+export async function createRoadmapGeneratedEvent({
+  calendarId = DEFAULT_CALENDAR_ID,
+  userName,
+  companyName,
+  trainingTopic,
+  generatedAt,
+  reminderTime,
+  timeZone = DEFAULT_TIMEZONE,
+  attendeeEmail,
+}) {
+  const calendar = getCalendarClient();
+  const startDateTime = buildDateTime(generatedAt || new Date(), reminderTime);
+  const endDateTime = new Date(startDateTime.getTime() + 30 * 60 * 1000);
+
+  console.log("📅 Creating roadmap generated event", {
+    calendarId,
+    userName,
+    companyName,
+    trainingTopic,
+    start: startDateTime.toISOString(),
+    timeZone,
+    attendeeEmail: attendeeEmail || "none",
+  });
+
+  const event = {
+    summary: `TrainMate: Roadmap Generated` ,
+    description: `Roadmap generated for ${userName || "trainee"} (${trainingTopic || "training"}) at ${companyName || "company"}.`,
+    start: { dateTime: startDateTime.toISOString(), timeZone },
+    end: { dateTime: endDateTime.toISOString(), timeZone },
+    reminders: { useDefault: false, overrides: getReminderOverrides() },
+  };
+
+  if (attendeeEmail) {
+    event.attendees = [{ email: attendeeEmail }];
+  }
+
+  await calendar.events.insert({
+    calendarId,
+    requestBody: event,
+    sendUpdates: attendeeEmail ? "all" : "none",
+  });
+
+  console.log("✅ Roadmap generated event created", {
+    trainingTopic,
+    reminderTime: reminderTime || DEFAULT_REMINDER_TIME,
   });
 }

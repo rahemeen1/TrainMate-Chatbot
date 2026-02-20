@@ -138,6 +138,7 @@ const isValidPhone = (value) => {
           companyId={companyId}
           deptId={deptId}
           companyName={companyName}
+          roadmapGenerated={true}
         />
       </div>
 
@@ -185,7 +186,7 @@ const isValidPhone = (value) => {
     <div className="flex min-h-screen bg-[#031C3A] text-white">
       {/* Side Menu */}
       <div className="w-64 bg-[#021B36]/90 p-4">
-        <FresherSideMenu userId={userId} companyId={companyId} deptId={deptId} companyName={companyName} />
+        <FresherSideMenu userId={userId} companyId={companyId} deptId={deptId} companyName={companyName} roadmapGenerated={true} />
       </div>
 
       {/* Main Content */}

@@ -7,7 +7,7 @@ import { extractSkillsFromText } from "../services/skillExtractor.service.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { sendRoadmapEmail } from "../services/emailService.js";
 import { generateRoadmapPDF } from "../services/pdfService.js";
-import { createDailyModuleReminder, createQuizUnlockReminder } from "../services/calendarService.js";
+import { createDailyModuleReminder, createQuizUnlockReminder, createRoadmapGeneratedEvent } from "../services/calendarService.js";
 
 const MAX_QUIZ_ATTEMPTS = 3; // Must match QuizController.js
 
@@ -78,6 +78,47 @@ function normalizeRoadmapModules(modules) {
     estimatedDays: Number.isFinite(module.estimatedDays) ? module.estimatedDays : 1,
     skillsCovered: Array.isArray(module.skillsCovered) ? module.skillsCovered : []
   }));
+}
+
+function parseTrainingDurationDays(value) {
+  if (value === null || value === undefined) return null;
+  // Training duration is always in months - convert to days (1 month = 30 days)
+  let months;
+  if (Number.isFinite(value)) {
+    months = value;
+  } else {
+    const match = String(value).match(/\d+/);
+    if (!match) return null;
+    months = parseInt(match[0], 10);
+  }
+  if (!Number.isFinite(months)) return null;
+  return Math.max(1, Math.round(months * 30));
+}
+
+function enforceTrainingDuration(modules, durationDays) {
+  if (!Array.isArray(modules) || modules.length === 0) return modules;
+  if (!Number.isFinite(durationDays) || durationDays <= 0) return modules;
+
+  const adjusted = modules.map((m) => ({ ...m }));
+  const totalDays = adjusted.reduce((sum, m) => sum + (m.estimatedDays || 1), 0);
+  if (totalDays === durationDays) return adjusted;
+
+  if (totalDays > durationDays) {
+    let remaining = totalDays - durationDays;
+    for (let i = adjusted.length - 1; i >= 0 && remaining > 0; i -= 1) {
+      const current = adjusted[i].estimatedDays || 1;
+      const reducible = Math.max(0, current - 1);
+      const reduceBy = Math.min(reducible, remaining);
+      adjusted[i].estimatedDays = current - reduceBy;
+      remaining -= reduceBy;
+    }
+    return adjusted;
+  }
+
+  const addDays = durationDays - totalDays;
+  adjusted[adjusted.length - 1].estimatedDays =
+    (adjusted[adjusted.length - 1].estimatedDays || 1) + addDays;
+  return adjusted;
 }
 
 async function generateRoadmapModel(prompt) {
@@ -468,7 +509,7 @@ async function generateRoadmapAgentic({
       companyContext,
       expertise,
       trainingOn,
-      level,
+      trainingLevel: level,
       trainingDuration,
       skillGap,
       learningProfile,
@@ -476,28 +517,31 @@ async function generateRoadmapAgentic({
     });
 
     const normalized = normalizeRoadmapModules(modules);
-    lastModules = normalized;
+    const durationDays = parseTrainingDurationDays(trainingDuration);
+    const adjusted = enforceTrainingDuration(normalized, durationDays);
+    lastModules = adjusted;
     if (!isRoadmapComplete(normalized)) {
       critique = { pass: false, issues: ["Incomplete roadmap structure"], score: 40 };
       continue;
     }
 
-    critique = await critiqueRoadmap({ trainingOn, modules: normalized, trainingDuration });
+    critique = await critiqueRoadmap({ trainingOn, modules: adjusted, trainingDuration: durationDays || trainingDuration });
     if (critique?.pass) {
-      return { modules: normalized, critique };
+      return { modules: adjusted, critique };
     }
 
     const refined = await refineRoadmap({
       trainingOn,
-      modules: normalized,
+      modules: adjusted,
       issues: critique?.issues,
-      trainingDuration,
+      trainingDuration: durationDays || trainingDuration,
     });
 
-    lastModules = refined;
-    const refinedCritique = await critiqueRoadmap({ trainingOn, modules: refined, trainingDuration });
+    const refinedAdjusted = enforceTrainingDuration(refined, durationDays);
+    lastModules = refinedAdjusted;
+    const refinedCritique = await critiqueRoadmap({ trainingOn, modules: refinedAdjusted, trainingDuration: durationDays || trainingDuration });
     if (refinedCritique?.pass) {
-      return { modules: refined, critique: refinedCritique };
+      return { modules: refinedAdjusted, critique: refinedCritique };
     }
   }
 
@@ -570,8 +614,10 @@ console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboa
 
     const trainingOn = trainingOnFromClient || user.trainingOn || "General";
     const expertise = expertiseScore ?? user.expertise ?? 1;
-    const level = expertiseLevel || user.level || "Beginner";
-    const finalTrainingDuration = trainingDurationFromOnboarding;
+    const level = user.trainingLevel || expertiseLevel || "Beginner";
+    const finalTrainingDuration = parseTrainingDurationDays(trainingDurationFromOnboarding)
+      || parseTrainingDurationDays(trainingTime)
+      || parseTrainingDurationDays(user.trainingDuration);
 
     console.log("🎯 FINAL VALUES USED:", {
       trainingOn,
@@ -733,14 +779,19 @@ console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboa
     }
     console.log("🎉 Roadmap saved successfully");
 
+    // Get company details once for email + calendar scheduling
+    let companyName = "Your Company";
+    try {
+      const companyRef = db.collection("companies").doc(companyId);
+      const companySnap = await companyRef.get();
+      companyName = companySnap.exists ? companySnap.data().name || "Your Company" : "Your Company";
+    } catch (err) {
+      console.warn("⚠️ Failed to fetch company name:", err.message || err);
+    }
+
     // 📧 Send email with PDF attachment (async, non-blocking)
     try {
       console.log("📧 Generating PDF and sending email...");
-      
-      // Get company details
-      const companyRef = db.collection("companies").doc(companyId);
-      const companySnap = await companyRef.get();
-      const companyName = companySnap.exists ? companySnap.data().name || "Your Company" : "Your Company";
       
       // Generate PDF
       const pdfBuffer = await generateRoadmapPDF({
@@ -761,6 +812,27 @@ console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboa
           pdfBuffer: pdfBuffer,
         });
         console.log("✅ Roadmap email sent successfully to:", user.email);
+
+        try {
+          const timeZone = process.env.DEFAULT_TIMEZONE || "Asia/Karachi";
+          const reminderTime = process.env.DAILY_REMINDER_TIME || "22:15";
+          const calendarId = process.env.GOOGLE_CALENDAR_ID || "primary";
+
+          await createRoadmapGeneratedEvent({
+            calendarId,
+            userName: user.name || "Trainee",
+            companyName,
+            trainingTopic: trainingOn,
+            generatedAt: new Date(),
+            reminderTime,
+            timeZone,
+            attendeeEmail: user.email,
+          });
+
+          console.log("✅ Roadmap generated event added to calendar for:", user.email);
+        } catch (calEmailErr) {
+          console.warn("⚠️ Calendar event for roadmap generation failed (non-critical):", calEmailErr.message);
+        }
       } else {
         console.warn("⚠️ User email not found, skipping email");
       }
@@ -772,7 +844,7 @@ console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboa
     // 📅 Schedule Google Calendar notifications for ACTIVE module only
     try {
       const timeZone = process.env.DEFAULT_TIMEZONE || "Asia/Karachi";
-      const reminderTime = process.env.DAILY_REMINDER_TIME || "15:00";
+      const reminderTime = process.env.DAILY_REMINDER_TIME || "22:15";
       const calendarId = process.env.GOOGLE_CALENDAR_ID || "primary";
       const testRecipient = process.env.TEST_NOTIFICATION_EMAIL || null;
       const attendeeEmail = testRecipient || user.email;
@@ -792,6 +864,13 @@ console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboa
             moduleStartDate.getTime() + unlockDays * 24 * 60 * 60 * 1000
           );
 
+          console.log("📅 Scheduling daily module reminders", {
+            moduleTitle: activeModule.moduleTitle,
+            estimatedDays,
+            reminderTime,
+            attendeeEmail,
+          });
+
           await createDailyModuleReminder({
             calendarId,
             moduleTitle: activeModule.moduleTitle,
@@ -800,6 +879,13 @@ console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboa
             occurrenceCount: estimatedDays,
             reminderTime,
             timeZone,
+            attendeeEmail,
+          });
+
+          console.log("📅 Scheduling quiz unlock reminder", {
+            moduleTitle: activeModule.moduleTitle,
+            unlockDate: unlockDate.toISOString(),
+            reminderTime,
             attendeeEmail,
           });
 
@@ -1079,7 +1165,7 @@ OTHER COMPANY REQUIREMENTS: ${otherCompanySkills.slice(0, 8).join(", ")}`;
       companyContext,
       expertise: user.expertise || 1,
       trainingOn: user.trainingOn || "General",
-      level: user.level || "Beginner",
+      level: user.trainingLevel || "Beginner",
       trainingDuration: remainingDays,
       skillGap: skillGap, // All skills, not prioritized
       learningProfile: {

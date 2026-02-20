@@ -55,11 +55,16 @@ export default function PreviousChats() {
 
       const snap = await getDocs(roadmapRef);
 
-      const active = snap.docs.find(
-        d =>
-          d.data().status === "pending" ||
-          d.data().status === "in-progress"
+      let active = snap.docs.find(
+        d => d.data().status === "in-progress"
       );
+
+      // Fallback to pending module if no in-progress module
+      if (!active) {
+        active = snap.docs.find(
+          d => d.data().status === "pending"
+        );
+      }
 
       if (active) {
         setActiveModuleId(active.id);

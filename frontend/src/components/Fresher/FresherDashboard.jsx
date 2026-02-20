@@ -1,6 +1,7 @@
 //FresherDashboard.jsx
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import axios from "axios";
 import {
   doc,
   getDoc,
@@ -25,7 +26,9 @@ export default function FresherDashboard() {
   const [roadmap, setRoadmap] = useState([]);
   const [progressPercent, setProgressPercent] = useState(0);
   const [userData, setUserData] = useState(null);
-  
+  const [roadmapGenerated, setRoadmapGenerated] = useState(false);
+  const [generatingRoadmap, setGeneratingRoadmap] = useState(false);
+  const [missedDateInfo, setMissedDateInfo] = useState(null);
 
   const state = location.state || {};
 
@@ -35,6 +38,45 @@ const [companyId, setCompanyId] = useState(state.companyId || localStorage.getIt
 const [deptId, setDeptId] = useState(state.deptId || localStorage.getItem("deptId"));
 const [companyName, setCompanyName] = useState(state.companyName || localStorage.getItem("companyName"));
 const [email, setEmail] = useState(state.email || localStorage.getItem("email"));
+
+// Check if roadmap already exists
+const checkRoadmapExists = async () => {
+  try {
+    if (!companyId || !deptId || !userId) return;
+    const roadmapRef = collection(
+      db,
+      "freshers",
+      companyId,
+      "departments",
+      deptId,
+      "users",
+      userId,
+      "roadmap"
+    );
+    const snap = await getDocs(roadmapRef);
+    setRoadmapGenerated(!snap.empty);
+  } catch (err) {
+    console.error("Error checking roadmap:", err);
+  }
+};
+
+// Fetch missed dates
+const fetchMissedDates = async () => {
+  try {
+    if (!companyId || !deptId || !userId) return;
+    const response = await fetch("http://localhost:5000/api/chat/missed-dates", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, companyId, deptId })
+    });
+    const data = await response.json();
+    if (data.success) {
+      setMissedDateInfo(data);
+    }
+  } catch (err) {
+    console.error("Error fetching missed dates:", err);
+  }
+};
 
 // Save to localStorage if state exists
 useEffect(() => {
@@ -123,6 +165,9 @@ useEffect(() => {
 useEffect(() => {
   if (!userId || !companyId || !deptId) {
     navigate("/", { replace: true });
+  } else {
+    checkRoadmapExists();
+    fetchMissedDates();
   }
 }, [userId, companyId, deptId, navigate]);
 
@@ -192,7 +237,7 @@ if (loading) {
     <div className="flex min-h-screen bg-[#031C3A] text-white">
       <div className="w-64 flex-shrink-0 bg-[#021B36]/90">
         <div className="sticky top-0 h-screen p-4">
-          <FresherSideMenu userId={userId} companyId={companyId} deptId={deptId} companyName={companyName} />
+          <FresherSideMenu userId={userId} companyId={companyId} deptId={deptId} companyName={companyName} roadmapGenerated={roadmapGenerated} />
         </div>
       </div>
       <div className="flex-1 flex items-center justify-center">
@@ -240,11 +285,45 @@ if (loading) {
           companyId={companyId}
           deptId={deptId}
           companyName={companyName}
+          roadmapGenerated={roadmapGenerated}
         />
       </div>
 
       {/* MAIN */}
       <div className="flex-1 p-10">
+        {/* STREAK BADGE */}
+        {missedDateInfo && missedDateInfo.currentStreak > 0 && (
+          <div className="mb-6 flex justify-center">
+            <div className="bg-gradient-to-r from-yellow-600/40 to-orange-600/40 border-2 border-yellow-400 rounded-full px-8 py-3 flex items-center gap-2">
+              <span className="text-5xl animate-pulse">🔥</span>
+              <div className="flex flex-col items-start">
+                <p className="text-yellow-300 font-bold text-2xl">{missedDateInfo.currentStreak}</p>
+                <p className="text-yellow-200 text-xs font-semibold">Day Streak</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* MISSED DATES NOTIFICATION */}
+        {missedDateInfo?.hasMissedDates && (
+          <div className="bg-red-900/40 border border-red-500 rounded-lg p-4 mb-6 flex items-start gap-3">
+            <div className="text-red-400 text-2xl flex-shrink-0">⚠️</div>
+            <div className="flex-1">
+              <h3 className="text-red-400 font-semibold text-lg">You Missed {missedDateInfo.missedCount} Day{missedDateInfo.missedCount !== 1 ? "s" : ""}</h3>
+              <p className="text-red-300 text-sm mt-1">
+                Your training started on {
+                  new Date(missedDateInfo.firstMissedDate).toLocaleDateString("en-US", {
+                    weekday: "short",
+                    year: "numeric",
+                    month: "short",
+                    day: "numeric"
+                  })
+                }. Don't break your streak! Catch up on your training today.
+              </p>
+            </div>
+          </div>
+        )}
+
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-[#00FFFF]">
             Welcome {userData?.name || "Fresher"}!
@@ -269,6 +348,35 @@ if (loading) {
           </div>
         </div>
 
+        {/* TRAINING STATS */}
+        {missedDateInfo && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div className="bg-[#021B36]/80 p-4 rounded-lg border border-green-500/30">
+              <p className="text-[#AFCBE3] text-xs font-semibold uppercase mb-1">Active Days</p>
+              <p className="text-green-400 text-2xl font-bold">{missedDateInfo.activeDays}</p>
+              <p className="text-[#AFCBE3] text-xs mt-1">days trained</p>
+            </div>
+
+            <div className="bg-[#021B36]/80 p-4 rounded-lg border border-red-500/30">
+              <p className="text-[#AFCBE3] text-xs font-semibold uppercase mb-1">Missed Days</p>
+              <p className="text-red-400 text-2xl font-bold">{missedDateInfo.missedDays || 0}</p>
+              <p className="text-[#AFCBE3] text-xs mt-1">days missed</p>
+            </div>
+
+            <div className="bg-[#021B36]/80 p-4 rounded-lg border border-[#00FFFF]/30">
+              <p className="text-[#AFCBE3] text-xs font-semibold uppercase mb-1">Total Expected</p>
+              <p className="text-[#00FFFF] text-2xl font-bold">{missedDateInfo.totalExpectedDays}</p>
+              <p className="text-[#AFCBE3] text-xs mt-1">days available</p>
+            </div>
+
+            <div className="bg-[#021B36]/80 p-4 rounded-lg border border-yellow-400/30">
+              <p className="text-[#AFCBE3] text-xs font-semibold uppercase mb-1">🔥 Current Streak</p>
+              <p className="text-yellow-400 text-2xl font-bold">{missedDateInfo.currentStreak}</p>
+              <p className="text-[#AFCBE3] text-xs mt-1">consecutive days</p>
+            </div>
+          </div>
+        )}
+
         <div className="bg-[#021B36]/80 p-6 rounded-xl border border-[#00FFFF30] mb-6">
   <h3 className="text-[#00FFFF] font-semibold mb-4">
     Training Progress
@@ -287,14 +395,50 @@ if (loading) {
 </div>
 
            <div className="flex gap-4 mt-4">
-  {/* View Roadmap Button */}
-  <button
-    onClick={() => navigate(`/roadmap/${companyId}/${deptId}/${userId}/${companyName}`)}
-    className="px-6 py-3 bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] font-semibold rounded-xl shadow-lg hover:scale-105 hover:shadow-2xl transition-transform duration-200"
-  >
-    View Roadmap
-  </button>
-
+  {roadmapGenerated ? (
+    <button
+      onClick={() => navigate(`/roadmap/${companyId}/${deptId}/${userId}/${companyName}`)}
+      className="px-6 py-3 bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] font-semibold rounded-xl shadow-lg hover:scale-105 hover:shadow-2xl transition-transform duration-200"
+    >
+      View Roadmap
+    </button>
+  ) : (
+    <button
+      onClick={async () => {
+        setGeneratingRoadmap(true);
+        try {
+          // Navigate to roadmap page while generating
+          navigate(`/roadmap/${companyId}/${deptId}/${userId}/${companyName}`);
+          
+          const userRef = doc(db, "freshers", companyId, "departments", deptId, "users", userId);
+          const userSnap = await getDoc(userRef);
+          const userData = userSnap.data();
+          
+          await axios.post("http://localhost:5000/api/roadmap/generate", {
+            companyId,
+            deptId,
+            userId,
+            trainingDuration: userData.trainingDuration,
+            expertiseScore: userData.onboarding?.expertise ?? 1,
+            expertiseLevel: userData.onboarding?.level ?? "Beginner",
+            trainingOn: userData.trainingOn ?? "General",
+          });
+          
+          setRoadmapGenerated(true);
+          alert("✅ Roadmap generated successfully!");
+        } catch (err) {
+          console.error(err);
+          alert("❌ Failed to generate roadmap");
+        } finally {
+          setGeneratingRoadmap(false);
+        }
+      }}
+      disabled={generatingRoadmap}
+      className="px-6 py-3 bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] font-semibold rounded-xl shadow-lg hover:scale-105 hover:shadow-2xl transition-transform duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+    >
+      {generatingRoadmap ? "Generating..." : " Generate Roadmap"}
+    </button>
+  )}
  
 </div>
        <p className="italic text-[#AFCBE3] mt-2">

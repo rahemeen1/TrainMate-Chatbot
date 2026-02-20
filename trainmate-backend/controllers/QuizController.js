@@ -1136,7 +1136,7 @@ export const submitQuiz = async (req, res) => {
 					// Schedule calendar reminders for next active module
 					try {
 						const timeZone = process.env.DEFAULT_TIMEZONE || "Asia/Karachi";
-						const reminderTime = process.env.DAILY_REMINDER_TIME || "15:00";
+						const reminderTime = process.env.DAILY_REMINDER_TIME || "22:15";
 						const calendarId = process.env.GOOGLE_CALENDAR_ID || "primary";
 						const testRecipient = process.env.TEST_NOTIFICATION_EMAIL || null;
 
@@ -1172,6 +1172,13 @@ export const submitQuiz = async (req, res) => {
 									startDate.getTime() + unlockDays * 24 * 60 * 60 * 1000
 								);
 
+								console.log("📅 Scheduling daily module reminders", {
+									moduleTitle: nextModule.moduleTitle,
+									estimatedDays,
+									reminderTime,
+									attendeeEmail: userEmail,
+								});
+
 								await createDailyModuleReminder({
 									calendarId,
 									moduleTitle: nextModule.moduleTitle,
@@ -1180,6 +1187,13 @@ export const submitQuiz = async (req, res) => {
 									occurrenceCount: estimatedDays,
 									reminderTime,
 									timeZone,
+									attendeeEmail: userEmail,
+								});
+
+								console.log("📅 Scheduling quiz unlock reminder", {
+									moduleTitle: nextModule.moduleTitle,
+									unlockDate: unlockDate.toISOString(),
+									reminderTime,
 									attendeeEmail: userEmail,
 								});
 

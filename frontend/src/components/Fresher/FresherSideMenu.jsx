@@ -3,7 +3,7 @@ import { signOut } from "firebase/auth";
 import { auth } from "../../firebase";
 import { useState } from "react";
 
-export function FresherSideMenu({ userId, companyId, deptId, companyName }) {
+export function FresherSideMenu({ userId, companyId, deptId, companyName, roadmapGenerated = false }) {
   const location = useLocation();
   const state = location.state || {};
 
@@ -38,28 +38,62 @@ console.log(email);
       </button>
 
       <button
-        onClick={() =>
-          navigate(`/roadmap/${companyId}/${deptId}/${userId}/${companyName}`)
-        }
-        className="text-left px-4 py-2 rounded-lg hover:bg-[#00FFFF]/20 transition font-medium"
+        onClick={() => {
+          if (!roadmapGenerated) return;
+          navigate(`/roadmap/${companyId}/${deptId}/${userId}/${companyName}`);
+        }}
+        className={`text-left px-4 py-2 rounded-lg transition font-medium relative group ${
+          roadmapGenerated
+            ? "hover:bg-[#00FFFF]/20 cursor-pointer text-[#AFCBE3]"
+            : "opacity-60 cursor-not-allowed text-[#AFCBE3] bg-gray-500/10"
+        }`}
       >
-        RoadMap
+        {!roadmapGenerated && <span className="absolute top-1 left-1 text-xs">🔒</span>}
+        <span className={roadmapGenerated ? "" : "ml-2"}>RoadMap</span>
+        {!roadmapGenerated && (
+          <div className="absolute left-0 top-full mt-1 bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] text-xs font-semibold whitespace-nowrap px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition pointer-events-none shadow-lg z-50">
+            Generate roadmap to unlock
+          </div>
+        )}
       </button>
        <button
-        onClick={() =>
-          navigate("/chatbot", { state: { userId, companyId, deptId, companyName, email } })}
-        className="text-left px-4 py-2 rounded-lg hover:bg-[#00FFFF]/20 transition font-medium"
+        onClick={() => {
+          if (!roadmapGenerated) return;
+          navigate("/chatbot", { state: { userId, companyId, deptId, companyName, email } });
+        }}
+        className={`text-left px-4 py-2 rounded-lg transition font-medium relative group ${
+          roadmapGenerated
+            ? "hover:bg-[#00FFFF]/20 cursor-pointer text-[#AFCBE3]"
+            : "opacity-60 cursor-not-allowed text-[#AFCBE3] bg-gray-500/10"
+        }`}
       >
-        Training Assistant
+        {!roadmapGenerated && <span className="absolute top-1 left-1 text-xs">🔒</span>}
+        <span className={roadmapGenerated ? "" : "ml-2"}>Training Assistant</span>
+        {!roadmapGenerated && (
+          <div className="absolute left-0 top-full mt-1 bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] text-xs font-semibold whitespace-nowrap px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition pointer-events-none shadow-lg z-50">
+            Generate roadmap to unlock
+          </div>
+        )}
       </button>
 
       <button
-        onClick={() =>
-          navigate("/fresher-progress", { state: { userId, companyId, deptId, companyName } })
-        }
-        className="text-left px-4 py-2 rounded-lg hover:bg-[#00FFFF]/20 transition font-medium"
+        onClick={() => {
+          if (!roadmapGenerated) return;
+          navigate("/fresher-progress", { state: { userId, companyId, deptId, companyName } });
+        }}
+        className={`text-left px-4 py-2 rounded-lg transition font-medium relative group ${
+          roadmapGenerated
+            ? "hover:bg-[#00FFFF]/20 cursor-pointer text-[#AFCBE3]"
+            : "opacity-60 cursor-not-allowed text-[#AFCBE3] bg-gray-500/10"
+        }`}
       >
-        Progress Details
+        {!roadmapGenerated && <span className="absolute top-1 left-1 text-xs">🔒</span>}
+        <span className={roadmapGenerated ? "" : "ml-2"}>Progress Details</span>
+        {!roadmapGenerated && (
+          <div className="absolute left-0 top-full mt-1 bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] text-xs font-semibold whitespace-nowrap px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition pointer-events-none shadow-lg z-50">
+            Generate roadmap to unlock
+          </div>
+        )}
       </button>
 
       <button

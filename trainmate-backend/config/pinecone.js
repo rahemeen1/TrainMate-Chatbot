@@ -2,49 +2,57 @@
 import { Pinecone } from "@pinecone-database/pinecone";
 
 let pineconeIndex;
+let isPineconeAvailable = false;
 
 export const initPinecone = async () => {
   if (!process.env.PINECONE_API_KEY) {
-    throw new Error("PINECONE_API_KEY is missing in environment variables!");
+    console.warn("⚠️ PINECONE_API_KEY is missing - Pinecone features disabled");
+    return null;
   }
 
-  const pinecone = new Pinecone({
-    apiKey: process.env.PINECONE_API_KEY,
-  });
-
-  const INDEX_NAME = "train-mate15";
-  const DIMENSION = 1024;
-
-  // ✅ FIX: destructure indexes correctly
-  const { indexes } = await pinecone.listIndexes();
-  const indexExists = indexes.some(
-    (index) => index.name === INDEX_NAME
-  );
-
-  if (!indexExists) {
-    await pinecone.createIndex({
-      name: INDEX_NAME,
-      dimension: DIMENSION,
-      metric: "cosine",
-      spec: {
-        serverless: {
-          cloud: "aws",
-          region: "us-east-1",
-        },
-      },
+  try {
+    const pinecone = new Pinecone({
+      apiKey: process.env.PINECONE_API_KEY,
     });
 
-    console.log("✅ Pinecone index created");
-  } else {
-    console.log("✅ Pinecone index already exists");
-  }
+    const INDEX_NAME = "train-mate15";
+    const DIMENSION = 1024;
 
-  pineconeIndex = pinecone.Index(INDEX_NAME);
+    // ✅ FIX: destructure indexes correctly
+    const { indexes } = await pinecone.listIndexes();
+    const indexExists = indexes.some(
+      (index) => index.name === INDEX_NAME
+    );
+
+    if (!indexExists) {
+      await pinecone.createIndex({
+        name: INDEX_NAME,
+        dimension: DIMENSION,
+        metric: "cosine",
+        spec: {
+          serverless: {
+            cloud: "aws",
+            region: "us-east-1",
+          },
+        },
+      });
+
+      console.log("✅ Pinecone index created");
+    } else {
+      console.log("✅ Pinecone index already exists");
+    }
+
+    pineconeIndex = pinecone.Index(INDEX_NAME);
+    isPineconeAvailable = true;
+    return pineconeIndex;
+  } catch (error) {
+    console.error("❌ Pinecone initialization failed:", error.message);
+    console.warn("⚠️ Server will continue without Pinecone features");
+    console.warn("⚠️ Check https://status.pinecone.io/ for service status");
+    isPineconeAvailable = false;
+    return null;
+  }
 };
 
-export const getPineconeIndex = () => {
-  if (!pineconeIndex) {
-    throw new Error("Pinecone not initialized. Call initPinecone first.");
-  }
-  return pineconeIndex;
-};
+export const getPineconeIndex = () => pineconeIndex;
+export const checkPineconeAvailability = () => isPineconeAvailable;

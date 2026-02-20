@@ -43,9 +43,9 @@ export async function sendRoadmapEmail({
     console.log("📧 Email service: preparing transporter and message...");
     const transporter = createTransporter();
 
-    // 🧪 TESTING MODE: Override recipient email for testing
-    const recipientEmail = "rahemeenkamran1@gmail.com"; // Change back to userEmail for production
-    console.log(`📧 Testing mode: Sending to ${recipientEmail} (original: ${userEmail})`);
+    // Use actual recipient email
+    const recipientEmail = userEmail;
+    console.log(`📧 Sending email to ${recipientEmail}`);
 
     const mailOptions = {
       from: {

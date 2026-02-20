@@ -24,7 +24,12 @@ app.use(cors());
 const PORT = process.env.PORT || 5000;
 
 async function startServer() {
+  try {
     await initPinecone();
+  } catch (error) {
+    console.error("⚠️ Failed to initialize Pinecone, continuing without it:", error.message);
+  }
+  
   const aot = await db.collection("companies").get();
 
     app.use("/api", superAdminRoutes);

@@ -134,7 +134,7 @@ if (loading) {
     <div className="flex min-h-screen bg-[#031C3A] text-white">
       <div className="w-64 flex-shrink-0 bg-[#021B36]/90">
         <div className="sticky top-0 h-screen p-4">
-          <FresherSideMenu userId={userId} companyId={companyId} deptId={deptId} companyName={companyName} />
+          <FresherSideMenu userId={userId} companyId={companyId} deptId={deptId} companyName={companyName} roadmapGenerated={true} />
         </div>
       </div>
       <div className="flex-1 flex items-center justify-center">
@@ -153,7 +153,7 @@ if (!userData) {
   return (
     <div className="flex min-h-screen bg-[#031C3A] text-white">
       <div className="w-64 bg-[#021B36]/90 p-4">
-        <FresherSideMenu userId={userId} companyId={companyId} deptId={deptId} companyName={companyName} />
+        <FresherSideMenu userId={userId} companyId={companyId} deptId={deptId} companyName={companyName} roadmapGenerated={true} />
       </div>
       <div className="flex-1 p-10 flex items-center justify-center text-[#AFCBE3]">
         No data available.
@@ -166,7 +166,7 @@ if (!userData) {
   return (
     <div className="flex min-h-screen bg-[#031C3A] text-white">
       <div className="w-64 bg-[#021B36]/90 p-4">
-        <FresherSideMenu userId={userId} companyId={companyId} deptId={deptId} companyName={companyName} />
+        <FresherSideMenu userId={userId} companyId={companyId} deptId={deptId} companyName={companyName} roadmapGenerated={true} />
       </div>
 
       <div className="flex-1 p-10">

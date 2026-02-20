@@ -18,7 +18,7 @@ export const generateRoadmap = async ({
   planFocusAreas = [],
   trainingOn,
   expertise,
-  level,
+  trainingLevel,
   trainingDuration,
 }) => {
   console.log("\n================ GEMINI ROADMAP START ================");
@@ -31,7 +31,7 @@ export const generateRoadmap = async ({
   console.log("🧪 Raw inputs received:");
   console.log("   trainingOn       →", trainingOn);
   console.log("   expertise        →", expertise);
-  console.log("   level            →", level);
+  console.log("   trainingLevel   →", trainingLevel);
   console.log("   trainingDuration →", trainingDuration);
   console.log("   cvText length    →", cvText?.length);
   console.log("   companyContext length →", companyContext?.length);
@@ -47,7 +47,7 @@ export const generateRoadmap = async ({
   ---------------------------------- */
   const safeTrainingOn = trainingOn || "General";
   const safeExpertise = expertise ?? 1;
-  const safeLevel = level || "Beginner";
+  const safeLevel = trainingLevel || "Beginner";
   const safeDuration = trainingDuration;
   const safeCompanyContext = companyContext || "";
   const safeSkillGap = Array.isArray(skillGap) ? skillGap : [];
@@ -60,10 +60,6 @@ export const generateRoadmap = async ({
   const effectiveCompanyContext = safeCompanyContext || pineconeExcerpt || "No company documents provided.";
 
   console.log("🧪 Normalized inputs:");
-  console.log("   safeTrainingOn →", safeTrainingOn);
-  console.log("   safeExpertise  →", safeExpertise);
-  console.log("   safeLevel      →", safeLevel);
-  console.log("   safeDuration   →", safeDuration);
 
   try {
     /* ---------------------------------

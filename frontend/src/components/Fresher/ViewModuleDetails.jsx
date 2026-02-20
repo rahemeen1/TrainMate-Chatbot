@@ -138,6 +138,7 @@ export default function ViewModuleDetails() {
             companyId={companyId}
             deptId={deptId}
             companyName={companyName}
+            roadmapGenerated={true}
           />
         </div>
       </div>
@@ -168,7 +169,7 @@ export default function ViewModuleDetails() {
         animate={{ x: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <FresherSideMenu userId={userId} companyId={companyId} deptId={deptId} companyName={companyName}/>
+        <FresherSideMenu userId={userId} companyId={companyId} deptId={deptId} companyName={companyName} roadmapGenerated={true}/>
       </motion.div>
 
       {/* ===== Main Content ===== */}

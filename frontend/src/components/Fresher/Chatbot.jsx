@@ -104,19 +104,55 @@ export default function FresherChatbot() {
       );
 
       const snap = await getDocs(roadmapRef);
-      // Sort by order and find first pending/in-progress module
+      // Sort by order and find first in-progress module, fallback to pending
       const sortedDocs = snap.docs
         .map((d) => ({ id: d.id, data: d.data() }))
         .sort((a, b) => (a.data.order || 0) - (b.data.order || 0));
       
-      const active = sortedDocs.find(m =>
-        ["pending", "in-progress"].includes(m.data.status)
-      );
+      let active = sortedDocs.find(m => m.data.status === "in-progress");
+      
+      // Fallback to pending module if no in-progress module
+      if (!active) {
+        active = sortedDocs.find(m => m.data.status === "pending");
+      }
+      
       if (active) setActiveModuleId(active.id);
     };
 
     fetchActiveModule();
   }, []);
+
+  // 🔄 Refresh active module after calling /chat/init to pick up auto-unlocked modules
+  const refreshActiveModule = async () => {
+    const roadmapRef = collection(
+      db,
+      "freshers",
+      companyId,
+      "departments",
+      deptId,
+      "users",
+      userId,
+      "roadmap"
+    );
+
+    const snap = await getDocs(roadmapRef);
+    const sortedDocs = snap.docs
+      .map((d) => ({ id: d.id, data: d.data() }))
+      .sort((a, b) => (a.data.order || 0) - (b.data.order || 0));
+    
+    let active = sortedDocs.find(m => m.data.status === "in-progress");
+    
+    if (!active) {
+      active = sortedDocs.find(m => m.data.status === "pending");
+    }
+    
+    if (active && active.id !== activeModuleId) {
+      console.log(`🔄 Module auto-upgraded: ${activeModuleId} → ${active.id}`);
+      setActiveModuleId(active.id);
+      return true; // Module was changed
+    }
+    return false; // Module unchanged
+  };
 
 
 useEffect(() => {
@@ -162,6 +198,12 @@ useEffect(() => {
 
       setMessages(initMessages);
       setMode("new");
+
+      // 🔄 Refresh active module if backend auto-unlocked next module
+      const moduleChanged = await refreshActiveModule();
+      if (moduleChanged) {
+        console.log("✅ Module updated after /chat/init, user will see new module on next init");
+      }
     }
   };
 
@@ -206,7 +248,12 @@ useEffect(() => {
     setMessages([{ from: "bot", text: data.reply }]);
     setMode("new");
     setSelectedDate(todayDate);
-    //setSelectedDate(null);
+
+    // 🔄 Refresh active module if backend auto-unlocked next module
+    const moduleChanged = await refreshActiveModule();
+    if (moduleChanged) {
+      console.log("✅ Module updated after initNewChat");
+    }
   };
 
   /* ---------------- SEND MESSAGE ---------------- */
@@ -349,6 +396,7 @@ useEffect(() => {
     companyId={companyId}
     deptId={deptId}
     companyName={companyName}
+    roadmapGenerated={true}
   />
 </div>
 

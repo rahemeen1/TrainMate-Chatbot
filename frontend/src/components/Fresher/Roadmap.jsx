@@ -119,11 +119,27 @@ export default function Roadmap() {
   const [roadmap, setRoadmap] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadingModuleId, setLoadingModuleId] = useState(null);
+  const [roadmapGeneratedAt, setRoadmapGeneratedAt] = useState(null);
   // 📊 Progress calculation
 const completedCount = roadmap.filter((m) => m.completed).length;
 const progressPercent = roadmap.length
   ? Math.round((completedCount / roadmap.length) * 100)
   : 0;
+
+const getModuleStartDate = (module) => {
+  const fallbackBase = module.FirstTimeCreatedAt || module.createdAt;
+  const fallbackDate = fallbackBase
+    ? (fallbackBase.toDate ? fallbackBase.toDate() : new Date(fallbackBase))
+    : null;
+
+  if (!roadmapGeneratedAt || !roadmap.length || !module.order) return fallbackDate;
+
+  const daysOffset = roadmap
+    .filter((m) => (m.order || 0) < (module.order || 0))
+    .reduce((sum, m) => sum + (m.estimatedDays || 1), 0);
+
+  return new Date(roadmapGeneratedAt.getTime() + daysOffset * 24 * 60 * 60 * 1000);
+};
   // Update overall progress after marking module done
   const updateProgress = async () => {
     try {
@@ -161,6 +177,16 @@ const progressPercent = roadmap.length
 
     const loadRoadmap = async () => {
       try {
+        const userRef = doc(db, "freshers", companyId, "departments", deptId, "users", userId);
+        const userSnap = await getDoc(userRef);
+        if (userSnap.exists()) {
+          const userData = userSnap.data();
+          const generatedAt = userData.roadmapAgentic?.generatedAt || userData.roadmapGeneratedAt;
+          if (generatedAt) {
+            setRoadmapGeneratedAt(generatedAt.toDate ? generatedAt.toDate() : new Date(generatedAt));
+          }
+        }
+
         const roadmapRef = collection(
           db,
           "freshers",
@@ -176,8 +202,6 @@ const progressPercent = roadmap.length
 
         if (roadmapSnap.empty) {
           // Generate roadmap if it does not exist
-          const userRef = doc(db, "freshers", companyId, "departments", deptId, "users", userId);
-          const userSnap = await getDoc(userRef);
           if (!userSnap.exists()) throw new Error("Fresher not found");
 
           const userData = userSnap.data();
@@ -212,6 +236,31 @@ const progressPercent = roadmap.length
     };
 
     loadRoadmap();
+
+    // 🔄 Refresh roadmap every 5 seconds to pick up auto-unlocked modules
+    const refreshInterval = setInterval(async () => {
+      try {
+        const roadmapRef = collection(
+          db,
+          "freshers",
+          companyId,
+          "departments",
+          deptId,
+          "users",
+          userId,
+          "roadmap"
+        );
+        const roadmapSnap = await getDocs(roadmapRef);
+        const modules = roadmapSnap.docs
+          .map((doc) => ({ id: doc.id, ...doc.data() }))
+          .sort((a, b) => a.order - b.order);
+        setRoadmap(modules);
+      } catch (err) {
+        console.warn("⚠️ Roadmap refresh failed:", err);
+      }
+    }, 5000);
+
+    return () => clearInterval(refreshInterval);
   }, [companyId, deptId, userId]);
 
   const markDone = async (moduleId) => {
@@ -345,20 +394,14 @@ const getUnlockedModules = () => {
 const checkQuizUnlockBy50Percent = (module) => {
   // ✅ Completed modules always have quiz access
   if (module.completed) return true;
-  
-  // 📅 Get module creation timestamp (FirstTimeCreatedAt has priority)
-  let createdAtTimeStamp = module.FirstTimeCreatedAt || module.createdAt;
-  
+
+  const startDate = getModuleStartDate(module);
+
   // 🚫 Safety check: Lock quiz if no timestamp exists
-  if (!createdAtTimeStamp) {
+  if (!startDate) {
     console.warn("⚠️ Module has no FirstTimeCreatedAt or createdAt:", module.id);
     return false; // Lock quiz if no timestamp available
   }
-  
-  // 📆 Convert Firestore timestamp to JavaScript Date
-  const startDate = createdAtTimeStamp.toDate 
-    ? createdAtTimeStamp.toDate() 
-    : new Date(createdAtTimeStamp);
   
   // ⏱️ Calculate time elapsed
   const today = new Date();
@@ -393,15 +436,14 @@ const checkQuizUnlockBy50Percent = (module) => {
  */
 const getQuizUnlockMessageBy50Percent = (module) => {
   // 🚫 Edge case: No timestamp
-  if (!module.FirstTimeCreatedAt) return "Quiz will unlock soon";
+  if (!getModuleStartDate(module)) return "Quiz will unlock soon";
   
   // ✅ Completed modules
   if (module.completed) return "Quiz available";
   
   // 📅 Parse module start date
-  const startDate = module.FirstTimeCreatedAt.toDate 
-    ? module.FirstTimeCreatedAt.toDate() 
-    : new Date(module.FirstTimeCreatedAt);
+  const startDate = getModuleStartDate(module);
+  if (!startDate) return "Quiz will unlock soon";
   
   // ⏱️ Calculate time progress
   const today = new Date();
@@ -423,16 +465,12 @@ const getQuizUnlockMessageBy50Percent = (module) => {
 // Calculate time remaining to complete module
 const getModuleTimeRemaining = (module) => {
   if (module.completed) return { days: 0, hours: 0, expired: false, message: "Completed" };
-  
-  let createdAtTimeStamp = module.FirstTimeCreatedAt || module.createdAt;
-  
-  if (!createdAtTimeStamp) {
+
+  const startDate = getModuleStartDate(module);
+
+  if (!startDate) {
     return { days: 0, hours: 0, expired: false, message: "No deadline set" };
   }
-  
-  const startDate = createdAtTimeStamp.toDate 
-    ? createdAtTimeStamp.toDate() 
-    : new Date(createdAtTimeStamp);
   
   const totalDays = module.estimatedDays || 1;
   const deadlineDate = new Date(startDate.getTime() + totalDays * 24 * 60 * 60 * 1000);
@@ -476,6 +514,7 @@ if (loading)
             companyId={companyId}
             deptId={deptId}
             companyName={companyName}
+            roadmapGenerated={true}
           />
         </div>
       </div>
@@ -539,6 +578,7 @@ if (!roadmap.length)
       companyId={companyId}
       deptId={deptId}
       companyName={companyName}
+      roadmapGenerated={true}
     />
   </div>
 </div>
@@ -546,7 +586,19 @@ if (!roadmap.length)
 
       {/* Modules */}
       <div className="flex-1 p-8 space-y-6">
-        <h2 className="text-3xl font-bold text-[#00FFFF] mb-6">Your Personalized Roadmap</h2>
+        <h2 className="text-3xl font-bold text-[#00FFFF] mb-2">Your Personalized Roadmap</h2>
+        {roadmapGeneratedAt && (
+          <p className="text-sm text-[#AFCBE3] mb-6">
+            Roadmap generated on {roadmapGeneratedAt.toLocaleString("en-US", {
+              weekday: "long",
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+              hour: "numeric",
+              minute: "2-digit"
+            })}
+          </p>
+        )}
         {/* 📊 Learning Progress */}
 <div className="mb-8">
   <div className="flex justify-between text-sm mb-2 text-[#AFCBE3]">

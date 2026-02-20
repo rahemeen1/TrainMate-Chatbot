@@ -238,7 +238,7 @@ export default function FresherTraining() {
       <div className="flex min-h-screen bg-[#031C3A] text-white">
         {/* Sidebar */}
         <div className="w-64 flex-shrink-0 bg-[#021B36]/90 p-4">
-          <FresherSideMenu userId={userId} companyId={companyId} deptId={deptId} companyName={companyName} />
+          <FresherSideMenu userId={userId} companyId={companyId} deptId={deptId} companyName={companyName} roadmapGenerated={true} />
         </div>
         {/* Center Loader */}
         <div className="flex-1 flex items-center justify-center">
@@ -260,6 +260,7 @@ return (
         companyId={companyId}
         deptId={deptId}
         companyName={companyName}
+        roadmapGenerated={true}
       />
     </div>
 

@@ -181,16 +181,44 @@ export const addFresherUser = async ({
   if (!/^[0-9]{11}$/.test(phone))
     throw new Error("Phone must be 11 digits");
 
-  // 🔹 Generate userId
+  // 🔹 Generate userId with training abbreviation
   const firstName = name.split(" ")[0];
-  const deptShort = deptName.replace(/\s+/g, "").toUpperCase();
+  
+  // Abbreviate department name
+  const getDeptAbbr = (dept) => {
+    if (!dept) return "DP";
+    const deptLower = dept.toLowerCase().trim();
+    
+    const abbr = {
+      "software development": "SD",
+      "softwaredevelopment": "SD",
+      "frontend development": "FD",
+      "frontenddevelopment": "FD",
+      "backend development": "BD",
+      "backenddevelopment": "BD",
+      "full stack development": "FSD",
+      "fullstackdevelopment": "FSD",
+      "data science": "DS",
+      "datascience": "DS",
+      "machine learning": "ML",
+      "machinelearning": "ML",
+      "cloud": "CLD",
+      "devops": "DEVOPS",
+      "qa": "QA",
+      "business analysis": "BA",
+      "businessanalysis": "BA",
+    };
+    return abbr[deptLower] || dept.replace(/\s+/g, "").substring(0, 4).toUpperCase();
+  };
+  
+  const deptShort = getDeptAbbr(deptName);
   const companyShort = companyName
     .split(" ")
     .map(w => w[0])
     .join("")
     .toUpperCase();
 
-  const randomNum = Math.floor(1000 + Math.random() * 9000);
+  const randomNum = Math.floor(10 + Math.random() * 90);
   const userId = `${firstName}-${deptShort}-${companyShort}-${randomNum}`;
 
   const companyDomain =
