@@ -505,19 +505,6 @@ const isModuleExpired = (module) => {
 if (loading)
   return (
     <div className="flex min-h-screen bg-[#031C3A] text-white">
-      
-      {/* ✅ Sidebar — fixed width, unchanged */}
-      <div className="w-64 flex-shrink-0 bg-[#021B36]/90">
-        <div className="sticky top-0 h-screen p-4">
-          <FresherSideMenu
-            userId={userId}
-            companyId={companyId}
-            deptId={deptId}
-            companyName={companyName}
-            roadmapGenerated={true}
-          />
-        </div>
-      </div>
 
       {/* ✅ Right content area — loader centered */}
       <div className="flex-1 flex items-center justify-center">
