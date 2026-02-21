@@ -129,56 +129,16 @@ const isValidPhone = (value) => {
   };
 
   if (loading) {
-  return (
-    <div className="flex min-h-screen bg-[#031C3A] text-white">
-      {/* Sidebar */}
-      <div className="w-64 bg-[#021B36]/90 p-4">
-        <FresherSideMenu
-          userId={userId}
-          companyId={companyId}
-          deptId={deptId}
-          companyName={companyName}
-          roadmapGenerated={true}
-        />
-      </div>
-
-      {/* Center Loader */}
-      <div className="flex-1 flex items-center justify-center">
+    return (
+      <div className="flex min-h-screen bg-[#031C3A] text-white items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          
-          {/* ⏳ Hourglass Loader */}
-          <div className="hourglass-loader" />
-
-          <p className="text-[#00FFFF] tracking-wide text-sm">
-            Preparing your workspace...
-          </p>
+          <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-[#00FFFF]" />
+          <p className="text-lg font-semibold">Loading settings...</p>
+          <p className="text-sm text-[#AFCBE3]">Please wait, this may take a few seconds.</p>
         </div>
       </div>
-
-      {/* Loader Styles */}
-      <style>
-        {`
-          .hourglass-loader {
-            width: 40px;
-            height: 40px;
-            border: 3px solid #00FFFF30;
-            border-top: 3px solid #00FFFF;
-            border-bottom: 3px solid #00FFFF;
-            border-radius: 50%;
-            animation: hourglassSpin 1.2s linear infinite;
-            box-shadow: 0 0 12px #00FFFF40;
-          }
-
-          @keyframes hourglassSpin {
-            0% { transform: rotate(0deg); }
-            50% { transform: rotate(180deg); }
-            100% { transform: rotate(360deg); }
-          }
-        `}
-      </style>
-    </div>
-  );
-}
+    );
+  }
 
 
 

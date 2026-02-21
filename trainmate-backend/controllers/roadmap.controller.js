@@ -24,6 +24,7 @@ function initializeModel() {
 const ROADMAP_MAX_RETRIES = 2;
 const PLAN_MAX_QUERIES = 4;
 const MAX_CONTEXT_CHARS = 8000;
+const ROADMAP_LOCK_TTL_MS = 5 * 60 * 1000;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -80,20 +81,30 @@ function normalizeRoadmapModules(modules) {
   }));
 }
 
-function parseTrainingDurationDays(value) {
-  if (value === null || value === undefined) return null;
-  // Training duration is always in months - convert to days (1 month = 30 days)
-  let months;
-  if (Number.isFinite(value)) {
-    months = value;
-  } else {
-    const match = String(value).match(/\d+/);
-    if (!match) return null;
-    months = parseInt(match[0], 10);
-  }
-  if (!Number.isFinite(months)) return null;
-  return Math.max(1, Math.round(months * 30));
+function mapRoadmapSnapshot(snapshot) {
+  if (!snapshot || snapshot.empty) return [];
+  return snapshot.docs
+    .map((doc) => ({ id: doc.id, ...doc.data() }))
+    .sort((a, b) => (a.order || 0) - (b.order || 0));
 }
+
+function parseTrainingDurationDays(duration) {
+  if (Number.isFinite(duration)) return Math.max(1, Math.round(duration));
+  const raw = String(duration || "").trim().toLowerCase();
+  if (!raw) return null;
+
+  const numberMatch = raw.match(/\d+(?:\.\d+)?/);
+  const value = numberMatch ? parseFloat(numberMatch[0]) : NaN;
+  if (!Number.isFinite(value)) return null;
+
+  if (raw.includes("week")) return Math.max(1, Math.round(value * 7));
+  if (raw.includes("month")) return Math.max(1, Math.round(value * 30));
+  if (raw.includes("day")) return Math.max(1, Math.round(value));
+
+  return Math.max(1, Math.round(value));
+}
+
+
 
 function enforceTrainingDuration(modules, durationDays) {
   if (!Array.isArray(modules) || modules.length === 0) return modules;
@@ -556,6 +567,8 @@ export const generateUserRoadmap = async (req, res) => {
   console.log("🚀 Roadmap generation request received");
   console.log("📦 Request body:", req.body);
 
+  let lockAcquired = false;
+
   try {
     const {
       companyId,
@@ -592,6 +605,43 @@ export const generateUserRoadmap = async (req, res) => {
       return res.status(400).json({ error: "Onboarding incomplete" });
     }
 
+    const existingRoadmapSnap = await userRef.collection("roadmap").get();
+    if (!existingRoadmapSnap.empty) {
+      return res.json({
+        success: true,
+        modules: mapRoadmapSnapshot(existingRoadmapSnap),
+        reused: true,
+      });
+    }
+
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(userRef);
+      if (!snap.exists) return;
+      const data = snap.data() || {};
+      const lock = data.roadmapGenerationLock || {};
+      const now = Date.now();
+      const expiresAt = lock.expiresAt?.toDate ? lock.expiresAt.toDate().getTime() : lock.expiresAt;
+
+      if (expiresAt && expiresAt > now) {
+        return;
+      }
+
+      tx.set(userRef, {
+        roadmapGenerationLock: {
+          startedAt: new Date(now),
+          expiresAt: new Date(now + ROADMAP_LOCK_TTL_MS),
+        },
+      }, { merge: true });
+
+      lockAcquired = true;
+    });
+
+    if (!lockAcquired) {
+      return res.status(409).json({
+        error: "Roadmap generation already in progress",
+      });
+    }
+
   // 1️⃣ Fetch onboarding duration
 const onboardingRef = db
   .collection("companies")
@@ -615,9 +665,8 @@ console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboa
     const trainingOn = trainingOnFromClient || user.trainingOn || "General";
     const expertise = expertiseScore ?? user.expertise ?? 1;
     const level = user.trainingLevel || expertiseLevel || "Beginner";
-    const finalTrainingDuration = parseTrainingDurationDays(trainingDurationFromOnboarding)
-      || parseTrainingDurationDays(trainingTime)
-      || parseTrainingDurationDays(user.trainingDuration);
+    const finalTrainingDuration =
+      trainingDurationFromOnboarding || user.trainingDurationFromOnboarding || trainingTime || null;
 
     console.log("🎯 FINAL VALUES USED:", {
       trainingOn,
@@ -917,6 +966,21 @@ console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboa
     return res.status(500).json({
       error: error.message || "Roadmap generation failed",
     });
+  } finally {
+    if (lockAcquired) {
+      try {
+        await db
+          .collection("freshers")
+          .doc(req.body.companyId)
+          .collection("departments")
+          .doc(req.body.deptId)
+          .collection("users")
+          .doc(req.body.userId)
+          .set({ roadmapGenerationLock: null }, { merge: true });
+      } catch (err) {
+        console.warn("⚠️ Failed to clear roadmap lock:", err.message || err);
+      }
+    }
   }
 };
 

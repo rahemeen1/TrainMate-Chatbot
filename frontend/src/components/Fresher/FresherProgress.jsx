@@ -131,18 +131,11 @@ export default function FresherProgress() {
   
 if (loading) {
   return (
-    <div className="flex min-h-screen bg-[#031C3A] text-white">
-      <div className="w-64 flex-shrink-0 bg-[#021B36]/90">
-        <div className="sticky top-0 h-screen p-4">
-          <FresherSideMenu userId={userId} companyId={companyId} deptId={deptId} companyName={companyName} roadmapGenerated={true} />
-        </div>
-      </div>
-      <div className="flex-1 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-[#00FFFF]" />
-          <p className="text-lg font-semibold">Loading progress data...</p>
-          <p className="text-sm text-[#AFCBE3]">Please wait, this may take a few seconds.</p>
-        </div>
+    <div className="flex min-h-screen bg-[#031C3A] text-white items-center justify-center">
+      <div className="flex flex-col items-center gap-4">
+        <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-[#00FFFF]" />
+        <p className="text-lg font-semibold">Loading progress data...</p>
+        <p className="text-sm text-[#AFCBE3]">Please wait, this may take a few seconds.</p>
       </div>
     </div>
   );

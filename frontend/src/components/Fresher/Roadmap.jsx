@@ -1,111 +1,6 @@
 ﻿// Roadmap.jsx
-/*
- * ═══════════════════════════════════════════════════════════════════════════
- * 🔒 50% TIME-BASED QUIZ LOCKING SYSTEM DOCUMENTATION
- * ═══════════════════════════════════════════════════════════════════════════
- * 
- * PURPOSE:
- * Prevents learners from attempting module quizzes prematurely by implementing
- * a time-based locking mechanism. Quiz access is granted only after 50% of the
- * module's estimated duration has elapsed.
- * 
- * ═══════════════════════════════════════════════════════════════════════════
- * SYSTEM FLOW:
- * ═══════════════════════════════════════════════════════════════════════════
- * 
- * 1. MODULE START (Day 0)
- *    └─ Module created with FirstTimeCreatedAt timestamp
- *    └─ Quiz is LOCKED 🔒
- *    └─ Learner can access learning materials but not quiz
- * 
- * 2. LEARNING PHASE (0% - 49% of time)
- *    └─ Quiz remains LOCKED 🔒
- *    └─ UI shows countdown: "Quiz will unlock in X days (Y/Z days completed)"
- *    └─ Learner studies module content
- * 
- * 3. QUIZ UNLOCK (50% time threshold met)
- *    └─ Quiz becomes UNLOCKED 🔓
- *    └─ UI shows: "Quiz is now available!"
- *    └─ Learner can attempt quiz at any time
- * 
- * 4. QUIZ COMPLETION
- *    └─ Pass: Module completes, next module unlocks
- *    └─ Fail: AI analyzes and grants dynamic retries (1-3 attempts)
- * 
- * 5. MODULE DEADLINE
- *    └─ If time expires before completion: Module LOCKS permanently
- *    └─ Requires admin intervention
- * 
- * ═══════════════════════════════════════════════════════════════════════════
- * CALCULATION EXAMPLES:
- * ═══════════════════════════════════════════════════════════════════════════
- * 
- * Example 1: 10-day module
- * ├─ Days 0-4: Quiz LOCKED 🔒
- * ├─ Day 5: Quiz UNLOCKS 🔓 (50% = 5 days)
- * └─ Days 5-10: Quiz available, module deadline countdown
- * 
- * Example 2: 6-day module
- * ├─ Days 0-2: Quiz LOCKED 🔒
- * ├─ Day 3: Quiz UNLOCKS 🔓 (50% = 3 days)
- * └─ Days 3-6: Quiz available
- * 
- * Example 3: 15-day module
- * ├─ Days 0-6: Quiz LOCKED 🔒
- * ├─ Day 7: Quiz UNLOCKS 🔓 (50% = 7.5 days, rounds down)
- * └─ Days 7-15: Quiz available
- * 
- * ═══════════════════════════════════════════════════════════════════════════
- * KEY FUNCTIONS:
- * ═══════════════════════════════════════════════════════════════════════════
- * 
- * checkQuizUnlockBy50Percent(module)
- * └─ Returns: boolean (true = unlocked, false = locked)
- * └─ Calculates: (daysPassed >= estimatedDays / 2)
- * └─ Used by: getUnlockedModules() to determine quiz availability
- * 
- * getQuizUnlockMessageBy50Percent(module)
- * └─ Returns: string (user-friendly countdown message)
- * └─ Examples:
- *    • "Quiz will unlock in 3 day(s) (2/5 days completed)"
- *    • "Quiz is now available!"
- * └─ Used by: UI tooltips and warning messages
- * 
- * getModuleTimeRemaining(module)
- * └─ Returns: object { days, hours, expired, message }
- * └─ Calculates: Total module deadline countdown
- * └─ Different from quiz unlock: tracks full module duration
- * 
- * ═══════════════════════════════════════════════════════════════════════════
- * UI COMPONENTS AFFECTED:
- * ═══════════════════════════════════════════════════════════════════════════
- * 
- * 1. Quiz Button
- *    ├─ Disabled when: !module.quizTimeUnlocked
- *    ├─ Label: "🔒 Quiz Locked" or "📝 Take Quiz"
- *    └─ Tooltip: Shows 50% countdown when locked
- * 
- * 2. Warning Panels
- *    ├─ Yellow panel: Quiz not yet available (< 50%)
- *    └─ Blue panel: Quiz available (≥ 50%)
- * 
- * 3. Module Card
- *    ├─ Time Remaining: Shows overall module deadline
- *    └─ Lock Icon: Shows 🔒 if module expired or locked
- * 
- * ═══════════════════════════════════════════════════════════════════════════
- * EDGE CASES HANDLED:
- * ═══════════════════════════════════════════════════════════════════════════
- * 
- * ✓ No timestamp: Quiz stays locked (safety default)
- * ✓ Completed modules: Quiz always unlocked for review
- * ✓ Module deadline expired: Entire module locks (overrides quiz unlock)
- * ✓ AI-granted retries: Quiz unlocks based on agentic decision
- * ✓ Admin intervention: Module can be manually unlocked
- * 
- * ═══════════════════════════════════════════════════════════════════════════
- */
-import { useEffect, useState } from "react";
+
+import { useEffect, useRef, useState } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { db } from "../../firebase";
 import { collection, getDocs, doc, getDoc, updateDoc } from "firebase/firestore";
@@ -120,11 +15,7 @@ export default function Roadmap() {
   const [loading, setLoading] = useState(true);
   const [loadingModuleId, setLoadingModuleId] = useState(null);
   const [roadmapGeneratedAt, setRoadmapGeneratedAt] = useState(null);
-  // 📊 Progress calculation
-const completedCount = roadmap.filter((m) => m.completed).length;
-const progressPercent = roadmap.length
-  ? Math.round((completedCount / roadmap.length) * 100)
-  : 0;
+  const generationRequestedRef = useRef(false);
 
 const getModuleStartDate = (module) => {
   const fallbackBase = module.FirstTimeCreatedAt || module.createdAt;
@@ -201,6 +92,11 @@ const getModuleStartDate = (module) => {
         let roadmapSnap = await getDocs(roadmapRef);
 
         if (roadmapSnap.empty) {
+          if (generationRequestedRef.current) {
+            setLoading(false);
+            return;
+          }
+          generationRequestedRef.current = true;
           // Generate roadmap if it does not exist
           if (!userSnap.exists()) throw new Error("Fresher not found");
 
@@ -504,36 +400,12 @@ const isModuleExpired = (module) => {
   
 if (loading)
   return (
-    <div className="flex min-h-screen bg-[#031C3A] text-white">
-      
-      {/* ✅ Sidebar — fixed width, unchanged */}
-      <div className="w-64 flex-shrink-0 bg-[#021B36]/90">
-        <div className="sticky top-0 h-screen p-4">
-          <FresherSideMenu
-            userId={userId}
-            companyId={companyId}
-            deptId={deptId}
-            companyName={companyName}
-            roadmapGenerated={true}
-          />
-        </div>
+    <div className="flex min-h-screen bg-[#031C3A] text-white items-center justify-center">
+      <div className="flex flex-col items-center gap-4">
+        <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-[#00FFFF]" />
+        <p className="text-lg font-semibold">Loading roadmap modules...</p>
+        <p className="text-sm text-[#AFCBE3]">Please wait, this may take a few seconds.</p>
       </div>
-
-      {/* ✅ Right content area — loader centered */}
-      <div className="flex-1 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-[#00FFFF]" />
-          
-          <p className="text-lg font-semibold">
-            Generating roadmap modules...
-          </p>
-          
-          <p className="text-sm text-[#AFCBE3]">
-            Please wait, this may take a few seconds.
-          </p>
-        </div>
-      </div>
-
     </div>
   );
 
@@ -599,20 +471,6 @@ if (!roadmap.length)
             })}
           </p>
         )}
-        {/* 📊 Learning Progress */}
-<div className="mb-8">
-  <div className="flex justify-between text-sm mb-2 text-[#AFCBE3]">
-    <span>Learning Progress</span>
-    <span>{progressPercent}%</span>
-  </div>
-
-  <div className="w-full bg-[#012244] rounded-full h-3">
-    <div
-      className="bg-[#00FFFF] h-3 rounded-full transition-all duration-500"
-      style={{ width: `${progressPercent}%` }}
-    />
-  </div>
-</div>
         {unlockedModules.map((module) => (
 <div
   key={module.id}

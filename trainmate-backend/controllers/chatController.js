@@ -100,6 +100,17 @@ function calculateTrainingProgress(moduleData, startDateOverride) {
   };
 }
 
+const DEFAULT_TIMEZONE = process.env.DEFAULT_TIMEZONE || "Asia/Karachi";
+
+function getDateKey(date, timeZone = DEFAULT_TIMEZONE) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
 function getRoadmapGeneratedAt(userData) {
   const generatedAt = userData?.roadmapAgentic?.generatedAt || userData?.roadmapGeneratedAt;
   if (!generatedAt) return null;
@@ -320,7 +331,7 @@ async function getMissedDates(companyId, deptId, userId, activeModuleId, moduleD
     startDate.setHours(0, 0, 0, 0);
     today.setHours(0, 0, 0, 0);
 
-    if (activeDays === 0 && startDate.getTime() === today.getTime()) {
+    if (activeDays === 0 && getDateKey(startDate) === getDateKey(today)) {
       return {
         hasMissedDates: false,
         missedDates: [],
@@ -336,7 +347,7 @@ async function getMissedDates(companyId, deptId, userId, activeModuleId, moduleD
     const currentDate = new Date(startDate);
 
     while (currentDate <= today) {
-      const dateStr = currentDate.toISOString().split("T")[0];
+      const dateStr = getDateKey(currentDate);
       if (!activeDates.has(dateStr)) {
         missedDates.push(dateStr);
       }
@@ -350,7 +361,7 @@ async function getMissedDates(companyId, deptId, userId, activeModuleId, moduleD
     let streak = 0;
     const streakDate = new Date(today);
     while (true) {
-      const dateStr = streakDate.toISOString().split("T")[0];
+      const dateStr = getDateKey(streakDate);
       if (activeDates.has(dateStr)) {
         streak++;
         streakDate.setDate(streakDate.getDate() - 1);
@@ -575,7 +586,7 @@ export const initChat = async (req, res) => {
     );
 
     // Chat session today
-    const today = new Date().toISOString().split("T")[0];
+    const today = getDateKey(new Date());
     const chatSessionRef = roadmapRef
       .doc(finalActiveModule.id)
       .collection("chatSessions")
@@ -742,7 +753,7 @@ About: ${description}
     );
 
     /* ---------- CHAT SESSION ---------- */
-    const today = new Date().toISOString().split("T")[0];
+    const today = getDateKey(new Date());
     const chatSessionRef = roadmapRef
       .doc(finalActiveModule.id)
       .collection("chatSessions")
@@ -1127,6 +1138,13 @@ export const getMissedDatesController = async (req, res) => {
       activeModule.id,
       roadmapGeneratedAt
     );
+    const startDateOverride = moduleStartDate || roadmapGeneratedAt || null;
+
+    if (!startDateOverride) {
+      console.warn("⚠️ Missed-dates start date not found; falling back to module createdAt");
+    } else {
+      console.log("🗓️ Missed-dates start date:", startDateOverride.toISOString());
+    }
     
     // Check if module was actually started (has chat sessions)
     const moduleChatSessionsRef = db
@@ -1161,7 +1179,7 @@ export const getMissedDatesController = async (req, res) => {
         userId,
         activeModule.id,
         moduleData,
-        moduleStartDate
+        startDateOverride
       );
     }
 

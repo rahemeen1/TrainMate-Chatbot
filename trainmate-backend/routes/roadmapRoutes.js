@@ -9,9 +9,6 @@ const router = express.Router();
  * @body    { companyId, deptId, userId }
  */
 router.post("/generate", async (req, res) => {
-  console.log("📍 /api/roadmap/generate HIT");
-  console.log("📦 Request body:", req.body);
-
   try {
     await generateUserRoadmap(req, res);
   } catch (error) {
@@ -28,9 +25,6 @@ router.post("/generate", async (req, res) => {
  * @body    { companyId, deptId, userId, moduleId }
  */
 router.post("/regenerate", async (req, res) => {
-  console.log("📍 /api/roadmap/regenerate HIT");
-  console.log("📦 Request body:", req.body);
-
   try {
     await regenerateRoadmapAfterFailure(req, res);
   } catch (error) {

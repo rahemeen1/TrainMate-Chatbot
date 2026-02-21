@@ -1,7 +1,6 @@
 //FresherDashboard.jsx
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import axios from "axios";
 import {
   doc,
   getDoc,
@@ -105,45 +104,38 @@ useEffect(() => {
       );
 
       const snap = await getDocs(roadmapRef);
-      
-      const modulesData = snap.docs.map((moduleDoc) => ({
-        id: moduleDoc.id,
-        ...moduleDoc.data(),
-      }));
 
-      // Get roadmap creation date from FirstTimeCreatedAt
-      let roadmapCreatedDate = null;
-      if (modulesData.length > 0) {
-        // Find the earliest FirstTimeCreatedAt
-        const validDates = modulesData
-          .map((m) => m.FirstTimeCreatedAt)
-          .filter((date) => date && date instanceof Date || typeof date === "object")
-          .map((date) => {
-            // Handle Firestore Timestamp objects
-            if (date?.toDate && typeof date.toDate === "function") {
-              return date.toDate();
-            }
-            return new Date(date);
-          });
+      const modulesWithProgress = await Promise.all(
+        snap.docs.map(async (moduleDoc) => {
+          const moduleData = { id: moduleDoc.id, ...moduleDoc.data() };
+          const chatSessionsRef = collection(
+            db,
+            "freshers",
+            companyId,
+            "departments",
+            deptId,
+            "users",
+            userId,
+            "roadmap",
+            moduleDoc.id,
+            "chatSessions"
+          );
+          const chatSessionsSnap = await getDocs(chatSessionsRef);
+          const daysUsed = chatSessionsSnap.size;
+          const estimatedDays = moduleData.estimatedDays || 1;
 
-        if (validDates.length > 0) {
-          roadmapCreatedDate = new Date(Math.min(...validDates.map((d) => d.getTime())));
-        }
-      }
+          return {
+            ...moduleData,
+            daysUsed,
+            estimatedDays,
+          };
+        })
+      );
 
-      // Calculate days elapsed since roadmap creation
-      let daysElapsed = 0;
-      let totalEstimatedDays = modulesData.reduce((sum, m) => sum + (m.estimatedDays || 1), 0);
-      
-      if (roadmapCreatedDate) {
-        const currentDate = new Date();
-        const timeDifference = currentDate - roadmapCreatedDate;
-        daysElapsed = Math.floor(timeDifference / (1000 * 60 * 60 * 24)); // Convert to days
-      }
-
-      // Calculate progress as percentage of days elapsed vs estimated days
-      const percent = totalEstimatedDays > 0 
-        ? Math.min(Math.round((daysElapsed / totalEstimatedDays) * 100), 100)
+      const totalDaysUsed = modulesWithProgress.reduce((sum, m) => sum + m.daysUsed, 0);
+      const totalEstimatedDays = modulesWithProgress.reduce((sum, m) => sum + (m.estimatedDays || 1), 0);
+      const percent = totalEstimatedDays > 0
+        ? Math.min(Math.round((totalDaysUsed / totalEstimatedDays) * 100), 100)
         : 0;
 
       setProgressPercent(percent);
@@ -234,18 +226,11 @@ useEffect(() => {
 
 if (loading) {
   return (
-    <div className="flex min-h-screen bg-[#031C3A] text-white">
-      <div className="w-64 flex-shrink-0 bg-[#021B36]/90">
-        <div className="sticky top-0 h-screen p-4">
-          <FresherSideMenu userId={userId} companyId={companyId} deptId={deptId} companyName={companyName} roadmapGenerated={roadmapGenerated} />
-        </div>
-      </div>
-      <div className="flex-1 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-[#00FFFF]" />
-          <p className="text-lg font-semibold">Loading your dashboard...</p>
-          <p className="text-sm text-[#AFCBE3]">Please wait, this may take a few seconds.</p>
-        </div>
+    <div className="flex min-h-screen bg-[#031C3A] text-white items-center justify-center">
+      <div className="flex flex-col items-center gap-4">
+        <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-[#00FFFF]" />
+        <p className="text-lg font-semibold">Loading your dashboard...</p>
+        <p className="text-sm text-[#AFCBE3]">Please wait, this may take a few seconds.</p>
       </div>
     </div>
   );
@@ -291,46 +276,62 @@ if (loading) {
 
       {/* MAIN */}
       <div className="flex-1 p-10">
-        {/* STREAK BADGE */}
-        {missedDateInfo && missedDateInfo.currentStreak > 0 && (
-          <div className="mb-6 flex justify-center">
-            <div className="bg-gradient-to-r from-yellow-600/40 to-orange-600/40 border-2 border-yellow-400 rounded-full px-8 py-3 flex items-center gap-2">
-              <span className="text-5xl animate-pulse">🔥</span>
-              <div className="flex flex-col items-start">
-                <p className="text-yellow-300 font-bold text-2xl">{missedDateInfo.currentStreak}</p>
-                <p className="text-yellow-200 text-xs font-semibold">Day Streak</p>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* MISSED DATES NOTIFICATION */}
         {missedDateInfo?.hasMissedDates && (
           <div className="bg-red-900/40 border border-red-500 rounded-lg p-4 mb-6 flex items-start gap-3">
             <div className="text-red-400 text-2xl flex-shrink-0">⚠️</div>
             <div className="flex-1">
+              {(() => {
+                const rawStart =
+                  userData?.roadmapAgentic?.generatedAt ||
+                  userData?.roadmapGeneratedAt ||
+                  missedDateInfo.firstMissedDate;
+                const startDate = rawStart?.toDate
+                  ? rawStart.toDate()
+                  : rawStart
+                    ? new Date(rawStart)
+                    : null;
+
+                return (
+                  <>
               <h3 className="text-red-400 font-semibold text-lg">You Missed {missedDateInfo.missedCount} Day{missedDateInfo.missedCount !== 1 ? "s" : ""}</h3>
               <p className="text-red-300 text-sm mt-1">
                 Your training started on {
-                  new Date(missedDateInfo.firstMissedDate).toLocaleDateString("en-US", {
-                    weekday: "short",
-                    year: "numeric",
-                    month: "short",
-                    day: "numeric"
-                  })
+                  startDate
+                    ? startDate.toLocaleDateString("en-US", {
+                        weekday: "short",
+                        year: "numeric",
+                        month: "short",
+                        day: "numeric"
+                      })
+                    : "Unknown"
                 }. Don't break your streak! Catch up on your training today.
               </p>
+                  </>
+                );
+              })()}
             </div>
           </div>
         )}
 
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-[#00FFFF]">
-            Welcome {userData?.name || "Fresher"}!
-          </h1>
-          <p className="text-[#AFCBE3] mt-1">
-            Your training journey starts here
-          </p>
+        <div className="mb-8 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-[#00FFFF]">
+              Welcome {userData?.name || "Fresher"}!
+            </h1>
+            <p className="text-[#AFCBE3] mt-1">
+              Your training journey starts here
+            </p>
+          </div>
+          {missedDateInfo && missedDateInfo.currentStreak > 0 && (
+            <div className="bg-gradient-to-r from-yellow-600/30 to-orange-600/30 border border-yellow-400 rounded-full px-3 py-1.5 flex items-center gap-2">
+              <span className="text-lg">🔥</span>
+              <div className="flex items-baseline gap-1">
+                <span className="text-yellow-300 font-bold text-sm">{missedDateInfo.currentStreak}</span>
+               
+              </div>
+            </div>
+          )}
         </div>
 
         {/* INFO CARDS */}
@@ -350,7 +351,7 @@ if (loading) {
 
         {/* TRAINING STATS */}
         {missedDateInfo && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
             <div className="bg-[#021B36]/80 p-4 rounded-lg border border-green-500/30">
               <p className="text-[#AFCBE3] text-xs font-semibold uppercase mb-1">Active Days</p>
               <p className="text-green-400 text-2xl font-bold">{missedDateInfo.activeDays}</p>
@@ -369,30 +370,19 @@ if (loading) {
               <p className="text-[#AFCBE3] text-xs mt-1">days available</p>
             </div>
 
-            <div className="bg-[#021B36]/80 p-4 rounded-lg border border-yellow-400/30">
-              <p className="text-[#AFCBE3] text-xs font-semibold uppercase mb-1">🔥 Current Streak</p>
-              <p className="text-yellow-400 text-2xl font-bold">{missedDateInfo.currentStreak}</p>
-              <p className="text-[#AFCBE3] text-xs mt-1">consecutive days</p>
-            </div>
           </div>
         )}
 
         <div className="bg-[#021B36]/80 p-6 rounded-xl border border-[#00FFFF30] mb-6">
-  <h3 className="text-[#00FFFF] font-semibold mb-4">
-    Training Progress
-  </h3>
-
-  <div className="w-full h-4 bg-[#031C3A] rounded-full overflow-hidden">
-    <div
-      className={`h-full bg-gradient-to-r ${getProgressColor(progressPercent)}`}
-      style={{ width: `${progressPercent}%` }}
-    />
-  </div>
-
-  <p className="text-[#AFCBE3] mt-2">
-    {progressPercent}% completed
-  </p>
-</div>
+          <h2 className="text-xl text-[#00FFFF] font-semibold mb-2">Overall Training Progress</h2>
+          <div className="w-full h-3 bg-[#031C3A] rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-[#00FFFF] to-green-400"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+          <p className="mt-2 text-[#AFCBE3]">{progressPercent}% completed</p>
+        </div>
 
            <div className="flex gap-4 mt-4">
   {roadmapGenerated ? (
@@ -409,23 +399,6 @@ if (loading) {
         try {
           // Navigate to roadmap page while generating
           navigate(`/roadmap/${companyId}/${deptId}/${userId}/${companyName}`);
-          
-          const userRef = doc(db, "freshers", companyId, "departments", deptId, "users", userId);
-          const userSnap = await getDoc(userRef);
-          const userData = userSnap.data();
-          
-          await axios.post("http://localhost:5000/api/roadmap/generate", {
-            companyId,
-            deptId,
-            userId,
-            trainingDuration: userData.trainingDuration,
-            expertiseScore: userData.onboarding?.expertise ?? 1,
-            expertiseLevel: userData.onboarding?.level ?? "Beginner",
-            trainingOn: userData.trainingOn ?? "General",
-          });
-          
-          setRoadmapGenerated(true);
-          alert("✅ Roadmap generated successfully!");
         } catch (err) {
           console.error(err);
           alert("❌ Failed to generate roadmap");
