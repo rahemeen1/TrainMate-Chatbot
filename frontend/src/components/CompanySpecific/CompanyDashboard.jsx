@@ -18,6 +18,7 @@ import { db } from "../../firebase";
 import { useNavigate, useLocation } from "react-router-dom";
 import { doc, setDoc } from "firebase/firestore";
 import CompanySidebar from "../../components/CompanySpecific/CompanySidebar";
+import CompanyFresherChatbot from "../../components/CompanySpecific/CompanyFresherChatbot";
 
 
 const DEPARTMENT_OPTIONS = ["HR", "SOFTWAREDEVELOPMENT", "AI", "ACCOUNTING", "MARKETING", "OPERATIONS", "DATASCIENCE","IT"];
@@ -28,11 +29,7 @@ const QUESTIONS = [
   { text: "Batch size", type: "single-select", options: ["Small (5-10)", "Medium (10-20)", "Large (20+)"] },
    { text: "Tell us about your company", type: "text" },
 ];
-
-
 export default function CompanyDashboard() {
-  
-
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -49,6 +46,7 @@ export default function CompanyDashboard() {
   const [chartData, setChartData] = useState([]);
   const [pieData, setPieData] = useState([]);
   const [completedFreshers, setCompletedFreshers] = useState(0);
+  const [showChatbot, setShowChatbot] = useState(false);
 
 useEffect(() => {
   const fetchOnboardingCompletion = async () => {
@@ -86,8 +84,6 @@ useEffect(() => {
   fetchOnboardingCompletion();
 }, [companyId, hasDepartments, selectedDepts]);
 
-  
-
   useEffect(() => {
     if (companyId) {
       localStorage.setItem("companyId", companyId);
@@ -103,8 +99,6 @@ useEffect(() => {
   }
 }, [companyId, navigate]);
 console.log("companyId:", companyId);
-
-
   // Check if company already has departments
   useEffect(() => {
     const checkDepartments = async () => {
@@ -211,6 +205,53 @@ useEffect(() => {
 
     fetchChart();
   }, [companyId, hasDepartments, selectedDepts]);
+
+  const formatDepartmentLabel = (label) => {
+  if (!label) return [""];
+
+  // Explicit mappings for known long departments
+  const MAP = {
+    SOFTWAREDEVELOPMENT: ["Software", "Development"],
+    DATASCIENCE: ["Data", "Science"],
+  };
+
+  if (MAP[label]) return MAP[label];
+
+  // Short names (HR, AI, IT)
+  if (label.length <= 3) return [label];
+
+  // Fully uppercase single-word departments (ACCOUNTING, MARKETING, OPERATIONS)
+  if (/^[A-Z]+$/.test(label)) {
+    return [
+      label.charAt(0) + label.slice(1).toLowerCase()
+    ];
+  }
+
+  // Fallback (should rarely happen)
+  return [label];
+};
+
+const CustomXAxisTick = ({ x, y, payload }) => {
+  const lines = formatDepartmentLabel(payload.value);
+
+  return (
+    <g transform={`translate(${x},${y})`}>
+      {lines.map((line, index) => (
+        <text
+          key={index}
+          x={0}
+          y={index * 12}
+          dy={16}
+          textAnchor="middle"
+          fill="#AFCBE3"
+          fontSize={12}
+        >
+          {line}
+        </text>
+      ))}
+    </g>
+  );
+};
 
   // Save answers and departments
   const saveAnswersToDB = async () => {
@@ -406,7 +447,12 @@ useEffect(() => {
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(13, 88, 200, 0.13)" />
-                        <XAxis dataKey="department" stroke="#AFCBE3" />
+                        <XAxis
+  dataKey="department"
+  tick={<CustomXAxisTick />}
+  interval={0}
+  height={50}
+/>
                         <YAxis stroke="#AFCBE3" allowDecimals={false} />
                         <Tooltip
                           contentStyle={{ backgroundColor: "#021B36", border: "1px solid #00FFFF50", color: "#fff" }}
@@ -432,6 +478,59 @@ useEffect(() => {
               </div>
             )}
           </div>
+        )}
+
+        {/* Floating Chat Button */}
+        <style>{`
+          @keyframes float-pulse {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+          }
+          @keyframes glow-pulse {
+            0%, 100% { box-shadow: 0 0 15px rgba(0, 255, 255, 0.4), 0 0 25px rgba(0, 255, 255, 0.15); }
+            50% { box-shadow: 0 0 20px rgba(0, 255, 255, 0.6), 0 0 35px rgba(0, 255, 255, 0.25); }
+          }
+          .chat-button {
+            animation: float-pulse 3s ease-in-out infinite, glow-pulse 2s ease-in-out infinite;
+          }
+        `}</style>
+        
+        <button
+          onClick={() => setShowChatbot(!showChatbot)}
+          className="chat-button fixed bottom-8 right-8 w-16 h-16 bg-gradient-to-br from-[#00FFFF] via-[#00D9FF] to-[#007BFF] rounded-full flex items-center justify-center shadow-2xl hover:scale-125 transition-transform duration-300 z-40 border-2 border-[#00FFFF]/30"
+          title="Ask Fresher Assistant"
+        >
+          <span className="text-4xl font-black text-white drop-shadow-lg select-none">?</span>
+        </button>
+
+        {/* Side Panel Chatbot */}
+        <div
+          className={`fixed top-0 right-0 h-screen w-full md:w-96 bg-[#031C3A] border-l border-[#00FFFF30] shadow-2xl transform transition-transform duration-300 z-50 ${
+            showChatbot ? "translate-x-0" : "translate-x-full"
+          }`}
+        >
+          {/* Close Button */}
+          <div className="absolute top-4 right-4 z-10">
+            <button
+              onClick={() => setShowChatbot(false)}
+              className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-[#00FFFF]/20 transition"
+            >
+              <svg className="w-6 h-6 text-[#AFCBE3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Chatbot Component */}
+          <CompanyFresherChatbot companyId={companyId} companyName={companyName} />
+        </div>
+
+        {/* Overlay when panel is open */}
+        {showChatbot && (
+          <div
+            className="fixed inset-0 bg-black/50 z-40 md:hidden"
+            onClick={() => setShowChatbot(false)}
+          ></div>
         )}
       </div>
     </div>

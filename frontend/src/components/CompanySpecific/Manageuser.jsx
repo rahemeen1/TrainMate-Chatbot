@@ -1,3 +1,4 @@
+//manageuser.jsx - Component for company to manage their users (view, edit, delete)
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { db } from "../../firebase";
@@ -174,9 +175,11 @@ export default function ManageUser() {
 
   return (
     <div className="flex min-h-screen bg-[#031C3A] text-white">
+  {/* Sidebar (fixed width, no shrink) */}
+  <div className="flex-shrink-0">
       <CompanySidebar companyId={companyId} companyName={companyName} />
-
-      <div className="flex-1 p-8">
+      </div>
+      <div className="flex-1 min-w-0 p-8">
         <div>
           <h1 className="text-3xl font-bold text-[#00FFFF]">
             Manage Users <span className="text-3xl font-bold text-[#00FFFF]">({displayedCount})</span>
@@ -220,18 +223,20 @@ export default function ManageUser() {
               No users found for department: <strong>{filterDept}</strong>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm border-collapse">
+            <div className="overflow-x-auto max-w-full">
+            <table className="w-full text-sm border-collapse
+                 min-w-[900px]
+                 lg:min-w-0">
                 <thead>
                   <tr className="bg-cyan-400/20 uppercase text-cyan-300">
-                    <th className="py-4 px-5 text-center">#</th>
-                    <th className="py-4 px-5 text-center">Name</th>
-                    <th className="py-4 px-5 text-center">Phone</th>
-                    <th className="py-4 px-5 text-center">Department</th>
-                    <th className="py-4 px-5 text-center">Status</th>
-                    <th className="py-4 px-5 text-center">Training</th>
-                    <th className="py-4 px-5 text-center">Progress</th>
-                    <th className="py-4 px-5 text-center">Actions</th>
+                    <th className="py-3 px-3 lg:px-4 text-center">#</th>
+                    <th className="py-3 px-3 lg:px-4 text-center">Name</th>
+                    <th className="py-3 px-3 lg:px-4 text-center">Phone</th>
+                    <th className="py-3 px-3 lg:px-4 text-center">Department</th>
+                    <th className="py-3 px-3 lg:px-4 text-center">Status</th>
+                    <th className="py-3 px-3 lg:px-4 text-center">Training</th>
+                    <th className="py-3 px-3 lg:px-4 text-center">Progress</th>
+                    <th className="py-3 px-3 lg:px-4 text-center">Actions</th>
                   </tr>
                 </thead>
 
@@ -243,16 +248,16 @@ export default function ManageUser() {
                         u.status === "active" ? "bg-green-900/20" : ""
                       }`}
                     >
-                      <td className="py-3 px-5">{i + 1}</td>
-                      <td className="py-3 px-5 font-medium text-center">{u.name}</td>
-                      <td className="py-3 px-5 text-center">{u.phone || "—"}</td>
-                      <td className="py-3 px-5 text-center">
+                      <td className="py-2 px-3 lg:px-4 text-center whitespace-nowrap">{i + 1}</td>
+                      <td className="py-2 px-3 lg:px-4 text-center whitespace-nowrap">{u.name}</td>
+                      <td className="py-2 px-3 lg:px-4 text-center whitespace-nowrap">{u.phone || "—"}</td>
+                      <td className="py-2 px-3 lg:px-4 text-center whitespace-nowrap">
                         <span className="px-3 py-1 rounded-full bg-cyan-400/20">
                           {u.deptName}
                         </span>
                       </td>
 
-                      <td className="py-3 px-5 text-center">
+                      <td className="py-2 px-3 lg:px-4 text-center whitespace-nowrap">
                         <span
                           className={`px-3 py-1 rounded-full text-xs font-semibold ${
                             u.status === "active"
@@ -264,7 +269,7 @@ export default function ManageUser() {
                         </span>
                       </td>
 
-                      <td className="py-3 px-5 text-center">
+                      <td className="py-2 px-3 lg:px-4 text-center whitespace-nowrap">
                         <span
                           className={`px-3 py-1 rounded-full text-xs font-semibold ${
                             u.trainingStatus === "completed"
@@ -276,7 +281,7 @@ export default function ManageUser() {
                         </span>
                       </td>
 
-                      <td className="py-3 px-5 text-center">
+                      <td className="py-2 px-3 lg:px-4 text-center whitespace-nowrap">
                         <button
                           onClick={() =>
                             navigate(`/progress-details/${companyId}/${encodeURIComponent(u.deptName || "unknown")}/${u.id}`, {
@@ -302,7 +307,7 @@ export default function ManageUser() {
                         </button>
                       </td>
 
-                      <td className="py-3 px-5">
+                      <td className="py-2 px-3 lg:px-4 text-center whitespace-nowrap">
                         <div className="flex justify-center gap-2">
                           <button
                             onClick={() => setEditingUser(u)}

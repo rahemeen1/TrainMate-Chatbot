@@ -90,8 +90,10 @@ export default function CompanyDetails() {
     return (
       <div className="flex min-h-screen bg-[#031C3A] text-white">
         <CompanySidebar companyId={companyId} companyName={companyName} />
-        <div className="flex-1 flex items-center justify-center text-[#AFCBE3]">
-          Loading company details...
+        <div className="flex-1 p-8 md:p-10">
+          <div className="max-w-6xl mx-auto rounded-2xl border border-[#00FFFF22] bg-[#021B36]/60 backdrop-blur-sm p-8 flex items-center justify-center min-h-[300px] text-[#AFCBE3]">
+            Loading company details...
+          </div>
         </div>
       </div>
     );
@@ -100,80 +102,95 @@ export default function CompanyDetails() {
   return (
     <div className="flex min-h-screen bg-[#031C3A] text-white">
       <CompanySidebar companyId={companyId} companyName={companyName} />
-      <div className="flex-1 p-8 max-w-5xl mx-auto space-y-8">
-        <h1 className="text-3xl font-bold text-[#00FFFF] text-center mb-6">Company Details</h1>
-
-        {/* Company Info */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {["name", "phone", "address"].map(field => (
-            <div key={field} className="p-6 rounded-xl bg-[#021B36]/80 border border-[#00FFFF30] shadow-lg">
-              <label className="text-[#AFCBE3] font-semibold mb-2 block">
-                {field.charAt(0).toUpperCase() + field.slice(1)}
-              </label>
-              <input
-                type="text"
-                value={companyDetails[field] || ""}
-                onChange={e => setCompanyDetails({ ...companyDetails, [field]: e.target.value })}
-                className="w-full p-2 rounded border border-[#00FFFF30] bg-[#021B36]/50 text-white focus:outline-none"
-              />
+      <div className="flex-1 p-6 md:p-8">
+        <div className="max-w-6xl mx-auto space-y-6">
+          <div className="rounded-2xl border border-[#00FFFF30] bg-[#021B36]/80 shadow-lg px-6 py-5 md:px-8 md:py-6">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div>
+                <h1 className="text-3xl font-bold text-[#00FFFF]">Company Dashboard</h1>
+                <p className="text-[#AFCBE3] mt-1">Manage company profile and onboarding configuration</p>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <div className="px-3 py-2 rounded-lg border border-[#00FFFF30] bg-[#031C3A]/70">
+                  <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Company</p>
+                  <p className="text-sm font-semibold text-white">{companyDetails.name || companyName || "N/A"}</p>
+                </div>
+                <div className="px-3 py-2 rounded-lg border border-[#00FFFF30] bg-[#031C3A]/70">
+                  <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Status</p>
+                  <p className="text-sm font-semibold text-[#00FFFF]">Active</p>
+                </div>
+              </div>
             </div>
-          ))}
-        </div>
-
-        {/* Onboarding Details */}
-        <div className="space-y-6">
-          <h2 className="text-2xl font-semibold text-[#00FFFF] mb-4">Onboarding Details</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-            {/* Training Duration */}
-            <div className="p-6 rounded-xl bg-[#021B36]/80 border border-[#00FFFF30] shadow-lg">
-              <label className="text-[#AFCBE3] font-semibold mb-2 block">Training Duration</label>
-              <input
-                type="text"
-                value={onboardingAnswers[1]}
-                disabled
-                className="w-full p-2 rounded border border-[#00FFFF30] bg-[#021B36]/50 text-white"
-              />
-              <p className="text-sm text-[#AFCBE3] mt-1">Cannot be changed</p>
-            </div>
-
-            {/* Company Size */}
-            <div className="p-6 rounded-xl bg-[#021B36]/80 border border-[#00FFFF30] shadow-lg">
-              <label className="text-[#AFCBE3] font-semibold mb-2 block">Company Size</label>
-              <select
-                value={onboardingAnswers[2]}
-                onChange={e => handleChange(2, e.target.value)}
-                className="w-full p-2 rounded border border-[#00FFFF30] bg-[#021B36]/50 text-white focus:outline-none"
-              >
-                {COMPANY_SIZE_OPTIONS.map(opt => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Company Description */}
-            <div className="p-6 md:col-span-2 rounded-xl bg-[#021B36]/80 border border-[#00FFFF30] shadow-lg">
-              <label className="text-[#AFCBE3] font-semibold mb-2 block">Company Description</label>
-              <textarea
-                rows={6}
-                value={onboardingAnswers[3]}
-                onChange={e => handleChange(3, e.target.value)}
-                className="w-full p-2 rounded border border-[#00FFFF30] resize-none bg-[#021B36]/50 text-white focus:outline-none"
-              />
-            </div>
-
           </div>
-        </div>
 
-        <div className="flex justify-end">
-          <button
-  onClick={saveChanges}
-  disabled={saving} // optional: prevent multiple clicks
-  className="px-6 py-2 bg-teal-400 text-black rounded-lg font-semibold hover:opacity-90 transition"
->
-  {saving ? "Saving..." : "Save All Changes"}
-</button>
+          <div className="rounded-2xl border border-[#00FFFF22] bg-[#021B36]/70 p-5 md:p-6">
+            <h2 className="text-xl font-semibold text-[#00FFFF] mb-4">Company Details</h2>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-5">
+              {["name", "phone", "address"].map(field => (
+                <div key={field} className="p-4 rounded-xl bg-[#031C3A]/70 border border-[#00FFFF30]">
+                  <label className="text-[#AFCBE3] font-semibold mb-2 block">
+                    {field.charAt(0).toUpperCase() + field.slice(1)}
+                  </label>
+                  <input
+                    type="text"
+                    value={companyDetails[field] || ""}
+                    onChange={e => setCompanyDetails({ ...companyDetails, [field]: e.target.value })}
+                    className="w-full p-2 rounded border border-[#00FFFF30] bg-[#021B36]/60 text-white focus:outline-none"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
 
+          <div className="rounded-2xl border border-[#00FFFF22] bg-[#021B36]/70 p-5 md:p-6 space-y-5">
+            <h2 className="text-xl font-semibold text-[#00FFFF]">Onboarding Details</h2>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
+              <div className="p-4 rounded-xl bg-[#031C3A]/70 border border-[#00FFFF30]">
+                <label className="text-[#AFCBE3] font-semibold mb-2 block">Training Duration</label>
+                <input
+                  type="text"
+                  value={onboardingAnswers[1]}
+                  disabled
+                  className="w-full p-2 rounded border border-[#00FFFF30] bg-[#021B36]/60 text-white"
+                />
+                <p className="text-sm text-[#AFCBE3] mt-1">Cannot be changed</p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-[#031C3A]/70 border border-[#00FFFF30]">
+                <label className="text-[#AFCBE3] font-semibold mb-2 block">Company Size</label>
+                <select
+                  value={onboardingAnswers[2]}
+                  onChange={e => handleChange(2, e.target.value)}
+                  className="w-full p-2 rounded border border-[#00FFFF30] bg-[#021B36]/60 text-white focus:outline-none"
+                >
+                  {COMPANY_SIZE_OPTIONS.map(opt => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="p-4 md:col-span-2 rounded-xl bg-[#031C3A]/70 border border-[#00FFFF30]">
+                <label className="text-[#AFCBE3] font-semibold mb-2 block">Company Description</label>
+                <textarea
+                  rows={6}
+                  value={onboardingAnswers[3]}
+                  onChange={e => handleChange(3, e.target.value)}
+                  className="w-full p-2 rounded border border-[#00FFFF30] resize-none bg-[#021B36]/60 text-white focus:outline-none"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-center pt-2">
+            <button
+              onClick={saveChanges}
+              disabled={saving}
+              className="px-8 py-2.5 bg-teal-400 text-black rounded-lg font-semibold hover:opacity-90 transition disabled:opacity-70"
+            >
+              {saving ? "Saving..." : "Save All Changes"}
+            </button>
+          </div>
         </div>
       </div>
     </div>

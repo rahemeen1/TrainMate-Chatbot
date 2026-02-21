@@ -12,6 +12,7 @@ import { initPinecone } from "./config/pinecone.js";
 import ingestRoutes from "./routes/ingestroutes.js";
 import roadmapRoutes from "./routes/roadmapRoutes.js";
 import chatRoute from "./routes/chatRoutes.js";
+import companyFresherChatRoutes from "./routes/companyFresherChatRoutes.js";
 import moduleExplain from "./routes/moduleExplain.js";
 import quizRoutes from "./routes/quizRoutes.js";
 
@@ -37,6 +38,7 @@ async function startServer() {
     app.use("/api", ingestRoutes);
     app.use("/api/roadmap", roadmapRoutes);
     app.use("/api", chatRoute);
+    app.use("/api/company-chat", companyFresherChatRoutes);
 // app.use("/api/stats", statsRoutes);
 app.use("/api/module", moduleExplain);
     app.use("/api", quizRoutes);

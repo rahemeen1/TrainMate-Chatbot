@@ -40,7 +40,9 @@ export default function CompanySidebar({ companyId, companyName }) {
           <button
             key={opt.path}
             onClick={() => handleNavigation(opt)}
-            className="text-left px-4 py-2 rounded-lg hover:bg-[#00FFFF]/20 transition text-[#AFCBE3] font-medium"
+            className={`text-left px-4 py-2 rounded-lg hover:bg-[#00FFFF]/20 transition font-medium ${
+              opt.label === "Logout" ? "text-red-400" : "text-[#AFCBE3]"
+            }`}
           >
             {opt.label}
           </button>
