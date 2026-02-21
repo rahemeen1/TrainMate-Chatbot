@@ -1249,34 +1249,47 @@ OTHER COMPANY REQUIREMENTS: ${otherCompanySkills.slice(0, 8).join(", ")}`;
 
     console.log(`✅ New roadmap generated: ${roadmapModules.length} modules`);
 
-    // Delete incomplete modules
-    console.log(`🗑️ Deleting ${incompletModules.length} incomplete modules...`);
-    const deletePromises = incompletModules.map((id) =>
-      userRef.collection("roadmap").doc(id).delete()
-    );
-    await Promise.all(deletePromises);
-    console.log(`✅ Incomplete modules deleted`);
+    // CHANGED: Update existing modules' durations instead of creating new modules
+    console.log(`🔄 Adjusting module durations based on remaining time (${remainingDays} days)...`);
+    
+    // Calculate average days per remaining module
+    const totalRemainingModules = incompletModules.length;
+    const avgDaysPerModule = Math.ceil(remainingDays / totalRemainingModules);
+    
+    console.log(`📊 Distributing ${remainingDays} days across ${totalRemainingModules} remaining modules (~${avgDaysPerModule} days each)`);
 
-    // Store new roadmap modules
-    console.log("💾 Saving new roadmap to Firestore...");
-    const roadmapCollection = userRef.collection("roadmap");
-    const startOrder = completedModules.length + 1;
-
-    for (let i = 0; i < roadmapModules.length; i++) {
-      await roadmapCollection.add({
-        ...roadmapModules[i],
-        skillsCovered: roadmapModules[i].skillsCovered || [],
-        order: startOrder + i,
-        completed: false,
-        status: "pending",
-        createdAt: new Date(),
-        FirstTimeCreatedAt: new Date(),
+    // Update each incomplete module's estimated days
+    const updatePromises = incompletModules.map(async (moduleId, idx) => {
+      const updatedEstimatedDays = avgDaysPerModule;
+      await userRef.collection("roadmap").doc(moduleId).update({
+        estimatedDays: updatedEstimatedDays,
         regenerated: true,
-        regenerationReason: `Quiz failure after ${MAX_QUIZ_ATTEMPTS} attempts`,
+        regenerationReason: `Module duration adjusted after ${MAX_QUIZ_ATTEMPTS} quiz failures`,
+        lastUpdatedAt: new Date(),
       });
-    }
+      console.log(`  ✅ Module ${moduleId}: updated to ${updatedEstimatedDays} days`);
+    });
 
-    // Store comprehensive regeneration metadata including weakness analysis
+    await Promise.all(updatePromises);
+    console.log(`✅ All module durations updated`);
+
+    // Store weakness analysis and regeneration info for chatbot
+    const weaknessAnalysis = {
+      concepts: weakConcepts.slice(0, 5).map(w => ({
+        concept: w.concept,
+        frequency: w.frequency,
+      })),
+      strugglingAreas: strugglingAreas.slice(0, 5),
+      avgQuizScore: learningProfile.avgScore,
+      wrongQuestionsCount: learningProfile.wrongQuestions.length,
+      strongAreas: learningProfile.masteredTopics.slice(0, 5),
+      generatedAt: new Date(),
+    };
+
+    // SKIP: Delete and recreate - instead just update metadata
+    console.log(`📝 Storing weakness analysis for chatbot...`);
+
+    // Store comprehensive regeneration metadata with weakness analysis
     try {
       await userRef.set({
         roadmapRegenerated: true,
@@ -1300,15 +1313,10 @@ OTHER COMPANY REQUIREMENTS: ${otherCompanySkills.slice(0, 8).join(", ")}`;
           remainingDays,
           originalDays: originalTrainingDuration,
           daysSpent,
+          modulesAdjustedInstead: true, // MARKER: Modules were adjusted, not regenerated
         },
         // Store weakness summary for chatbot welcome
-        weaknessAnalysis: {
-          concepts: weakConcepts,
-          wrongQuestions: wrongQuestions.slice(0, 5), // Store top 5 for chatbot
-          strugglingAreas: strugglingAreas,
-          avgScore: learningProfile.avgScore,
-          generatedAt: new Date(),
-        },
+        weaknessAnalysis: weaknessAnalysis,
       }, { merge: true });
     } catch (err) {
       console.warn("⚠️ Failed to store regeneration metadata:", err.message);
@@ -1319,12 +1327,14 @@ OTHER COMPANY REQUIREMENTS: ${otherCompanySkills.slice(0, 8).join(", ")}`;
 
     return res.json({
       success: true,
-      message: `Roadmap regenerated successfully with ${roadmapModules.length} new modules based on your performance.`,
-      modules: roadmapModules,
-      daysSpent,
+      message: `Roadmap adjusted successfully! ${totalRemainingModules} modules updated with optimized durations (${avgDaysPerModule} days each) based on your remaining time.`,
+      adjustedModules: totalRemainingModules,
+      avgDaysPerModule,
       remainingDays,
+      daysSpent,
       completedModules: completedModules.length,
-      newModules: roadmapModules.length,
+      weaknessAnalysis: weaknessAnalysis,
+      focusAreas: strugglingAreas.slice(0, 5),
     });
 
   } catch (error) {

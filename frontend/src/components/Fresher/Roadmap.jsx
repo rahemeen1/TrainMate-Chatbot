@@ -305,10 +305,10 @@ const checkQuizUnlockBy50Percent = (module) => {
   const totalDays = module.estimatedDays || 1;
   const fiftyPercentDays = totalDays / 2; // 🎯 50% THRESHOLD
   
-  console.log(`📊 Quiz Unlock Check - Module: ${module.moduleTitle}, Days: ${daysPassed}/${fiftyPercentDays}, Unlocked: ${daysPassed >= fiftyPercentDays}`);
+  console.log(`📊 Quiz Unlock Check - Module: ${module.moduleTitle}, Days: ${daysPassed}/${fiftyPercentDays}, Unlocked: ${daysPassed >= 0}`);
   
-  // 🔓 UNLOCK CONDITION: 50% or more of time has elapsed
-  return daysPassed >= fiftyPercentDays;
+  // 🔓 UNLOCK CONDITION: Testing - unlock on first day
+  return daysPassed >= 0;
 };
 
 /**
@@ -348,8 +348,8 @@ const getQuizUnlockMessageBy50Percent = (module) => {
   const fiftyPercentDays = totalDays / 2; // 🎯 50% THRESHOLD
   const daysRemainingUntilQuizUnlock = Math.ceil(fiftyPercentDays - daysPassed);
   
-  // 🔓 Quiz unlocked - 50% time has passed
-  if (daysPassed >= fiftyPercentDays) {
+  // 🔓 Quiz unlocked - Testing: available immediately
+  if (daysPassed >= 0) {
     return "Quiz is now available!";
   }
   
@@ -561,12 +561,12 @@ if (!roadmap.length)
           </p>
           {module.retriesGranted !== undefined && module.retriesGranted > 0 && (
             <p className="text-[#00FFFF] text-xs mt-1 font-semibold">
-              🤖 AI granted you {module.retriesGranted} more {module.retriesGranted === 1 ? 'retry' : 'retries'} based on your performance
+              TrainMate granted you {module.retriesGranted} more {module.retriesGranted === 1 ? 'retry' : 'retries'} based on your performance
             </p>
           )}
           {!module.retriesGranted && (
             <p className="text-[#AFCBE3] text-xs mt-1">
-              AI will analyze your performance and decide retry allocation dynamically.
+              TrainMate will analyze your performance and decide retry allocation dynamically.
             </p>
           )}
         </div>
@@ -597,29 +597,7 @@ if (!roadmap.length)
 >
   View Details
 </button>
-      {/* 
-        🔒 50% TIME-BASED QUIZ LOCK BUTTON
-        
-        BUTTON STATES:
-        1. 🔒 Quiz Locked (module.quizTimeUnlocked = false)
-           - Shown when < 50% of module time has passed
-           - Button is disabled and grayed out
-           - Hover shows unlock countdown tooltip
-        
-        2. 📝 Take Quiz (module.quizTimeUnlocked = true, quizAttempts = 0)
-           - Shown when ≥ 50% of module time has passed
-           - First attempt, quiz is unlocked
-           - Button is enabled and clickable
-        
-        3. 🤖 Retry (module.quizAttempts > 0)
-           - Shown after failed attempts
-           - AI decides if retry is allowed
-           - Shows current attempt number
-        
-        4. ✅ Quiz Passed (module.quizPassed = true)
-           - Quiz successfully completed
-           - Button remains for review access
-      */}
+      {/* Quiz button - disabled if quiz locked or 50% time not met */}
       <button
         onClick={() =>
           navigate(
@@ -633,8 +611,8 @@ if (!roadmap.length)
           !module.quizTimeUnlocked 
             ? module.quizUnlockMessage  // Shows 50% countdown message
             : module.quizAttempts > 0 
-              ? `Retry Quiz - AI will analyze and decide retry allocation`
-              : "Take Quiz - AI will evaluate and provide feedback"
+              ? `Retry Quiz - TrainMate will analyze and decide retry allocation`
+              : "Take Quiz - TrainMate will evaluate and provide feedback"
         }
         className={`px-4 py-2 border border-[#00FFFF] text-[#00FFFF] rounded relative group
           ${!module.quizTimeUnlocked || module.quizLocked ? "opacity-40 cursor-not-allowed grayscale" : "hover:bg-[#00FFFF]/10"}
@@ -644,7 +622,7 @@ if (!roadmap.length)
         {!module.quizTimeUnlocked ? "🔒 Quiz Locked" :  // < 50% time
          module.quizPassed ? "✅ Quiz Passed" :
          module.quizAttempts > 0 
-           ? `🤖 Retry (Attempt ${module.quizAttempts + 1})` 
+           ? ` Retry (Attempt ${module.quizAttempts + 1})` 
            : "📝 Take Quiz"}
         
         {/* 🔒 TOOLTIP: Shown when quiz is locked due to 50% rule */}
@@ -661,10 +639,10 @@ if (!roadmap.length)
         {module.quizTimeUnlocked && !module.quizLocked && (
           <div className="absolute left-full top-1/2 transform -translate-y-1/2 ml-3 hidden group-hover:block w-72 bg-[#021B36] border border-purple-500 rounded-lg p-3 text-sm z-10 whitespace-normal">
             <div className="text-purple-300 font-semibold mb-1 flex items-center gap-2">
-              <span>🤖</span> AI-Powered Assessment
+              <span></span> TrainMate-Powered Assessment
             </div>
             <div className="text-[#AFCBE3] text-xs space-y-1">
-              <p>• AI analyzes your performance in real-time</p>
+              <p>• It analyzes your performance in real-time</p>
               <p>• Dynamically allocates retry attempts (1-3)</p>
               <p>• Provides personalized recommendations</p>
               <p>• Adapts module timeline based on progress</p>

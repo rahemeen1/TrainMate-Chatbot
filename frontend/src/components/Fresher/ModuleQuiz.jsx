@@ -177,27 +177,27 @@ export default function ModuleQuiz() {
 
 	return (
 		<div className="min-h-screen bg-[#031C3A] text-white p-8">
-			<div className="flex items-start justify-between mb-6">
-				<div>
-					<h1 className="text-3xl font-bold text-[#00FFFF]">Module Quiz</h1>
-					<p className="text-[#AFCBE3] mt-1">
-						Generate a quiz from company and department knowledge base.
+			<div className="flex items-start justify-between mb-8">
+				<div className="flex-1">
+					<h1 className="text-4xl font-bold text-[#00FFFF] mb-2">Module Quiz</h1>
+					<div className="flex items-center gap-3">
+					
+						<p className="text-[#AFCBE3] text-lg leading-relaxed">
+							Test your knowledge with questions based on module content.
+						</p>
+					</div>
+				</div>
+				<div className="text-right">
+					{quiz && (
+						<p className="text-[#AFCBE3] text-lg font-semibold mb-4">
+							Time Left: <span className="text-[#00FFFF]">{formatTime(timeLeft)}</span>
+						</p>
+					)}
+					<p className="text-[#AFCBE3]/60 text-sm">
+						Complete the quiz to continue<br />
+						<span className="text-xs">You cannot exit during the assessment</span>
 					</p>
 				</div>
-				<button
-					onClick={goToRoadmap}
-					className="px-5 py-2 border border-[#00FFFF] text-[#00FFFF] rounded hover:bg-[#00FFFF]/20 transition-all duration-300"
-				>
-					Back
-				</button>
-			</div>
-
-			<div className="flex gap-3 mb-6">
-				{quiz && (
-					<div className="ml-auto text-[#AFCBE3]">
-						Time Left: <span className="text-[#00FFFF]">{formatTime(timeLeft)}</span>
-					</div>
-				)}
 			</div>
 
 			{loading && !quiz && (
@@ -213,36 +213,49 @@ export default function ModuleQuiz() {
 			{renderStatus()}
 
 			{quiz && (
-				<div className="space-y-8">
-					<div className="bg-[#021B36]/80 border border-[#00FFFF30] rounded-xl p-6">
-						<h2 className="text-xl text-[#00FFFF] font-semibold mb-4">MCQs (15)</h2>
+				<div className="space-y-6 -mt-2">
+					<div className="bg-[#021B36]/80 border border-[#00FFFF30] rounded-xl p-8">
+						<h2 className="text-2xl text-[#00FFFF] font-bold mb-6 flex items-center gap-2">
+							<span className="w-8 h-8 bg-[#00FFFF]/20 rounded-full flex items-center justify-center text-sm">📋</span>
+							MCQs (15)
+						</h2>
 						<div className="space-y-6">
 							{quiz.mcq?.map((q, idx) => (
-								<div key={q.id} className="bg-[#031C3A] p-4 rounded-lg">
-									<p className="font-medium mb-3">
-										{idx + 1}. {q.question}
+							<div key={q.id} className="bg-[#031C3A] border border-[#00FFFF20] p-6 rounded-lg hover:border-[#00FFFF40] transition-all duration-200">
+								<p className="font-semibold mb-4 text-lg text-[#FFFFFF]">
+									<span className="text-[#00FFFF]">{idx + 1}.</span> {q.question}
 									</p>
-									<div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+					<div className="grid grid-cols-1 md:grid-cols-2 gap-3">
 										{q.options?.map((opt, optIdx) => (
-											<label
+											<div
 												key={optIdx}
-												className="flex items-center gap-2 text-[#AFCBE3]"
-											>
-												<input
-													type="radio"
-													name={`mcq-${q.id}`}
-													value={optIdx}
-													checked={mcqAnswers[q.id] === optIdx}
-													disabled={timeLeft === 0}
-													onChange={() =>
+												onClick={() => {
+													if (timeLeft > 0) {
 														setMcqAnswers((prev) => ({
 															...prev,
 															[q.id]: optIdx,
-														}))
+														}));
 													}
-												/>
-												{opt}
-											</label>
+												}}
+												className={`relative p-4 rounded-lg border-2 cursor-pointer transition-all duration-200 ${
+													mcqAnswers[q.id] === optIdx
+														? "bg-[#00FFFF]/20 border-[#00FFFF] text-[#00FFFF]"
+														: "bg-[#031C3A] border-[#00FFFF30] text-[#AFCBE3] hover:border-[#00FFFF] hover:bg-[#031C3A]/70"
+												} ${timeLeft === 0 ? "opacity-50 cursor-not-allowed" : ""}`}
+											>
+												<div className="flex items-start gap-3">
+													<input
+														type="radio"
+														name={`mcq-${q.id}`}
+														value={optIdx}
+														checked={mcqAnswers[q.id] === optIdx}
+														disabled={timeLeft === 0}
+														onChange={() => {}}
+														className="mt-1 cursor-pointer"
+													/>
+													<span className="flex-1 leading-relaxed">{opt}</span>
+												</div>
+											</div>
 										))}
 									</div>
 								</div>
@@ -250,17 +263,20 @@ export default function ModuleQuiz() {
 						</div>
 					</div>
 
-					<div className="bg-[#021B36]/80 border border-[#00FFFF30] rounded-xl p-6">
-						<h2 className="text-xl text-[#00FFFF] font-semibold mb-4">One Liners (5)</h2>
+					<div className="bg-[#021B36]/80 border border-[#00FFFF30] rounded-xl p-8">
+						<h2 className="text-2xl text-[#00FFFF] font-bold mb-6 flex items-center gap-2">
+							<span className="w-8 h-8 bg-[#00FFFF]/20 rounded-full flex items-center justify-center text-sm">✏️</span>
+							One Liners (5)
+						</h2>
 						<div className="space-y-6">
 							{quiz.oneLiners?.map((q, idx) => (
-								<div key={q.id} className="bg-[#031C3A] p-4 rounded-lg">
-									<p className="font-medium mb-3">
-										{idx + 1}. {q.question}
+							<div key={q.id} className="bg-[#031C3A] border border-[#00FFFF20] p-6 rounded-lg hover:border-[#00FFFF40] transition-all duration-200">
+								<p className="font-semibold mb-4 text-lg text-[#FFFFFF]">
+									<span className="text-[#00FFFF]">{idx + 1}.</span> {q.question}
 									</p>
 									<input
 										type="text"
-										className="w-full bg-[#021B36] border border-[#00FFFF30] rounded p-2 text-white"
+										className="w-full bg-[#031C3A] border-2 border-[#00FFFF30] rounded-lg p-3 text-white placeholder-[#AFCBE3]/50 transition-all duration-200 focus:outline-none focus:border-[#00FFFF] focus:bg-[#031C3A]/80 focus:shadow-lg focus:shadow-[#00FFFF]/20"
 										value={oneLinerAnswers[q.id] || ""}
 										disabled={timeLeft === 0}
 										onChange={(e) =>
@@ -269,7 +285,7 @@ export default function ModuleQuiz() {
 												[q.id]: e.target.value,
 											}))
 										}
-										placeholder="Your answer"
+										placeholder="Type your answer here..."
 									/>
 								</div>
 							))}
@@ -279,13 +295,13 @@ export default function ModuleQuiz() {
 			)}
 
 			{quiz && (
-				<div className="flex justify-end mt-6">
+				<div className="flex justify-end mt-8">
 					<button
 						disabled={submitting || timeLeft === 0}
 						onClick={handleSubmit}
-						className="px-6 py-3 border border-[#00FFFF] text-[#00FFFF] rounded disabled:opacity-50"
+						className="px-8 py-3 bg-gradient-to-r from-[#00FFFF] to-cyan-400 text-[#031C3A] font-semibold rounded-lg transition-all duration-200 hover:shadow-lg hover:shadow-[#00FFFF]/40 hover:scale-105 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:shadow-none"
 					>
-						Submit Answers
+						{submitting ? "Submitting..." : "Submit Answers"}
 					</button>
 				</div>
 			)}

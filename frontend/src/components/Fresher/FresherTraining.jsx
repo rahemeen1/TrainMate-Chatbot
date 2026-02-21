@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { db } from "../../firebase";
-import { collection, getDocs, doc, updateDoc } from "firebase/firestore";
+import { collection, getDocs, doc, updateDoc, getDoc } from "firebase/firestore";
 import { FresherSideMenu } from "./FresherSideMenu";
 
 export default function FresherTraining() {
@@ -18,15 +18,39 @@ export default function FresherTraining() {
   const [selectedModule, setSelectedModule] = useState(null);
   const [showQuizConfirm, setShowQuizConfirm] = useState(false);
   const [showQuizLocked, setShowQuizLocked] = useState(false);
+  const [weaknessAnalysis, setWeaknessAnalysis] = useState(null);
+  const [showWeaknessBanner, setShowWeaknessBanner] = useState(false);
 
   // ===============================
-  // 🔄 Load Roadmap
+  // 🔄 Load Roadmap & Weakness Analysis
   // ===============================
   useEffect(() => {
     if (!companyId || !deptId || !userId) return;
 
     const loadRoadmap = async () => {
       try {
+        const userRef = doc(
+          db,
+          "freshers",
+          companyId,
+          "departments",
+          deptId,
+          "users",
+          userId
+        );
+        
+        // Fetch weakness analysis if it exists
+        const userSnap = await getDoc(userRef);
+        if (userSnap.exists()) {
+          const userData = userSnap.data();
+          if (userData.weaknessAnalysis) {
+            setWeaknessAnalysis(userData.weaknessAnalysis);
+            setShowWeaknessBanner(true);
+            // Auto-hide banner after 10 seconds
+            setTimeout(() => setShowWeaknessBanner(false), 10000);
+          }
+        }
+        
         const roadmapRef = collection(
           db,
           "freshers",
@@ -262,6 +286,43 @@ return (
       <h1 className="text-3xl font-bold text-[#00FFFF]">
         Module Details
       </h1>
+
+      {/* ===== Weakness Analysis Banner ===== */}
+      {showWeaknessBanner && weaknessAnalysis && (
+        <div className="bg-red-500/10 border-2 border-red-500 rounded-lg p-6 animate-pulse">
+          <div className="flex items-start gap-4">
+            <span className="text-3xl">⚠️</span>
+            <div className="flex-1">
+              <h3 className="text-xl font-bold text-red-400 mb-2">
+                Quiz Setback - Let's Refocus
+              </h3>
+              <p className="text-[#AFCBE3] mb-3">
+                You didn't pass the quiz. Your average score was <span className="font-semibold text-red-300">{weaknessAnalysis.avgQuizScore}%</span>. 
+                Let's focus on your weak areas and come back stronger.
+              </p>
+              
+              <div className="bg-[#031C3A]/60 rounded-lg p-4 mb-3">
+                <p className="text-[#AFCBE3] text-sm font-semibold mb-2">Key Areas to Focus On:</p>
+                <ul className="text-[#AFCBE3] text-sm space-y-1 list-disc list-inside">
+                  {weaknessAnalysis.strugglingAreas?.map((area, idx) => (
+                    <li key={idx} className="text-red-300">{area}</li>
+                  ))}
+                </ul>
+              </div>
+              
+              <p className="text-[#AFCBE3] text-sm">
+                💡 The chatbot is ready to help you master these concepts. Focus on understanding these areas, then retake the quiz with confidence!
+              </p>
+            </div>
+            <button
+              onClick={() => setShowWeaknessBanner(false)}
+              className="px-3 py-1 bg-red-500/20 text-red-300 rounded hover:bg-red-500/30 transition text-sm"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ===== Progress Bar ===== */}
       <div>

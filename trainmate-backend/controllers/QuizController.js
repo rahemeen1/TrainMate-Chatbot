@@ -25,7 +25,7 @@ const cohere = new CohereClient({ token: process.env.COHERE_API_KEY });
 const QUIZ_MAX_RETRIES = 2;
 const PLAN_MAX_QUERIES = 4;
 const MAX_CONTEXT_CHARS = 8000;
-const QUIZ_PASS_THRESHOLD = 70; // Base threshold, AI can adjust
+const QUIZ_PASS_THRESHOLD = 80; // Base threshold, AI can adjust
 const MAX_QUIZ_ATTEMPTS = 3; // Maximum possible attempts (AI decides actual count)
 
 async function embedText(text) {
@@ -196,20 +196,23 @@ async function fetchPlannedDocs({ queries, companyId, deptId }) {
 
 async function critiqueQuiz({ title, quiz, allowCoding = false }) {
 	const prompt = `
-You are a strict quiz quality auditor.
+You are a strict quiz quality auditor for company-specific training.
 
 MODULE: "${title}"
 
 QUIZ JSON:
 ${JSON.stringify(quiz)}
 
-Check for:
+CRITICAL CHECKS:
+- Questions should be 90% based on THIS COMPANY'S training materials and learner's chat history
+- 10% can include general best practices (but NO other company references)
 - Appropriate number of MCQs (5-25) and one-liners (2-15)
 - Each MCQ has 4 options and one correct answer
 - Questions are specific to the module and advanced-level
 - No duplicate questions or options
-- Coding questions ${allowCoding ? 'are allowed and should be relevant' : 'should NOT be present'}
+- Coding questions ${allowCoding ? 'are allowed and should be relevant to company materials' : 'should NOT be present'}
 - Total question count is reasonable (10-40 questions total)
+- Every question must be contextually relevant to THIS company's business (no other company info)
 
 Return JSON only:
 {
@@ -355,13 +358,14 @@ function buildQuizPrompt({ title, context, critiqueIssues, allowCoding = false, 
 		: "";
 	
 	const codingBlock = allowCoding ? `
-4. <b>Coding Questions (OPTIONAL - YOU DECIDE HOW MANY if needed)</b>:
+5. Coding Questions (OPTIONAL - YOU DECIDE HOW MANY if needed):
    - Include coding challenges ONLY if "${title}" involves programming/technical implementation
    - Decide the count based on module complexity (typically 0-3 questions)
    - Each coding question should test problem-solving and implementation skills
+   - Base coding scenarios on THIS COMPANY'S training materials and practices (no other company info)
    - Include expected approach and programming language
-   - Focus on real-world scenarios from the training materials` : `
-4. <b>NO CODING QUESTIONS</b>:
+   - Focus on real-world scenarios from this company's context` : `
+5. NO CODING QUESTIONS:
    - This department does NOT allow coding questions
    - Do NOT include any "coding" field in your response
    - Focus only on MCQs and one-liner questions`;
@@ -386,15 +390,18 @@ QUIZ GENERATION INSTRUCTIONS:
 2. Focus Questions on Module: All questions must be directly related to "${title}"
 
 3. Source Weighting:
-   - 90% of questions should come from the COMPANY TRAINING MATERIALS (official policies, procedures, technical details)
-   - 10% can incorporate insights from PERSONALIZED LEARNING CONTEXT (if available)
+   - 90% of questions should come from THIS COMPANY'S TRAINING MATERIALS and the learner's CHAT HISTORY (official policies, procedures, technical details, personalized learning context)
+   - 10% can incorporate general best practices and industry standards (but NEVER use other company examples or information)
+   - DO NOT mention other companies or use their specific examples
+   - All questions must be contextually relevant to this company's business and operations
 
 4. Question Quality:
    - Create advanced-level questions that test practical application, not just memorization
-   - Include scenario-based questions relevant to "${title}"
+   - Include scenario-based questions relevant to "${title}" and THIS COMPANY'S context
    - Cover key concepts, definitions, best practices, and procedures
    - Each MCQ must have 4 distinct options with only one correct answer
    - One-liner questions should test specific knowledge and skills
+   - IMPORTANT: Never reference or use information from other companies
 ${codingBlock}
 ${critiqueBlock}
 
