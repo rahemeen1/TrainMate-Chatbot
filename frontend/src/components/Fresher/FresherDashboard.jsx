@@ -16,6 +16,28 @@ import { db } from "../../firebase";
 import OnboardingPage from "./OnboardingPage";
 import { FresherSideMenu } from "./FresherSideMenu";
 
+// Custom scrollbar styles
+const scrollbarStyles = `
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 8px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: #021B36;
+    border-radius: 10px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #00FFFF;
+    border-radius: 10px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #00CCD6;
+  }
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: #00FFFF #021B36;
+  }
+`;
+
 export default function FresherDashboard() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -262,23 +284,25 @@ if (loading) {
   }
 
   return (
-    <div className="flex min-h-screen bg-[#031C3A] text-white">
-      {/* SIDE MENU */}
-      <div className="w-64 bg-[#021B36]/90 p-4">
-        <FresherSideMenu
-          userId={userId}
-          companyId={companyId}
-          deptId={deptId}
-          companyName={companyName}
-          roadmapGenerated={roadmapGenerated}
-        />
-      </div>
+    <>
+      <style>{scrollbarStyles}</style>
+      <div className="flex h-screen bg-[#031C3A] text-white overflow-hidden">
+        {/* SIDE MENU */}
+        <div className="w-64 bg-[#021B36]/90 p-4 overflow-y-auto custom-scrollbar">
+          <FresherSideMenu
+            userId={userId}
+            companyId={companyId}
+            deptId={deptId}
+            companyName={companyName}
+            roadmapGenerated={roadmapGenerated}
+          />
+        </div>
 
-      {/* MAIN */}
-      <div className="flex-1 p-10">
+        {/* MAIN */}
+        <div className="flex-1 p-10 overflow-y-auto custom-scrollbar">
         {/* MISSED DATES NOTIFICATION */}
         {missedDateInfo?.hasMissedDates && (
-          <div className="bg-red-900/40 border border-red-500 rounded-lg p-4 mb-6 flex items-start gap-3">
+          <div className="bg-red-900/40 border border-red-500 rounded-lg p-4 mb-4 flex items-start gap-3">
             <div className="text-red-400 text-2xl flex-shrink-0">⚠️</div>
             <div className="flex-1">
               {(() => {
@@ -314,7 +338,7 @@ if (loading) {
           </div>
         )}
 
-        <div className="mb-8 flex items-start justify-between gap-4">
+        <div className="mb-4 flex items-start justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold text-[#00FFFF]">
               Welcome {userData?.name || "Fresher"}!
@@ -328,14 +352,14 @@ if (loading) {
               <span className="text-lg">🔥</span>
               <div className="flex items-baseline gap-1">
                 <span className="text-yellow-300 font-bold text-sm">{missedDateInfo.currentStreak}</span>
-               
+                
               </div>
             </div>
           )}
         </div>
 
         {/* INFO CARDS */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
           <div className="bg-[#021B36]/80 p-6 rounded-xl border border-[#00FFFF30]">
             <h3 className="text-[#00FFFF] font-semibold mb-2">
               Training Program
@@ -351,7 +375,7 @@ if (loading) {
 
         {/* TRAINING STATS */}
         {missedDateInfo && (
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
             <div className="bg-[#021B36]/80 p-4 rounded-lg border border-green-500/30">
               <p className="text-[#AFCBE3] text-xs font-semibold uppercase mb-1">Active Days</p>
               <p className="text-green-400 text-2xl font-bold">{missedDateInfo.activeDays}</p>
@@ -363,12 +387,22 @@ if (loading) {
               <p className="text-red-400 text-2xl font-bold">{missedDateInfo.missedDays || 0}</p>
               <p className="text-[#AFCBE3] text-xs mt-1">days missed</p>
             </div>
+            
+             <div className="bg-[#021B36]/80 p-4 rounded-lg border border-purple-500/30">
+              <p className="text-[#AFCBE3] text-xs font-semibold uppercase mb-1">Active Module</p>
+              <p className="text-cyan-400 text-sm font-bold line-clamp-2" title={missedDateInfo.activeModuleName}>
+                {missedDateInfo.activeModuleName || "No active module"}
+              </p>
+              <p className="text-[#AFCBE3] text-xs mt-1">current focus</p>
+            </div>
 
             <div className="bg-[#021B36]/80 p-4 rounded-lg border border-[#00FFFF]/30">
-              <p className="text-[#AFCBE3] text-xs font-semibold uppercase mb-1">Total Expected</p>
+              <p className="text-[#AFCBE3] text-xs font-semibold uppercase mb-1">Total Expected Days</p>
               <p className="text-[#00FFFF] text-2xl font-bold">{missedDateInfo.totalExpectedDays}</p>
-              <p className="text-[#AFCBE3] text-xs mt-1">days available</p>
+              <p className="text-[#AFCBE3] text-xs mt-1">available for training</p>
             </div>
+
+           
 
           </div>
         )}
@@ -414,14 +448,11 @@ if (loading) {
   )}
  
 </div>
-       <p className="italic text-[#AFCBE3] mt-2">
-          Best of luck with your journey
-        </p>
-
-        <p className="text-center text-xs text-[#AFCBE3] mt-10">
+        <p className="text-center text-xs text-[#AFCBE3] mt-2">
           Powered by TrainMate
         </p>
+        </div>
       </div>
-    </div>
+    </>
   );
 }

@@ -1091,9 +1091,20 @@ export const getMissedDatesController = async (req, res) => {
         activeDays: 0,
         missedDays: 0,
         totalExpectedDays: 0,
-        currentStreak: 0
+        currentStreak: 0,
+        activeModuleName: "No roadmap"
       });
     }
+
+    // Calculate total expected days from all modules' estimatedDays
+    const allModules = roadmapSnap.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    
+    const totalExpectedDays = allModules.reduce((sum, module) => {
+      return sum + (module.estimatedDays || 0);
+    }, 0);
 
     const userRef = db
       .collection("freshers")
@@ -1127,8 +1138,9 @@ export const getMissedDatesController = async (req, res) => {
         missedCount: 0,
         activeDays: 0,
         missedDays: 0,
-        totalExpectedDays: 0,
-        currentStreak: 0
+        totalExpectedDays: totalExpectedDays,
+        currentStreak: 0,
+        activeModuleName: "No active module"
       });
     }
 
@@ -1168,7 +1180,7 @@ export const getMissedDatesController = async (req, res) => {
       firstMissedDate: null,
       missedCount: 0,
       activeDays: 0,
-      totalExpectedDays: 0,
+      totalExpectedDays: totalExpectedDays,
       streak: 0
     };
 
@@ -1181,13 +1193,15 @@ export const getMissedDatesController = async (req, res) => {
         moduleData,
         startDateOverride
       );
+      // Override totalExpectedDays with the sum of all modules' estimatedDays
+      missedDateInfo.totalExpectedDays = totalExpectedDays;
     }
 
     await userRef.update({
       trainingStats: {
         activeDays: missedDateInfo.activeDays,
         missedDays: missedDateInfo.missedCount,
-        totalExpectedDays: missedDateInfo.totalExpectedDays,
+        totalExpectedDays: totalExpectedDays,
         currentStreak: missedDateInfo.streak,
         lastUpdated: new Date()
       }
@@ -1203,8 +1217,9 @@ export const getMissedDatesController = async (req, res) => {
       missedCount: missedDateInfo.missedCount,
       activeDays: missedDateInfo.activeDays,
       missedDays: missedDateInfo.missedCount,
-      totalExpectedDays: missedDateInfo.totalExpectedDays,
-      currentStreak: missedDateInfo.streak
+      totalExpectedDays: totalExpectedDays,
+      currentStreak: missedDateInfo.streak,
+      activeModuleName: moduleData.moduleTitle || "No active module"
     });
 
   } catch (err) {
