@@ -142,7 +142,7 @@ export default function OnboardingPage({
       // Call onFinish after slight delay for success feedback
       setTimeout(() => {
         if (onFinish) onFinish();
-      }, 500);
+      }, 2500);
     } catch (err) {
       console.error("Error saving onboarding:", err);
       setSavingError(err.message || "Failed to save onboarding. Please try again.");
@@ -275,13 +275,6 @@ export default function OnboardingPage({
             </div>
           )}
 
-          {/* SUCCESS MESSAGE */}
-          {saveSuccess && (
-            <div className="mb-6 p-4 bg-green-500/20 border border-green-500 rounded-lg">
-              <p className="text-green-300 font-semibold">✅ Onboarding saved! Redirecting...</p>
-            </div>
-          )}
-
           {/* NAVIGATION */}
           <div className="flex justify-between mt-10">
             {step > 1 && !saving && (
@@ -334,6 +327,20 @@ export default function OnboardingPage({
               </button>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* SUCCESS TOAST */}
+      <div
+        className={`fixed top-6 right-6 z-50 transition-all duration-500 ease-out ${
+          saveSuccess
+            ? "translate-x-0 opacity-100"
+            : "translate-x-8 opacity-0 pointer-events-none"
+        }`}
+      >
+        <div className="max-w-sm px-5 py-4 rounded-xl border border-green-500/60 bg-[#021B36] shadow-lg">
+          <p className="text-green-300 font-semibold">✅ Onboarding completed</p>
+          <p className="text-[#AFCBE3] text-sm mt-1">Redirecting in a few seconds...</p>
         </div>
       </div>
     </div>
