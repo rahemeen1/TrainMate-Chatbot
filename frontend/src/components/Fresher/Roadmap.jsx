@@ -400,32 +400,12 @@ const isModuleExpired = (module) => {
   
 if (loading)
   return (
-<<<<<<< HEAD
     <div className="flex min-h-screen bg-[#031C3A] text-white items-center justify-center">
       <div className="flex flex-col items-center gap-4">
         <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-[#00FFFF]" />
         <p className="text-lg font-semibold">Loading roadmap modules...</p>
         <p className="text-sm text-[#AFCBE3]">Please wait, this may take a few seconds.</p>
       </div>
-=======
-    <div className="flex min-h-screen bg-[#031C3A] text-white">
-
-      {/* ✅ Right content area — loader centered */}
-      <div className="flex-1 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-[#00FFFF]" />
-          
-          <p className="text-lg font-semibold">
-            Generating roadmap modules...
-          </p>
-          
-          <p className="text-sm text-[#AFCBE3]">
-            Please wait, this may take a few seconds.
-          </p>
-        </div>
-      </div>
-
->>>>>>> f9d4ff3ab1484b4922c32a4925d15dee95080d59
     </div>
   );
 
