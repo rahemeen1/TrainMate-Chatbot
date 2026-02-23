@@ -40,12 +40,22 @@ export default function FresherProgress() {
         const roadmapRef = collection(db, "freshers", companyId, "departments", deptId, "users", userId, "roadmap");
         const roadmapSnap = await getDocs(roadmapRef);
         
-        // Calculate progress for each module based on days used
+        // Calculate progress for each module based on days used or quiz completion
         const modulesWithProgress = await Promise.all(
           roadmapSnap.docs.map(async (moduleDoc) => {
             const moduleData = { id: moduleDoc.id, ...moduleDoc.data() };
             
-            // Count unique chat session days for this module
+            // If module has progress field (set when quiz is passed), use that
+            if (moduleData.progress !== undefined && moduleData.progress !== null) {
+              return {
+                ...moduleData,
+                daysUsed: 0, // Not needed when progress is already set
+                estimatedDays: moduleData.estimatedDays || 1,
+                moduleProgress: moduleData.progress,
+              };
+            }
+            
+            // Otherwise, calculate based on chat session days
             const chatSessionsRef = collection(
               db,
               "freshers",
@@ -74,11 +84,10 @@ export default function FresherProgress() {
           })
         );
 
-        // Calculate overall progress as (total days used / total estimated days) * 100
-        const totalDaysUsed = modulesWithProgress.reduce((sum, m) => sum + m.daysUsed, 0);
-        const totalEstimatedDays = modulesWithProgress.reduce((sum, m) => sum + m.estimatedDays, 0);
-        const overallPercent = totalEstimatedDays > 0 
-          ? Math.min(Math.round((totalDaysUsed / totalEstimatedDays) * 100), 100)
+        // Calculate overall progress as average of all module progress percentages
+        const totalModuleProgress = modulesWithProgress.reduce((sum, m) => sum + m.moduleProgress, 0);
+        const overallPercent = modulesWithProgress.length > 0
+          ? Math.min(Math.round(totalModuleProgress / modulesWithProgress.length), 100)
           : 0;
         setOverallProgress(overallPercent);
 

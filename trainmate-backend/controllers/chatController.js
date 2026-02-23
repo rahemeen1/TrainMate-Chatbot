@@ -39,6 +39,27 @@ async function embedText(text) {
 // ================= TRAINING PROGRESS =================
 
 /**
+ * Parse training duration to days
+ * @param {string|number} duration - e.g., "3 months", "6 weeks", "90 days", or numeric days
+ * @returns {number|null} Duration in days
+ */
+function parseTrainingDurationDays(duration) {
+  if (Number.isFinite(duration)) return Math.max(1, Math.round(duration));
+  const raw = String(duration || "").trim().toLowerCase();
+  if (!raw) return null;
+
+  const numberMatch = raw.match(/\d+(?:\.\d+)?/);
+  const value = numberMatch ? parseFloat(numberMatch[0]) : NaN;
+  if (!Number.isFinite(value)) return null;
+
+  if (raw.includes("week")) return Math.max(1, Math.round(value * 7));
+  if (raw.includes("month")) return Math.max(1, Math.round(value * 30));
+  if (raw.includes("day")) return Math.max(1, Math.round(value));
+
+  return Math.max(1, Math.round(value));
+}
+
+/**
  * Calculate progress based on actual skills covered in conversations
  * @param {Object} skillData - Result from getActualSkillsCovered
  * @returns {Object} Progress metrics
@@ -327,26 +348,31 @@ async function getMissedDates(companyId, deptId, userId, activeModuleId, moduleD
     const startBase = startDateOverride || moduleData.createdAt;
     const startDate = startBase.toDate ? startBase.toDate() : new Date(startBase);
 
-    const today = new Date();
+    const now = new Date();
+    const today = new Date(now);
     startDate.setHours(0, 0, 0, 0);
     today.setHours(0, 0, 0, 0);
 
-    if (activeDays === 0 && getDateKey(startDate) === getDateKey(today)) {
+    // Only count full days that have completed (exclude the current day).
+    const endDate = new Date(today);
+    endDate.setDate(endDate.getDate() - 1);
+
+    if (endDate < startDate) {
       return {
         hasMissedDates: false,
         missedDates: [],
         firstMissedDate: null,
         missedCount: 0,
-        activeDays: 0,
-        totalExpectedDays: 1,
-        streak: 0
+        activeDays,
+        totalExpectedDays: 0,
+        streak: activeDates.has(getDateKey(today)) ? 1 : 0
       };
     }
 
     const missedDates = [];
     const currentDate = new Date(startDate);
 
-    while (currentDate <= today) {
+    while (currentDate <= endDate) {
       const dateStr = getDateKey(currentDate);
       if (!activeDates.has(dateStr)) {
         missedDates.push(dateStr);
@@ -355,11 +381,11 @@ async function getMissedDates(companyId, deptId, userId, activeModuleId, moduleD
     }
 
     // Calculate total expected days
-    const totalExpectedDays = Math.floor((today - startDate) / (1000 * 60 * 60 * 24)) + 1;
+    const totalExpectedDays = Math.floor((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
 
     // Calculate current streak (consecutive days from today backwards)
     let streak = 0;
-    const streakDate = new Date(today);
+    const streakDate = new Date(activeDates.has(getDateKey(today)) ? today : endDate);
     while (true) {
       const dateStr = getDateKey(streakDate);
       if (activeDates.has(dateStr)) {
@@ -1096,15 +1122,11 @@ export const getMissedDatesController = async (req, res) => {
       });
     }
 
-    // Calculate total expected days from all modules' estimatedDays
+    // Get all modules
     const allModules = roadmapSnap.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }));
-    
-    const totalExpectedDays = allModules.reduce((sum, module) => {
-      return sum + (module.estimatedDays || 0);
-    }, 0);
 
     const userRef = db
       .collection("freshers")
@@ -1117,6 +1139,86 @@ export const getMissedDatesController = async (req, res) => {
     const userSnap = await userRef.get();
     const userData = userSnap.exists ? userSnap.data() : {};
     const roadmapGeneratedAt = getRoadmapGeneratedAt(userData);
+
+    // Get training duration from user/onboarding
+    let trainingDuration = userData?.trainingDurationFromOnboarding || 
+                          userData?.trainingTime || 
+                          userData?.roadmapAgentic?.trainingDuration;
+
+    // If not found, try onboarding
+    if (!trainingDuration) {
+      const onboardingRef = db
+        .collection("companies")
+        .doc(companyId)
+        .collection("onboardingAnswers");
+
+      const onboardingSnap = await onboardingRef
+        .orderBy("createdAt", "desc")
+        .limit(1)
+        .get();
+
+      if (!onboardingSnap.empty) {
+        const data = onboardingSnap.docs[0].data();
+        trainingDuration = data?.answers?.["1"] || null;
+      }
+    }
+
+    // Parse training duration to days
+    const totalExpectedDays = parseTrainingDurationDays(trainingDuration) || 
+                             allModules.reduce((sum, module) => sum + (module.estimatedDays || 0), 0) ||
+                             90; // fallback to 90 days (3 months)
+
+    console.log("📊 Training duration:", trainingDuration, "→", totalExpectedDays, "days");
+
+    // Calculate total active days across ALL modules
+    let totalActiveDays = 0;
+    const allActiveDates = new Set();
+
+    for (const module of allModules) {
+      const chatSessionsRef = db
+        .collection("freshers")
+        .doc(companyId)
+        .collection("departments")
+        .doc(deptId)
+        .collection("users")
+        .doc(userId)
+        .collection("roadmap")
+        .doc(module.id)
+        .collection("chatSessions");
+
+      const chatSnap = await chatSessionsRef.get();
+      chatSnap.docs.forEach(doc => allActiveDates.add(doc.id));
+    }
+
+    totalActiveDays = allActiveDates.size;
+
+    // Calculate missed days from roadmap generation
+    let missedDaysCount = 0;
+    const missedDates = [];
+
+    if (roadmapGeneratedAt) {
+      const startDate = new Date(roadmapGeneratedAt);
+      startDate.setHours(0, 0, 0, 0);
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      // Only count full days that have completed (exclude current day)
+      const endDate = new Date(today);
+      endDate.setDate(endDate.getDate() - 1);
+
+      if (endDate >= startDate) {
+        const currentDate = new Date(startDate);
+        while (currentDate <= endDate) {
+          const dateStr = getDateKey(currentDate);
+          if (!allActiveDates.has(dateStr)) {
+            missedDates.push(dateStr);
+          }
+          currentDate.setDate(currentDate.getDate() + 1);
+        }
+        missedDaysCount = missedDates.length;
+      }
+    }
 
     // 🔄 COMPREHENSIVE CHECK: Scan ALL modules, mark expired ones as completed, unlock next
     const comprehensiveCheck = await checkAndUnlockModulesComprehensive(
@@ -1132,13 +1234,13 @@ export const getMissedDatesController = async (req, res) => {
     if (!activeModule) {
       return res.json({
         success: true,
-        hasMissedDates: false,
-        missedDates: [],
-        firstMissedDate: null,
-        missedCount: 0,
-        activeDays: 0,
-        missedDays: 0,
-        totalExpectedDays: totalExpectedDays,
+        hasMissedDates: missedDaysCount > 0,
+        missedDates,
+        firstMissedDate: missedDates.length > 0 ? missedDates[0] : null,
+        missedCount: missedDaysCount,
+        activeDays: totalActiveDays,
+        missedDays: missedDaysCount,
+        totalExpectedDays,
         currentStreak: 0,
         activeModuleName: "No active module"
       });
@@ -1173,19 +1275,10 @@ export const getMissedDatesController = async (req, res) => {
     const priorChatSnap = await moduleChatSessionsRef.limit(1).get();
     const hasModuleStarted = !priorChatSnap.empty;
 
-    // Only get missed dates if module was actually started
-    let missedDateInfo = {
-      hasMissedDates: false,
-      missedDates: [],
-      firstMissedDate: null,
-      missedCount: 0,
-      activeDays: 0,
-      totalExpectedDays: totalExpectedDays,
-      streak: 0
-    };
-
+    // Calculate streak from active module
+    let streak = 0;
     if (hasModuleStarted) {
-      missedDateInfo = await getMissedDates(
+      const missedDateInfo = await getMissedDates(
         companyId,
         deptId,
         userId,
@@ -1193,16 +1286,15 @@ export const getMissedDatesController = async (req, res) => {
         moduleData,
         startDateOverride
       );
-      // Override totalExpectedDays with the sum of all modules' estimatedDays
-      missedDateInfo.totalExpectedDays = totalExpectedDays;
+      streak = missedDateInfo.streak;
     }
 
     await userRef.update({
       trainingStats: {
-        activeDays: missedDateInfo.activeDays,
-        missedDays: missedDateInfo.missedCount,
-        totalExpectedDays: totalExpectedDays,
-        currentStreak: missedDateInfo.streak,
+        activeDays: totalActiveDays,
+        missedDays: missedDaysCount,
+        totalExpectedDays,
+        currentStreak: streak,
         lastUpdated: new Date()
       }
     }).catch(err => {
@@ -1211,14 +1303,14 @@ export const getMissedDatesController = async (req, res) => {
 
     return res.json({
       success: true,
-      hasMissedDates: missedDateInfo.hasMissedDates,
-      missedDates: missedDateInfo.missedDates,
-      firstMissedDate: missedDateInfo.firstMissedDate,
-      missedCount: missedDateInfo.missedCount,
-      activeDays: missedDateInfo.activeDays,
-      missedDays: missedDateInfo.missedCount,
-      totalExpectedDays: totalExpectedDays,
-      currentStreak: missedDateInfo.streak,
+      hasMissedDates: missedDaysCount > 0,
+      missedDates,
+      firstMissedDate: missedDates.length > 0 ? missedDates[0] : null,
+      missedCount: missedDaysCount,
+      activeDays: totalActiveDays,
+      missedDays: missedDaysCount,
+      totalExpectedDays,
+      currentStreak: streak,
       activeModuleName: moduleData.moduleTitle || "No active module"
     });
 

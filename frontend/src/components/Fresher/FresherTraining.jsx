@@ -138,10 +138,11 @@ export default function FresherTraining() {
     if (!module) return false;
     if (module.completed) return true;
     
-    let createdAtTimeStamp = module.FirstTimeCreatedAt || module.createdAt;
+    // Prioritize actual start time when module was unlocked
+    let createdAtTimeStamp = module.startedAt || module.FirstTimeCreatedAt || module.createdAt;
     
     if (!createdAtTimeStamp) {
-      console.warn("⚠️ Module has no FirstTimeCreatedAt or createdAt:", module.id);
+      console.warn("⚠️ Module has no startedAt, FirstTimeCreatedAt or createdAt:", module.id);
       return false;
     }
     
@@ -164,10 +165,12 @@ export default function FresherTraining() {
    */
   const getQuizUnlockMessage = (module) => {
     if (!module) return "Quiz status unknown";
-    if (!module.FirstTimeCreatedAt && !module.createdAt) return "Quiz will unlock soon";
     if (module.completed) return "Quiz available";
     
-    const createdAtTimeStamp = module.FirstTimeCreatedAt || module.createdAt;
+    // Prioritize actual start time when module was unlocked
+    const createdAtTimeStamp = module.startedAt || module.FirstTimeCreatedAt || module.createdAt;
+    if (!createdAtTimeStamp) return "Quiz will unlock soon";
+    
     const startDate = createdAtTimeStamp.toDate 
       ? createdAtTimeStamp.toDate() 
       : new Date(createdAtTimeStamp);
@@ -198,7 +201,8 @@ export default function FresherTraining() {
     if (!module) return { days: 0, hours: 0, expired: false, message: "No deadline set" };
     if (module.completed) return { days: 0, hours: 0, expired: false, message: "Completed" };
     
-    let createdAtTimeStamp = module.FirstTimeCreatedAt || module.createdAt;
+    // Prioritize actual start time when module was unlocked
+    let createdAtTimeStamp = module.startedAt || module.FirstTimeCreatedAt || module.createdAt;
     
     if (!createdAtTimeStamp) {
       return { days: 0, hours: 0, expired: false, message: "No deadline set" };

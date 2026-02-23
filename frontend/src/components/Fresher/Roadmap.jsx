@@ -18,6 +18,11 @@ export default function Roadmap() {
   const generationRequestedRef = useRef(false);
 
 const getModuleStartDate = (module) => {
+  // Prioritize actual start time when module was unlocked/started
+  if (module.startedAt) {
+    return module.startedAt.toDate ? module.startedAt.toDate() : new Date(module.startedAt);
+  }
+
   const fallbackBase = module.FirstTimeCreatedAt || module.createdAt;
   const fallbackDate = fallbackBase
     ? (fallbackBase.toDate ? fallbackBase.toDate() : new Date(fallbackBase))
@@ -302,13 +307,14 @@ const checkQuizUnlockBy50Percent = (module) => {
   // ⏱️ Calculate time elapsed
   const today = new Date();
   const daysPassed = Math.floor((today - startDate) / (1000 * 60 * 60 * 24));
+  const daysPassedClamped = Math.max(0, daysPassed);
   const totalDays = module.estimatedDays || 1;
-  const fiftyPercentDays = totalDays / 2; // 🎯 50% THRESHOLD
+  const fiftyPercentDays = Math.ceil(totalDays / 2); // 🎯 50% THRESHOLD
   
-  console.log(`📊 Quiz Unlock Check - Module: ${module.moduleTitle}, Days: ${daysPassed}/${fiftyPercentDays}, Unlocked: ${daysPassed >= 0}`);
+  console.log(`📊 Quiz Unlock Check - Module: ${module.moduleTitle}, Days: ${daysPassedClamped}/${fiftyPercentDays}, Unlocked: ${daysPassedClamped >= fiftyPercentDays}`);
   
-  // 🔓 UNLOCK CONDITION: Testing - unlock on first day
-  return daysPassed >= 0;
+  // 🔓 UNLOCK CONDITION: 50% of module duration elapsed
+  return daysPassedClamped >= fiftyPercentDays;
 };
 
 /**
@@ -345,17 +351,18 @@ const getQuizUnlockMessageBy50Percent = (module) => {
   const today = new Date();
   const daysPassed = Math.floor((today - startDate) / (1000 * 60 * 60 * 24));
   const totalDays = module.estimatedDays || 1;
-  const fiftyPercentDays = totalDays / 2; // 🎯 50% THRESHOLD
-  const daysRemainingUntilQuizUnlock = Math.ceil(fiftyPercentDays - daysPassed);
+  const fiftyPercentDays = Math.ceil(totalDays / 2); // 🎯 50% THRESHOLD
+  const daysPassedClamped = Math.max(0, daysPassed);
+  const daysRemainingUntilQuizUnlock = Math.max(0, fiftyPercentDays - daysPassedClamped);
   
-  // 🔓 Quiz unlocked - Testing: available immediately
-  if (daysPassed >= 0) {
+  // 🔓 Quiz unlocked - 50% threshold met
+  if (daysPassedClamped >= fiftyPercentDays) {
     return "Quiz is now available!";
   }
   
   // 🔒 Quiz still locked - show countdown and progress
   // Format: "Quiz will unlock in X day(s) (current/required days completed)"
-  return `Quiz will unlock in ${daysRemainingUntilQuizUnlock} day(s) (${Math.round(daysPassed)}/${Math.round(fiftyPercentDays)} days completed)`;
+  return `Quiz will unlock in ${daysRemainingUntilQuizUnlock} day(s) (${Math.round(daysPassedClamped)}/${Math.round(fiftyPercentDays)} days completed)`;
 };
 
 // Calculate time remaining to complete module
@@ -371,6 +378,17 @@ const getModuleTimeRemaining = (module) => {
   const totalDays = module.estimatedDays || 1;
   const deadlineDate = new Date(startDate.getTime() + totalDays * 24 * 60 * 60 * 1000);
   const now = new Date();
+  if (startDate > now) {
+    const msUntilStart = startDate - now;
+    const daysUntilStart = Math.floor(msUntilStart / (1000 * 60 * 60 * 24));
+    const hoursUntilStart = Math.floor((msUntilStart % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    return {
+      days: daysUntilStart,
+      hours: hoursUntilStart,
+      expired: false,
+      message: `Starts in ${daysUntilStart}d ${hoursUntilStart}h`
+    };
+  }
   const timeRemaining = deadlineDate - now;
   
   if (timeRemaining <= 0) {
@@ -385,6 +403,35 @@ const getModuleTimeRemaining = (module) => {
   } else {
     return { days: 0, hours: hoursRemaining, expired: false, message: `${hoursRemaining}h remaining` };
   }
+};
+
+const getDaysLeft = (module) => {
+  if (module.completed) return 0;
+  const startDate = getModuleStartDate(module);
+  const totalDays = module.estimatedDays || 1;
+  if (!startDate) return totalDays;
+  const now = new Date();
+  if (startDate > now) return totalDays;
+
+  const deadlineDate = new Date(startDate.getTime() + totalDays * 24 * 60 * 60 * 1000);
+  const timeRemaining = deadlineDate - now;
+  if (timeRemaining <= 0) return 0;
+  return Math.max(0, Math.ceil(timeRemaining / (1000 * 60 * 60 * 24)));
+};
+
+const getCompletionDays = (module) => {
+  if (!module.completed) return null;
+  const startDate = getModuleStartDate(module);
+  if (!startDate) return null;
+
+  const completionBase = module.completedAt || module.lastQuizSubmitted;
+  if (!completionBase) return null;
+
+  const endDate = completionBase.toDate ? completionBase.toDate() : new Date(completionBase);
+  const diffMs = endDate - startDate;
+  if (!Number.isFinite(diffMs) || diffMs < 0) return null;
+
+  return Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
 };
 
 // Check if module is expired
@@ -502,6 +549,11 @@ if (!roadmap.length)
     <p className="text-xs text-[#AFCBE3] mb-2">
       ⏱ {module.estimatedDays} days
     </p>
+    {module.completed && getCompletionDays(module) && (
+      <p className="text-xs text-green-400 mb-2">
+        ✓ Completed in {getCompletionDays(module)} day{getCompletionDays(module) !== 1 ? "s" : ""}
+      </p>
+    )}
     
     {/* Time Remaining Display - Moved below to avoid overlap with status badge */}
     {!module.locked && !module.completed && (
@@ -510,7 +562,11 @@ if (!roadmap.length)
         module.timeRemaining.days === 0 ? "text-yellow-400" : 
         "text-[#00FFFF]"
       }`}>
-        {module.timeRemaining.expired ? "⏰ EXPIRED" : `⏳ Time Left: ${module.timeRemaining.message}`}
+        <div>Time Left: {getDaysLeft(module)} day{getDaysLeft(module) !== 1 ? "s" : ""}</div>
+        {module.timeRemaining.expired
+          ? "⏰ EXPIRED"
+          : module.timeRemaining.message.startsWith("Starts in")
+        }
       </div>
     )}
   </div>

@@ -100,16 +100,19 @@ export default function ViewModuleDetails() {
 
     const totalDays = module.estimatedDays;
 
-    if (!module.createdAt) {
+    // Prioritize actual start time when module was unlocked
+    const startDateBase = module.startedAt || module.createdAt;
+    
+    if (!startDateBase) {
       return {
         completedDays: 0,
         remainingDays: totalDays,
       };
     }
 
-    const startDate = module.createdAt.toDate
-      ? module.createdAt.toDate()
-      : new Date(module.createdAt);
+    const startDate = startDateBase.toDate
+      ? startDateBase.toDate()
+      : new Date(startDateBase);
 
     const today = new Date();
 
@@ -117,10 +120,13 @@ export default function ViewModuleDetails() {
     startDate.setHours(0, 0, 0, 0);
     today.setHours(0, 0, 0, 0);
 
-    const diffDays =
-      Math.floor((today - startDate) / (1000 * 60 * 60 * 24)) + 1;
-
-    const completedDays = Math.min(diffDays, totalDays);
+    // Only count full completed days (not including today)
+    const diffMs = today - startDate;
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    
+    // If module started today, 0 days completed
+    // If module started yesterday, 1 day completed, etc.
+    const completedDays = Math.max(0, Math.min(diffDays, totalDays));
     const remainingDays = Math.max(totalDays - completedDays, 0);
 
     return {

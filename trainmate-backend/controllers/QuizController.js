@@ -1140,6 +1140,34 @@ export const submitQuiz = async (req, res) => {
 					}, { merge: true });
 					console.log(`✓ Module updated: quiz passed`);
 
+					const userRef = db
+						.collection("freshers")
+						.doc(companyId)
+						.collection("departments")
+						.doc(deptId)
+						.collection("users")
+						.doc(userId);
+
+					const userSnap = await userRef.get();
+					const userData = userSnap.exists ? userSnap.data() : {};
+
+					const roadmapSnap = await userRef.collection("roadmap").orderBy("order").get();
+					const modules = roadmapSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+					const currentOrder = moduleData?.order ?? modules.find((m) => m.id === moduleId)?.order ?? 0;
+					const remainingModules = modules
+						.filter((m) => (m.order || 0) > currentOrder && !m.completed)
+						.sort((a, b) => (a.order || 0) - (b.order || 0));
+
+					const nextModule = remainingModules[0];
+					if (nextModule) {
+						await userRef.collection("roadmap").doc(nextModule.id).set({
+							status: "in-progress",
+							moduleLocked: false,
+							startedAt: admin.firestore.FieldValue.serverTimestamp(),
+						}, { merge: true });
+						console.log(`✓ Next module unlocked: ${nextModule.moduleTitle}`);
+					}
+
 					// Schedule calendar reminders for next active module
 					try {
 						const timeZone = process.env.DEFAULT_TIMEZONE || "Asia/Karachi";
@@ -1147,23 +1175,11 @@ export const submitQuiz = async (req, res) => {
 						const calendarId = process.env.GOOGLE_CALENDAR_ID || "primary";
 						const testRecipient = process.env.TEST_NOTIFICATION_EMAIL || null;
 
-						const userRef = db
-							.collection("freshers")
-							.doc(companyId)
-							.collection("departments")
-							.doc(deptId)
-							.collection("users")
-							.doc(userId);
-
-						const userSnap = await userRef.get();
-						const userEmail = testRecipient || userSnap.data()?.email;
+						const userEmail = testRecipient || userData?.email;
 
 						if (!userEmail) {
 							console.warn("⚠️ User email not found, skipping calendar notifications");
 						} else {
-							const roadmapSnap = await userRef.collection("roadmap").orderBy("order").get();
-							const modules = roadmapSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-							const currentOrder = moduleData?.order ?? modules.find(m => m.id === moduleId)?.order ?? 0;
 							const nextModule = modules.find(m => (m.order || 0) > currentOrder && !m.completed);
 
 							if (!nextModule) {
@@ -1234,10 +1250,10 @@ export const submitQuiz = async (req, res) => {
 						updateData.quizLocked = true;
 						updateData.moduleLocked = true;
 						updateData.requiresAdminContact = contactAdmin;
-						console.log(`🤖 Module locked by AI decision after ${attemptNumber} attempts`);
+						console.log(`sModule locked by TrainMate decision after ${attemptNumber} attempts`);
 					} else if (allowRetry) {
 						updateData.quizLocked = false; // Unlock for retry
-						console.log(`🤖 Quiz unlocked for retry by AI decision (${retriesGranted} retries granted)`);
+						console.log(`Quiz unlocked for retry by TrainMate decision (${retriesGranted} retries granted)`);
 					}
 					
 					// Unlock specific resources if AI decided

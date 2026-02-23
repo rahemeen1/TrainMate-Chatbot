@@ -130,6 +130,18 @@ useEffect(() => {
       const modulesWithProgress = await Promise.all(
         snap.docs.map(async (moduleDoc) => {
           const moduleData = { id: moduleDoc.id, ...moduleDoc.data() };
+          
+          // If module has progress field (set when quiz is passed), use that
+          if (moduleData.progress !== undefined && moduleData.progress !== null) {
+            return {
+              ...moduleData,
+              moduleProgress: moduleData.progress,
+              daysUsed: 0, // Not needed when progress is set
+              estimatedDays: moduleData.estimatedDays || 1,
+            };
+          }
+          
+          // Otherwise, calculate based on chat session days
           const chatSessionsRef = collection(
             db,
             "freshers",
@@ -145,19 +157,21 @@ useEffect(() => {
           const chatSessionsSnap = await getDocs(chatSessionsRef);
           const daysUsed = chatSessionsSnap.size;
           const estimatedDays = moduleData.estimatedDays || 1;
+          const moduleProgress = Math.min(Math.round((daysUsed / estimatedDays) * 100), 100);
 
           return {
             ...moduleData,
+            moduleProgress,
             daysUsed,
             estimatedDays,
           };
         })
       );
 
-      const totalDaysUsed = modulesWithProgress.reduce((sum, m) => sum + m.daysUsed, 0);
-      const totalEstimatedDays = modulesWithProgress.reduce((sum, m) => sum + (m.estimatedDays || 1), 0);
-      const percent = totalEstimatedDays > 0
-        ? Math.min(Math.round((totalDaysUsed / totalEstimatedDays) * 100), 100)
+      // Calculate overall progress as average of module progress percentages
+      const totalModuleProgress = modulesWithProgress.reduce((sum, m) => sum + m.moduleProgress, 0);
+      const percent = modulesWithProgress.length > 0
+        ? Math.min(Math.round(totalModuleProgress / modulesWithProgress.length), 100)
         : 0;
 
       setProgressPercent(percent);
@@ -319,18 +333,7 @@ if (loading) {
                 return (
                   <>
               <h3 className="text-red-400 font-semibold text-lg">You Missed {missedDateInfo.missedCount} Day{missedDateInfo.missedCount !== 1 ? "s" : ""}</h3>
-              <p className="text-red-300 text-sm mt-1">
-                Your training started on {
-                  startDate
-                    ? startDate.toLocaleDateString("en-US", {
-                        weekday: "short",
-                        year: "numeric",
-                        month: "short",
-                        day: "numeric"
-                      })
-                    : "Unknown"
-                }. Don't break your streak! Catch up on your training today.
-              </p>
+              
                   </>
                 );
               })()}
