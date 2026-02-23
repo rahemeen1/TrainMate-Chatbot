@@ -50,6 +50,7 @@ export default function FresherDashboard() {
   const [roadmapGenerated, setRoadmapGenerated] = useState(false);
   const [generatingRoadmap, setGeneratingRoadmap] = useState(false);
   const [missedDateInfo, setMissedDateInfo] = useState(null);
+  const [showMissedDates, setShowMissedDates] = useState(true);
 
   const state = location.state || {};
 
@@ -199,6 +200,40 @@ useEffect(() => {
   }
 }, [userId, companyId, deptId, navigate]);
 
+// 10-minute timer for missed dates notification
+useEffect(() => {
+  const LOGIN_TIME_KEY = "fresherDashboardLoginTime";
+  const TEN_MINUTES = 10 * 60 * 1000; // 10 minutes in milliseconds
+
+  // Get or set login time
+  const storedLoginTime = localStorage.getItem(LOGIN_TIME_KEY);
+  const loginTime = storedLoginTime ? parseInt(storedLoginTime, 10) : Date.now();
+  
+  if (!storedLoginTime) {
+    localStorage.setItem(LOGIN_TIME_KEY, loginTime.toString());
+  }
+
+  // Check if 10 minutes have passed
+  const checkTime = () => {
+    const currentTime = Date.now();
+    const elapsed = currentTime - loginTime;
+    
+    if (elapsed >= TEN_MINUTES) {
+      setShowMissedDates(false);
+    } else {
+      setShowMissedDates(true);
+    }
+  };
+
+  // Initial check
+  checkTime();
+
+  // Set interval to check every minute
+  const interval = setInterval(checkTime, 60000);
+
+  return () => clearInterval(interval);
+}, []);
+
   // 🔹 Progress color
   const getProgressColor = (progress = 0) => {
     if (progress < 30) return "from-red-500 to-orange-500";
@@ -314,8 +349,8 @@ if (loading) {
 
         {/* MAIN */}
         <div className="flex-1 p-10 overflow-y-auto custom-scrollbar">
-        {/* MISSED DATES NOTIFICATION */}
-        {missedDateInfo?.hasMissedDates && (
+        {/* MISSED DATES NOTIFICATION - Only shown for first 10 minutes */}
+        {showMissedDates && missedDateInfo?.hasMissedDates && (
           <div className="bg-red-900/40 border border-red-500 rounded-lg p-4 mb-4 flex items-start gap-3">
             <div className="text-red-400 text-2xl flex-shrink-0">⚠️</div>
             <div className="flex-1">
