@@ -4,6 +4,7 @@ import { getPineconeIndex } from "../config/pinecone.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { CohereClient } from "cohere-ai";
 import { updateMemoryAfterQuiz } from "../services/memoryService.js";
+import { sendTrainingLockedEmail } from "../services/emailService.js";
 import { evaluateCode } from "../services/codeEvaluator.service.js";
 import { createDailyModuleReminder, createQuizUnlockReminder } from "../services/calendarService.js";
 
@@ -1301,6 +1302,31 @@ export const submitQuiz = async (req, res) => {
 							requiresAdminContact: true,
 						}, { merge: true });
 						console.log(`✓ User training locked - requires admin intervention`);
+
+						// Notify company by email (non-blocking)
+						try {
+							const companySnap = await db.collection("companies").doc(companyId).get();
+							const companyData = companySnap.exists ? companySnap.data() : {};
+							const companyEmail = companyData?.email || companyData?.companyEmail || null;
+							const companyName = companyData?.name || "TrainMate Company";
+
+							if (!companyEmail) {
+								console.warn("Company email not found, skipping lock notification email");
+							} else {
+								await sendTrainingLockedEmail({
+									companyEmail,
+									companyName,
+									userName: userData?.name || "",
+									userEmail: userData?.email || "",
+									moduleTitle: moduleData?.moduleTitle || "",
+									attemptNumber,
+									score: finalScore,
+								});
+								console.log("Company notification email sent for training lock");
+							}
+						} catch (emailErr) {
+							console.warn("Training lock email failed (non-critical):", emailErr.message);
+						}
 					} else if (allowRetry) {
 						updateData.quizLocked = false; // Unlock for retry
 						console.log(`Quiz unlocked for retry by TrainMate decision (${retriesGranted} retries granted)`);

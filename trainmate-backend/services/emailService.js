@@ -120,3 +120,79 @@ export async function sendRoadmapEmail({
     throw error;
   }
 }
+
+/**
+ * Send training locked notification to company email
+ * @param {Object} params - Email parameters
+ * @param {string} params.companyEmail - Company recipient email
+ * @param {string} params.companyName - Company name
+ * @param {string} params.userName - User name
+ * @param {string} params.userEmail - User email
+ * @param {string} params.moduleTitle - Module title
+ * @param {number} params.attemptNumber - Attempt number
+ * @param {number} params.score - Latest score
+ */
+export async function sendTrainingLockedEmail({
+  companyEmail,
+  companyName,
+  userName,
+  userEmail,
+  moduleTitle,
+  attemptNumber,
+  score,
+}) {
+  try {
+    console.log("Email service: preparing training lock notification...");
+    const transporter = createTransporter();
+
+    const recipientEmail = companyEmail;
+    console.log(`Sending training lock email to ${recipientEmail}`);
+
+    const mailOptions = {
+      from: {
+        name: "TrainMate",
+        address: "trainmate01@gmail.com",
+      },
+      to: recipientEmail,
+      subject: `Training Locked Alert - ${companyName}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 20px; background-color: #f4f4f4;">
+          <div style="background-color: #031C3A; padding: 24px; text-align: center; border-radius: 10px 10px 0 0;">
+            <h1 style="color: #00FFFF; margin: 0; font-size: 24px;">TrainMate</h1>
+          </div>
+          <div style="background-color: white; padding: 24px; border-radius: 0 0 10px 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+            <h2 style="color: #031C3A; margin-top: 0;">Training Locked Notification</h2>
+            <p style="color: #333; font-size: 15px; line-height: 1.6;">
+              A trainee has been locked after multiple quiz attempts. Please review and decide next steps.
+            </p>
+            <div style="background-color: #E8F4F8; padding: 16px; border-left: 4px solid #00FFFF; margin: 16px 0;">
+              <p style="margin: 6px 0; color: #333;"><strong>Company:</strong> ${companyName}</p>
+              <p style="margin: 6px 0; color: #333;"><strong>User:</strong> ${userName || "Unknown"}</p>
+              <p style="margin: 6px 0; color: #333;"><strong>User Email:</strong> ${userEmail || "Unknown"}</p>
+              <p style="margin: 6px 0; color: #333;"><strong>Module:</strong> ${moduleTitle || "Unknown"}</p>
+              <p style="margin: 6px 0; color: #333;"><strong>Attempt:</strong> ${attemptNumber || "N/A"}</p>
+              <p style="margin: 6px 0; color: #333;"><strong>Latest Score:</strong> ${typeof score === "number" ? `${score}%` : "N/A"}</p>
+            </div>
+            <p style="color: #333; font-size: 14px; line-height: 1.6;">
+              Please contact the trainee and unlock training once ready.
+            </p>
+            <p style="color: #666; font-size: 13px; line-height: 1.6; margin-top: 20px;">
+              Regards,<br>
+              <strong style="color: #031C3A;">TrainMate Team</strong>
+            </p>
+          </div>
+          <div style="text-align: center; padding: 16px; color: #666; font-size: 12px;">
+            <p>This is an automated message. Please do not reply.</p>
+          </div>
+        </div>
+      `,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log("Training lock email sent:", info.messageId);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error("Training lock email failed:", error);
+    throw error;
+  }
+}
