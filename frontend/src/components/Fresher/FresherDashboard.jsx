@@ -1,6 +1,7 @@
 //FresherDashboard.jsx
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { signOut } from "firebase/auth";
 import {
   doc,
   getDoc,
@@ -12,7 +13,7 @@ import {
   updateDoc,
 } from "firebase/firestore";
 
-import { db } from "../../firebase";
+import { auth, db } from "../../firebase";
 import OnboardingPage from "./OnboardingPage";
 import { FresherSideMenu } from "./FresherSideMenu";
 
@@ -60,6 +61,17 @@ const [companyId, setCompanyId] = useState(state.companyId || localStorage.getIt
 const [deptId, setDeptId] = useState(state.deptId || localStorage.getItem("deptId"));
 const [companyName, setCompanyName] = useState(state.companyName || localStorage.getItem("companyName"));
 const [email, setEmail] = useState(state.email || localStorage.getItem("email"));
+
+const handleLogout = async () => {
+  try {
+    await signOut(auth);
+  } catch (err) {
+    console.warn("Logout failed:", err);
+  } finally {
+    localStorage.clear();
+    navigate("/", { replace: true });
+  }
+};
 
 // Check if roadmap already exists
 const checkRoadmapExists = async () => {
@@ -332,23 +344,52 @@ if (loading) {
     );
   }
 
+  const isTrainingLocked = Boolean(userData?.trainingLocked);
+
   return (
     <>
       <style>{scrollbarStyles}</style>
       <div className="flex h-screen bg-[#031C3A] text-white overflow-hidden">
         {/* SIDE MENU */}
-        <div className="w-64 bg-[#021B36]/90 p-4 overflow-y-auto custom-scrollbar">
-          <FresherSideMenu
-            userId={userId}
-            companyId={companyId}
-            deptId={deptId}
-            companyName={companyName}
-            roadmapGenerated={roadmapGenerated}
-          />
+        <div className="w-64 bg-[#021B36]/90 p-4 overflow-y-auto custom-scrollbar relative">
+          {isTrainingLocked && (
+            <div className="absolute inset-0 bg-[#021B36]/80 backdrop-blur-sm z-10 flex items-center justify-center">
+              <div className="text-center">
+                <div className="text-sm text-[#AFCBE3]">Sidebar Locked</div>
+                <div className="text-xs text-[#6D8BAB]">Contact admin to unlock</div>
+              </div>
+            </div>
+          )}
+          <div className={isTrainingLocked ? "pointer-events-none opacity-50" : ""}>
+            <FresherSideMenu
+              userId={userId}
+              companyId={companyId}
+              deptId={deptId}
+              companyName={companyName}
+              roadmapGenerated={roadmapGenerated}
+            />
+          </div>
         </div>
 
         {/* MAIN */}
         <div className="flex-1 p-10 overflow-y-auto custom-scrollbar">
+        {isTrainingLocked && (
+          <div className="bg-[#00FFFF]/10 border border-[#00FFFF]/30 rounded-lg p-4 mb-4 flex items-start gap-3">
+            <div className="text-[#00FFFF] text-2xl flex-shrink-0">🔒</div>
+            <div className="flex-1">
+              <h3 className="text-[#00FFFF] font-semibold text-lg">Training Locked</h3>
+              <p className="text-[#AFCBE3] text-sm">
+                Your access is paused. Contact your company admin to unlock training.
+              </p>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="ml-2 px-4 py-2 border border-[#00FFFF] text-[#00FFFF] rounded-lg text-sm hover:bg-[#00FFFF]/10 transition"
+            >
+              Logout
+            </button>
+          </div>
+        )}
         {/* MISSED DATES NOTIFICATION - Only shown for first 10 minutes */}
         {showMissedDates && missedDateInfo?.hasMissedDates && (
           <div className="bg-red-900/40 border border-red-500 rounded-lg p-4 mb-4 flex items-start gap-3">
@@ -459,14 +500,22 @@ if (loading) {
            <div className="flex gap-4 mt-4">
   {roadmapGenerated ? (
     <button
-      onClick={() => navigate(`/roadmap/${companyId}/${deptId}/${userId}/${companyName}`)}
-      className="px-6 py-3 bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] font-semibold rounded-xl shadow-lg hover:scale-105 hover:shadow-2xl transition-transform duration-200"
+      onClick={() => {
+        if (isTrainingLocked) return;
+        navigate(`/roadmap/${companyId}/${deptId}/${userId}/${companyName}`);
+      }}
+      disabled={isTrainingLocked}
+      className={`px-6 py-3 bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] font-semibold rounded-xl shadow-lg transition-transform duration-200 ${
+        isTrainingLocked ? "opacity-50 cursor-not-allowed" : "hover:scale-105 hover:shadow-2xl"
+      }`}
+      title={isTrainingLocked ? "Training locked. Contact admin to unlock." : "View Roadmap"}
     >
       View Roadmap
     </button>
   ) : (
     <button
       onClick={async () => {
+        if (isTrainingLocked) return;
         setGeneratingRoadmap(true);
         try {
           // Navigate to roadmap page while generating
@@ -478,8 +527,9 @@ if (loading) {
           setGeneratingRoadmap(false);
         }
       }}
-      disabled={generatingRoadmap}
+      disabled={generatingRoadmap || isTrainingLocked}
       className="px-6 py-3 bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] font-semibold rounded-xl shadow-lg hover:scale-105 hover:shadow-2xl transition-transform duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+      title={isTrainingLocked ? "Training locked. Contact admin to unlock." : "Generate Roadmap"}
     >
       {generatingRoadmap ? "Generating..." : " Generate Roadmap"}
     </button>

@@ -908,10 +908,7 @@ console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboa
           console.warn("⚠️ No modules available, skipping calendar scheduling");
         } else {
           const estimatedDays = activeModule.estimatedDays || 1;
-          const unlockDays = Math.max(1, Math.ceil(estimatedDays / 2));
-          const unlockDate = new Date(
-            moduleStartDate.getTime() + unlockDays * 24 * 60 * 60 * 1000
-          );
+          const unlockDate = moduleStartDate;
 
           console.log("📅 Scheduling daily module reminders", {
             moduleTitle: activeModule.moduleTitle,

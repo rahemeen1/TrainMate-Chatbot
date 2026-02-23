@@ -6,6 +6,7 @@ import { db } from "../../firebase";
 import { collection, getDocs, doc, getDoc, updateDoc } from "firebase/firestore";
 import axios from "axios";
 import { FresherSideMenu } from "./FresherSideMenu";
+import TrainingLockedScreen from "./TrainingLockedScreen";
 
 export default function Roadmap() {
   const { companyId, deptId, userId,companyName } = useParams();
@@ -15,6 +16,7 @@ export default function Roadmap() {
   const [loading, setLoading] = useState(true);
   const [loadingModuleId, setLoadingModuleId] = useState(null);
   const [roadmapGeneratedAt, setRoadmapGeneratedAt] = useState(null);
+  const [userData, setUserData] = useState(null);
   const generationRequestedRef = useRef(false);
 
 const getModuleStartDate = (module) => {
@@ -77,6 +79,7 @@ const getModuleStartDate = (module) => {
         const userSnap = await getDoc(userRef);
         if (userSnap.exists()) {
           const userData = userSnap.data();
+          setUserData(userData); // Store userData for training lock check
           const generatedAt = userData.roadmapAgentic?.generatedAt || userData.roadmapGeneratedAt;
           if (generatedAt) {
             setRoadmapGeneratedAt(generatedAt.toDate ? generatedAt.toDate() : new Date(generatedAt));
@@ -246,13 +249,6 @@ const getUnlockedModules = () => {
     const unlocked = unlockedNext;
     if (!module.completed) unlockedNext = false;
 
-    // ⏰ 50% TIME-BASED QUIZ LOCKING MECHANISM
-    // Quiz unlocks only after 50% of the module's estimated time has passed
-    // This ensures learners have adequate preparation time before attempting the quiz
-    // Example: For a 10-day module, quiz unlocks after 5 days
-    const isQuizUnlocked = checkQuizUnlockBy50Percent(module);
-    const quizUnlockMessage = getQuizUnlockMessageBy50Percent(module);
-    
     // Calculate module time remaining
     const timeRemaining = getModuleTimeRemaining(module);
     const moduleExpired = isModuleExpired(module);
@@ -260,109 +256,12 @@ const getUnlockedModules = () => {
     return {
       ...module,
       locked: !unlocked || (module.quizLocked && !module.completed) || moduleExpired || module.moduleLocked,
-      quizTimeUnlocked: isQuizUnlocked,
-      quizUnlockMessage,
+      quizTimeUnlocked: true,
+      quizUnlockMessage: "",
       timeRemaining,
       moduleExpired
     };
   });
-};
-
-/**
- * 🔒 50% TIME-BASED QUIZ LOCKING MECHANISM
- * 
- * PURPOSE: Prevents learners from attempting quizzes too early, ensuring adequate preparation time
- * 
- * LOGIC:
- * - Quiz remains LOCKED until 50% of the module's estimated time has passed
- * - Example: 10-day module → quiz unlocks after 5 days
- * - Example: 6-day module → quiz unlocks after 3 days
- * 
- * CALCULATION:
- * 1. Get module start date (FirstTimeCreatedAt or createdAt)
- * 2. Calculate days passed since start
- * 3. Compare with 50% of module's estimatedDays
- * 4. Unlock quiz if daysPassed >= (estimatedDays / 2)
- * 
- * EDGE CASES:
- * - Completed modules: Always unlocked
- * - No timestamp: Locked by default (safety measure)
- * - Module deadline expired: Handled by separate locking mechanism
- * 
- * @param {Object} module - Module object with timing data
- * @returns {boolean} - true if quiz should be unlocked, false if locked
- */
-const checkQuizUnlockBy50Percent = (module) => {
-  // ✅ Completed modules always have quiz access
-  if (module.completed) return true;
-
-  const startDate = getModuleStartDate(module);
-
-  // 🚫 Safety check: Lock quiz if no timestamp exists
-  if (!startDate) {
-    console.warn("⚠️ Module has no FirstTimeCreatedAt or createdAt:", module.id);
-    return false; // Lock quiz if no timestamp available
-  }
-  
-  // ⏱️ Calculate time elapsed
-  const today = new Date();
-  const daysPassed = Math.floor((today - startDate) / (1000 * 60 * 60 * 24));
-  const daysPassedClamped = Math.max(0, daysPassed);
-  const totalDays = module.estimatedDays || 1;
-  const fiftyPercentDays = Math.ceil(totalDays / 2); // 🎯 50% THRESHOLD
-  
-  console.log(`📊 Quiz Unlock Check - Module: ${module.moduleTitle}, Days: ${daysPassedClamped}/${fiftyPercentDays}, Unlocked: ${daysPassedClamped >= fiftyPercentDays}`);
-  
-  // 🔓 UNLOCK CONDITION: 50% of module duration elapsed
-  return daysPassedClamped >= fiftyPercentDays;
-};
-
-/**
- * 💬 GENERATE USER-FRIENDLY MESSAGE FOR 50% QUIZ LOCK
- * 
- * PURPOSE: Communicate quiz availability status and countdown to learners
- * 
- * MESSAGES:
- * - "Quiz is now available!" → 50% time threshold met
- * - "Quiz will unlock in X day(s)" → Still locked, shows countdown
- * - "Quiz available" → Module completed
- * - "Quiz will unlock soon" → No timestamp available
- * 
- * HELPS LEARNERS:
- * - Understand when they can take the quiz
- * - See their progress toward quiz eligibility
- * - Plan their study schedule accordingly
- * 
- * @param {Object} module - Module object with timing data
- * @returns {string} - Human-readable message about quiz availability
- */
-const getQuizUnlockMessageBy50Percent = (module) => {
-  // 🚫 Edge case: No timestamp
-  if (!getModuleStartDate(module)) return "Quiz will unlock soon";
-  
-  // ✅ Completed modules
-  if (module.completed) return "Quiz available";
-  
-  // 📅 Parse module start date
-  const startDate = getModuleStartDate(module);
-  if (!startDate) return "Quiz will unlock soon";
-  
-  // ⏱️ Calculate time progress
-  const today = new Date();
-  const daysPassed = Math.floor((today - startDate) / (1000 * 60 * 60 * 24));
-  const totalDays = module.estimatedDays || 1;
-  const fiftyPercentDays = Math.ceil(totalDays / 2); // 🎯 50% THRESHOLD
-  const daysPassedClamped = Math.max(0, daysPassed);
-  const daysRemainingUntilQuizUnlock = Math.max(0, fiftyPercentDays - daysPassedClamped);
-  
-  // 🔓 Quiz unlocked - 50% threshold met
-  if (daysPassedClamped >= fiftyPercentDays) {
-    return "Quiz is now available!";
-  }
-  
-  // 🔒 Quiz still locked - show countdown and progress
-  // Format: "Quiz will unlock in X day(s) (current/required days completed)"
-  return `Quiz will unlock in ${daysRemainingUntilQuizUnlock} day(s) (${Math.round(daysPassedClamped)}/${Math.round(fiftyPercentDays)} days completed)`;
 };
 
 // Calculate time remaining to complete module
@@ -456,6 +355,10 @@ if (loading)
     </div>
   );
 
+// Check if training is locked
+if (userData?.trainingLocked) {
+  return <TrainingLockedScreen userData={userData} />;
+}
 
 if (!roadmap.length)
   return (
@@ -653,7 +556,7 @@ if (!roadmap.length)
 >
   View Details
 </button>
-      {/* Quiz button - disabled if quiz locked or 50% time not met */}
+      {/* Quiz button - disabled if quiz locked */}
       <button
         onClick={() =>
           navigate(
@@ -661,38 +564,27 @@ if (!roadmap.length)
             { state: { companyName } }
           )
         }
-        // DISABLED when: quiz locked OR 50% time not met
-        disabled={module.quizLocked || !module.quizTimeUnlocked}
+        // DISABLED when: quiz locked
+        disabled={module.quizLocked}
         title={
-          !module.quizTimeUnlocked 
-            ? module.quizUnlockMessage  // Shows 50% countdown message
-            : module.quizAttempts > 0 
+          module.quizLocked
+            ? "Quiz locked. Contact admin to unlock."
+            : module.quizAttempts > 0
               ? `Retry Quiz - TrainMate will analyze and decide retry allocation`
               : "Take Quiz - TrainMate will evaluate and provide feedback"
         }
         className={`px-4 py-2 border border-[#00FFFF] text-[#00FFFF] rounded relative group
-          ${!module.quizTimeUnlocked || module.quizLocked ? "opacity-40 cursor-not-allowed grayscale" : "hover:bg-[#00FFFF]/10"}
+          ${module.quizLocked ? "opacity-40 cursor-not-allowed grayscale" : "hover:bg-[#00FFFF]/10"}
         `}
       >
-        {/* Button label changes based on 50% unlock status */}
-        {!module.quizTimeUnlocked ? "🔒 Quiz Locked" :  // < 50% time
+        {module.quizLocked ? "🔒 Quiz Locked" :
          module.quizPassed ? "✅ Quiz Passed" :
          module.quizAttempts > 0 
            ? ` Retry (Attempt ${module.quizAttempts + 1})` 
            : "📝 Take Quiz"}
         
-        {/* 🔒 TOOLTIP: Shown when quiz is locked due to 50% rule */}
-        {!module.quizTimeUnlocked && (
-          <div className="absolute left-full top-1/2 transform -translate-y-1/2 ml-3 hidden group-hover:block w-64 bg-[#021B36] border border-[#00FFFF] rounded-lg p-3 text-sm z-10 whitespace-normal">
-            <div className="text-[#00FFFF] font-semibold mb-1">Quiz Locked</div>
-            {/* Displays 50% countdown message */}
-            <div className="text-[#AFCBE3]">{module.quizUnlockMessage}</div>
-            <div className="absolute right-full top-1/2 transform -translate-y-1/2 w-0 h-0 border-t-8 border-b-8 border-r-8 border-transparent border-r-[#00FFFF]"></div>
-          </div>
-        )}
-        
         {/* Tooltip for AI-powered quiz */}
-        {module.quizTimeUnlocked && !module.quizLocked && (
+        {!module.quizLocked && (
           <div className="absolute left-full top-1/2 transform -translate-y-1/2 ml-3 hidden group-hover:block w-72 bg-[#021B36] border border-purple-500 rounded-lg p-3 text-sm z-10 whitespace-normal">
             <div className="text-purple-300 font-semibold mb-1 flex items-center gap-2">
               <span></span> TrainMate-Powered Assessment

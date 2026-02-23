@@ -4,6 +4,7 @@ import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { db } from "../../firebase";
 import { collection, getDocs, doc, updateDoc, getDoc } from "firebase/firestore";
 import { FresherSideMenu } from "./FresherSideMenu";
+import TrainingLockedScreen from "./TrainingLockedScreen";
 
 export default function FresherTraining() {
   const { companyId, deptId, userId } = useParams();
@@ -20,6 +21,7 @@ export default function FresherTraining() {
   const [showQuizLocked, setShowQuizLocked] = useState(false);
   const [weaknessAnalysis, setWeaknessAnalysis] = useState(null);
   const [showWeaknessBanner, setShowWeaknessBanner] = useState(false);
+  const [userData, setUserData] = useState(null);
 
   // ===============================
   // 🔄 Load Roadmap & Weakness Analysis
@@ -43,6 +45,7 @@ export default function FresherTraining() {
         const userSnap = await getDoc(userRef);
         if (userSnap.exists()) {
           const userData = userSnap.data();
+          setUserData(userData); // Store userData for training lock check
           if (userData.weaknessAnalysis) {
             setWeaknessAnalysis(userData.weaknessAnalysis);
             setShowWeaknessBanner(true);
@@ -272,6 +275,12 @@ export default function FresherTraining() {
       </div>
     );
   }
+
+  // Check if training is locked
+  if (userData?.trainingLocked) {
+    return <TrainingLockedScreen userData={userData} />;
+  }
+
 return (
   <div className="flex h-screen bg-[#031C3A] text-white overflow-hidden">
     {/* ===== Sidebar (FIXED WIDTH) ===== */}

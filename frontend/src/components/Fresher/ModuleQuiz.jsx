@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { doc, updateDoc } from "firebase/firestore";
+import { doc, updateDoc, getDoc } from "firebase/firestore";
 import { db } from "../../firebase";
+import TrainingLockedScreen from "./TrainingLockedScreen";
 
 export default function ModuleQuiz() {
 	const { companyId, deptId, userId, moduleId } = useParams();
@@ -13,6 +14,7 @@ export default function ModuleQuiz() {
 	const [submitting, setSubmitting] = useState(false);
 	const [error, setError] = useState("");
 	const [quiz, setQuiz] = useState(null);
+	const [userData, setUserData] = useState(null);
 	const [timeLeft, setTimeLeft] = useState(600);
 	const [timerRunning, setTimerRunning] = useState(false);
 	const [autoSubmitted, setAutoSubmitted] = useState(false);
@@ -22,6 +24,25 @@ export default function ModuleQuiz() {
 	const canGenerate = useMemo(() => {
 		return companyId && deptId && userId && moduleId;
 	}, [companyId, deptId, userId, moduleId]);
+
+	// Fetch user data to check training lock status
+	useEffect(() => {
+		if (!companyId || !deptId || !userId) return;
+
+		const fetchUserData = async () => {
+			try {
+				const userRef = doc(db, "freshers", companyId, "departments", deptId, "users", userId);
+				const userSnap = await getDoc(userRef);
+				if (userSnap.exists()) {
+					setUserData(userSnap.data());
+				}
+			} catch (err) {
+				console.error("Error fetching user data:", err);
+			}
+		};
+
+		fetchUserData();
+	}, [companyId, deptId, userId]);
 
 	// Don't set quizOpened anymore - allow retries by default
 
@@ -174,6 +195,11 @@ export default function ModuleQuiz() {
 
 		return null;
 	};
+
+	// Check if training is locked
+	if (userData?.trainingLocked) {
+		return <TrainingLockedScreen userData={userData} />;
+	}
 
 	return (
 		<div className="min-h-screen bg-[#031C3A] text-white p-8">

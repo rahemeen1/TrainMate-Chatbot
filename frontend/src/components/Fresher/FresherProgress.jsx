@@ -5,6 +5,7 @@ import { doc, getDoc, collection, getDocs, updateDoc } from "firebase/firestore"
 import { db } from "../../firebase";
 import { FresherSideMenu } from "./FresherSideMenu";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import TrainingLockedScreen from "./TrainingLockedScreen";
 
 export default function FresherProgress() {
   const location = useLocation();
@@ -150,6 +151,10 @@ if (loading) {
   );
 }
 
+// Check if training is locked
+if (userData?.trainingLocked) {
+  return <TrainingLockedScreen userData={userData} />;
+}
 
 if (!userData) {
   return (

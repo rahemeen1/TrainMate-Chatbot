@@ -114,13 +114,16 @@ export default function ModuleQuizResults() {
           </div>
         )}
         
-        {/* AI Recommendations */}
+        {/* TrainMate Recommendations */}
         {!results.passed && results.recommendations && results.recommendations.length > 0 && (
           <div className="mt-4 p-4 bg-purple-500/20 border border-purple-500 rounded-lg">
             <div className="flex items-start gap-3">
-              <span className="text-2xl">🤖</span>
+              <span className="text-2xl">🧭</span>
               <div className="flex-1">
-                <h3 className="text-purple-300 font-bold mb-2">AI Recommendations</h3>
+                <h3 className="text-purple-300 font-bold mb-2">TrainMate Recommendations</h3>
+                <p className="text-[#AFCBE3] text-sm mb-2">
+                  Based on your last attempt, here is a focused plan to help you pass this module quiz.
+                </p>
                 <ul className="text-[#AFCBE3] text-sm space-y-1">
                   {results.recommendations.map((rec, idx) => (
                     <li key={idx} className="flex items-start gap-2">
@@ -134,21 +137,21 @@ export default function ModuleQuizResults() {
           </div>
         )}
         
-        {/* Retry Information - Dynamic based on AI decision */}
+        {/* Retry Information - Dynamic based on TrainMate decision */}
         {!results.passed && results.allowRetry && results.retriesGranted > 0 && (
           <div className="mt-4 p-4 bg-blue-500/20 border border-blue-500 rounded-lg">
             <div className="flex items-center gap-3">
               <span className="text-3xl">🔄</span>
               <div>
-                <h3 className="text-blue-300 font-bold mb-2">Retry Granted by AI</h3>
+                <h3 className="text-blue-300 font-bold mb-2">Retry Granted by TrainMate</h3>
                 <p className="text-[#AFCBE3] text-sm mb-2">
-                  <span className="text-[#00FFFF] font-semibold">{results.retriesGranted}</span> {results.retriesGranted === 1 ? 'retry' : 'retries'} granted based on your performance analysis
+                  <span className="text-[#00FFFF] font-semibold">{results.retriesGranted}</span> {results.retriesGranted === 1 ? 'retry' : 'retries'} granted based on your quiz performance
                 </p>
                 <p className="text-[#AFCBE3] text-sm">
                   Current attempt: {results.attemptNumber} | Max attempts: {results.maxAttempts}
                 </p>
                 <p className="text-[#AFCBE3] text-sm mt-2">
-                  Review the materials and recommendations above. Remember to complete within the module timeframe!
+                  Review the module from the start, use the chatbot for doubts, and retry only when you feel confident.
                 </p>
               </div>
             </div>
@@ -163,7 +166,7 @@ export default function ModuleQuizResults() {
               <div>
                 <h3 className="text-orange-300 font-bold mb-2">Learning Path Adjustment</h3>
                 <p className="text-[#AFCBE3] text-sm">
-                  Based on your performance, the AI has recommended adjusting your learning roadmap to better address knowledge gaps.
+                  TrainMate will adjust your learning roadmap to focus on the exact gaps from this module and your quiz results.
                 </p>
               </div>
             </div>

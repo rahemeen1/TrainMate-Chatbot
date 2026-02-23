@@ -194,11 +194,15 @@ async function fetchPlannedDocs({ queries, companyId, deptId }) {
 	return results;
 }
 
-async function critiqueQuiz({ title, quiz, allowCoding = false }) {
+async function critiqueQuiz({ title, quiz, allowCoding = false, companyName = "", deptName = "" }) {
+	const companyLabel = companyName?.trim() ? companyName.trim() : "this company";
+	const departmentLabel = deptName?.trim() ? deptName.trim() : "this department";
 	const prompt = `
 You are a strict quiz quality auditor for company-specific training.
 
 MODULE: "${title}"
+COMPANY: "${companyLabel}"
+DEPARTMENT: "${departmentLabel}"
 
 QUIZ JSON:
 ${JSON.stringify(quiz)}
@@ -206,6 +210,7 @@ ${JSON.stringify(quiz)}
 CRITICAL CHECKS:
 - Questions should be 90% based on THIS COMPANY'S training materials and learner's chat history
 - 10% can include general best practices (but NO other company references)
+- Reject any question that mentions a company name other than "${companyLabel}" or uses invented company names
 - Appropriate number of MCQs (5-25) and one-liners (2-15)
 - Each MCQ has 4 options and one correct answer
 - Questions are specific to the module and advanced-level
@@ -352,7 +357,7 @@ CONSTRAINTS:
 	};
 }
 
-function buildQuizPrompt({ title, context, critiqueIssues, allowCoding = false, moduleDescription = "" }) {
+function buildQuizPrompt({ title, context, critiqueIssues, allowCoding = false, moduleDescription = "", companyName = "", deptName = "" }) {
 	const critiqueBlock = critiqueIssues && critiqueIssues.length
 		? `\n\nCRITIQUE ISSUES TO FIX:\n- ${critiqueIssues.join("\n- ")}`
 		: "";
@@ -370,9 +375,14 @@ function buildQuizPrompt({ title, context, critiqueIssues, allowCoding = false, 
    - Do NOT include any "coding" field in your response
    - Focus only on MCQs and one-liner questions`;
 
+	const companyLabel = companyName?.trim() ? companyName.trim() : "this company";
+	const departmentLabel = deptName?.trim() ? deptName.trim() : "this department";
+
 	return `
 You are an expert corporate trainer creating an assessment for: "${title}"
 
+COMPANY: "${companyLabel}"
+DEPARTMENT: "${departmentLabel}"
 MODULE DESCRIPTION: ${moduleDescription}
 
 Your task is to generate a comprehensive quiz that evaluates the trainee's understanding of this specific module.
@@ -390,10 +400,11 @@ QUIZ GENERATION INSTRUCTIONS:
 2. Focus Questions on Module: All questions must be directly related to "${title}"
 
 3. Source Weighting:
-   - 90% of questions should come from THIS COMPANY'S TRAINING MATERIALS and the learner's CHAT HISTORY (official policies, procedures, technical details, personalized learning context)
-   - 10% can incorporate general best practices and industry standards (but NEVER use other company examples or information)
-   - DO NOT mention other companies or use their specific examples
-   - All questions must be contextually relevant to this company's business and operations
+	- 90% of questions should come from THIS COMPANY'S TRAINING MATERIALS and the learner's CHAT HISTORY (official policies, procedures, technical details, personalized learning context)
+	- 10% can incorporate general best practices and industry standards (but NEVER use other company examples or information)
+	- DO NOT mention other companies, brand names, or fictional company names
+	- ONLY refer to the company as "${companyLabel}" or "the company"
+	- All questions must be contextually relevant to this company's business and operations
 
 4. Question Quality:
    - Create advanced-level questions that test practical application, not just memorization
@@ -401,7 +412,7 @@ QUIZ GENERATION INSTRUCTIONS:
    - Cover key concepts, definitions, best practices, and procedures
    - Each MCQ must have 4 distinct options with only one correct answer
    - One-liner questions should test specific knowledge and skills
-   - IMPORTANT: Never reference or use information from other companies
+	- IMPORTANT: Never reference or use information from other companies or invented company names
 ${codingBlock}
 ${critiqueBlock}
 
@@ -444,7 +455,7 @@ Return ONLY valid JSON with the structure above. YOU DECIDE the optimal question
 `;
 }
 
-async function generateQuizAgentic({ title, context, allowCoding = false, moduleDescription = "" }) {
+async function generateQuizAgentic({ title, context, allowCoding = false, moduleDescription = "", companyName = "", deptName = "" }) {
 	let lastQuiz = null;
 	let critique = null;
 
@@ -454,7 +465,9 @@ async function generateQuizAgentic({ title, context, allowCoding = false, module
 			context, 
 			critiqueIssues: critique?.issues || [], 
 			allowCoding,
-			moduleDescription 
+			moduleDescription,
+			companyName,
+			deptName
 		});
 		const result = await generateWithRetry(prompt);
 		const text = result?.response?.text()?.trim() || "";
@@ -472,7 +485,7 @@ async function generateQuizAgentic({ title, context, allowCoding = false, module
 			continue;
 		}
 
-		critique = await critiqueQuiz({ title, quiz, allowCoding });
+		critique = await critiqueQuiz({ title, quiz, allowCoding, companyName, deptName });
 		if (critique?.pass) {
 			return { quiz, critique };
 		}
@@ -699,6 +712,27 @@ export const generateQuiz = async (req, res) => {
 		const allowCoding = deptSettings.allowCodingQuestions;
 		console.log(`Department allows coding questions: ${allowCoding ? "YES" : "NO"}`);
 
+		// Fetch company and department labels for strict prompt grounding
+		let companyName = "";
+		let deptName = "";
+		try {
+			const companySnap = await db.collection("companies").doc(companyId).get();
+			if (companySnap.exists) {
+				companyName = companySnap.data()?.name || "";
+			}
+			const deptSnap = await db
+				.collection("companies")
+				.doc(companyId)
+				.collection("departments")
+				.doc(deptId)
+				.get();
+			if (deptSnap.exists) {
+				deptName = deptSnap.data()?.name || deptSnap.data()?.deptName || "";
+			}
+		} catch (labelErr) {
+			console.warn("⚠️ Failed to fetch company/department labels:", labelErr.message);
+		}
+
 		// Fetch agent memory summary for personalized context (10% weight)
 		let agentMemoryContext = "";
 		try {
@@ -746,7 +780,9 @@ ${agentMemorySnippet}` : ""}`;
 			title, 
 			context, 
 			allowCoding,
-			moduleDescription: description 
+			moduleDescription: description,
+			companyName,
+			deptName
 		});
 		console.log(`✓ Quiz parsed: ${quiz.mcq.length} MCQs, ${quiz.oneLiners.length} one-liners, ${quiz.coding?.length || 0} coding questions (critique pass=${critique?.pass})`);
 
@@ -1190,10 +1226,7 @@ export const submitQuiz = async (req, res) => {
 
 								const startDate = new Date();
 								const estimatedDays = nextModule.estimatedDays || 1;
-								const unlockDays = Math.max(1, Math.ceil(estimatedDays / 2));
-								const unlockDate = new Date(
-									startDate.getTime() + unlockDays * 24 * 60 * 60 * 1000
-								);
+								const unlockDate = startDate;
 
 								console.log("📅 Scheduling daily module reminders", {
 									moduleTitle: nextModule.moduleTitle,
@@ -1250,7 +1283,24 @@ export const submitQuiz = async (req, res) => {
 						updateData.quizLocked = true;
 						updateData.moduleLocked = true;
 						updateData.requiresAdminContact = contactAdmin;
-						console.log(`sModule locked by TrainMate decision after ${attemptNumber} attempts`);
+						console.log(`Module locked by TrainMate decision after ${attemptNumber} attempts`);
+						
+						// 🔒 Lock entire training for user
+						const userRef = db
+							.collection("freshers")
+							.doc(companyId)
+							.collection("departments")
+							.doc(deptId)
+							.collection("users")
+							.doc(userId);
+						
+						await userRef.set({
+							trainingLocked: true,
+							trainingLockedAt: admin.firestore.FieldValue.serverTimestamp(),
+							trainingLockedReason: `Failed quiz "${moduleData.moduleTitle}" after ${attemptNumber} attempts`,
+							requiresAdminContact: true,
+						}, { merge: true });
+						console.log(`✓ User training locked - requires admin intervention`);
 					} else if (allowRetry) {
 						updateData.quizLocked = false; // Unlock for retry
 						console.log(`Quiz unlocked for retry by TrainMate decision (${retriesGranted} retries granted)`);

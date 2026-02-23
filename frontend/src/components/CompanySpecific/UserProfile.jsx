@@ -245,7 +245,7 @@ if (!user) {
                   <thead>
                     <tr className="text-[#AFCBE3] border-b border-[#00FFFF30] bg-[#031C3A]/60">
                       <th className="px-4 py-3 text-left font-semibold">Module</th>
-                      <th className="px-4 py-3 text-left font-semibold">Skills Covered</th>
+                      <th className="px-4 py-3 text-left font-semibold">Skills To be Covered</th>
                       <th className="px-4 py-3 text-center font-semibold">Days</th>
                       <th className="px-4 py-3 text-center font-semibold">Status</th>
                       <th className="px-4 py-3 text-center font-semibold">Quiz Overview</th>

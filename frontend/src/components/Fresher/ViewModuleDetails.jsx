@@ -4,6 +4,7 @@ import { db } from "../../firebase";
 import { doc, getDoc } from "firebase/firestore";
 import { FresherSideMenu } from "./FresherSideMenu";
 import { motion } from "framer-motion";
+import TrainingLockedScreen from "./TrainingLockedScreen";
 
 export default function ViewModuleDetails() {
   const { companyId, deptId, userId, moduleId, companyName } = useParams();
@@ -11,6 +12,7 @@ export default function ViewModuleDetails() {
 
   const [module, setModule] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [userData, setUserData] = useState(null);
 
   const [aiData, setAiData] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
@@ -23,6 +25,21 @@ export default function ViewModuleDetails() {
     const loadModuleAndAI = async () => {
       try {
         setLoading(true);
+
+        // 0️⃣ Load user document to check training lock status
+        const userRef = doc(
+          db,
+          "freshers",
+          companyId,
+          "departments",
+          deptId,
+          "users",
+          userId
+        );
+        const userSnap = await getDoc(userRef);
+        if (userSnap.exists()) {
+          setUserData(userSnap.data());
+        }
 
         // 1️⃣ Load module doc
         const moduleRef = doc(
@@ -146,6 +163,12 @@ export default function ViewModuleDetails() {
   );
 
   if (loading) return <Loader />;
+  
+  // Check if training is locked
+  if (userData?.trainingLocked) {
+    return <TrainingLockedScreen userData={userData} />;
+  }
+  
   if (!module)
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#031C3A] text-white">
