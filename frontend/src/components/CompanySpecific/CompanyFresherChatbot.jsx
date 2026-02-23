@@ -2,6 +2,96 @@
 import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 
+function renderStyledBotText(text) {
+  if (!text) return null;
+
+  const cleanText = text.replace(/\*\*/g, "").trim();
+  const lines = cleanText.split("\n");
+
+  const renderInlineHighlights = (line, lineIndex) => {
+    const matches = [...line.matchAll(/\*\*(.*?)\*\*/g)];
+    if (matches.length === 0) return <span>{line}</span>;
+
+    const nodes = [];
+    let lastIndex = 0;
+
+    matches.forEach((match, idx) => {
+      const [fullMatch, content] = match;
+      const start = match.index ?? 0;
+      const end = start + fullMatch.length;
+
+      if (start > lastIndex) {
+        nodes.push(
+          <span key={`txt-${lineIndex}-${idx}`}>{line.slice(lastIndex, start)}</span>
+        );
+      }
+
+      nodes.push(
+        <span
+          key={`hl-${lineIndex}-${idx}`}
+          className="text-[#00FFFF] font-semibold"
+        >
+          {content}
+        </span>
+      );
+
+      lastIndex = end;
+    });
+
+    if (lastIndex < line.length) {
+      nodes.push(<span key={`tail-${lineIndex}`}>{line.slice(lastIndex)}</span>);
+    }
+
+    return <>{nodes}</>;
+  };
+
+  return (
+    <div className="space-y-1.5 text-sm leading-6 whitespace-pre-wrap">
+      {lines.map((rawLine, idx) => {
+        const line = rawLine.trimEnd();
+
+        if (!line.trim()) {
+          return <div key={`empty-${idx}`} className="h-1" />;
+        }
+
+        const isBullet = line.startsWith("•") || line.startsWith("-");
+        const isLabelLine =
+          !isBullet &&
+          line.includes(":") &&
+          line.split(":")[0].trim().length > 0 &&
+          line.split(":")[0].trim().length <= 24;
+
+        if (isBullet) {
+          const bulletText = line.replace(/^[•-]\s*/, "");
+          return (
+            <div key={`line-${idx}`} className="flex gap-2 text-[#CFE8FF]">
+              <span className="text-[#00FFFF]">•</span>
+              <span>{renderInlineHighlights(bulletText, idx)}</span>
+            </div>
+          );
+        }
+
+        if (isLabelLine) {
+          const [label, ...restParts] = line.split(":");
+          const value = restParts.join(":").trim();
+          return (
+            <div key={`line-${idx}`} className="text-[#CFE8FF]">
+              <span className="text-[#00FFFF] font-semibold">{label.trim()}:</span>{" "}
+              <span>{renderInlineHighlights(value, idx)}</span>
+            </div>
+          );
+        }
+
+        return (
+          <div key={`line-${idx}`} className="text-[#CFE8FF]">
+            {renderInlineHighlights(line, idx)}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function CompanyFresherChatbot({ companyId, companyName }) {
   const [messages, setMessages] = useState([
     {
@@ -119,7 +209,11 @@ export default function CompanyFresherChatbot({ companyId, companyName }) {
                   : "bg-[#031C3A]/70 border border-[#00FFFF30] text-[#AFCBE3]"
               }`}
             >
-              <p className="text-sm whitespace-pre-wrap">{msg.text}</p>
+              {msg.type === "bot" && !msg.isError ? (
+                renderStyledBotText(msg.text)
+              ) : (
+                <p className="text-sm whitespace-pre-wrap">{msg.text}</p>
+              )}
 
               {/* Display data context if available */}
               {msg.dataContext && msg.type === "bot" && (

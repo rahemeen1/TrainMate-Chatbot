@@ -405,12 +405,27 @@ useEffect(() => {
       <div className="flex-1 flex flex-col overflow-hidden">
 
         {/* HEADER */}
-        <div className="bg-[#021B36]/90 p-4 border-b border-[#00FFFF50] flex justify-between items-center flex-none">
-          <div>
-            <h2 className="text-2xl text-[#00FFFF]">TrainMate Chatbot</h2>
-            <p className="text-sm text-[#AFCBE3]">
-              {userData?.name} | {userData?.deptName} | {userData?.companyName}
-            </p>
+        <div className="bg-gradient-to-r from-[#021B36]/95 via-[#031C3A]/90 to-[#021B36]/95 p-5 border-b border-[#00FFFF40] flex justify-between items-center flex-none">
+          <div className="space-y-2">
+            <h2 className="text-2xl md:text-3xl text-[#00FFFF] font-semibold">
+              TrainMate Chatbot
+            </h2>
+            <div className="flex flex-wrap items-center gap-3 text-xs text-[#AFCBE3]">
+              <div className="flex items-center gap-2">
+                <span className="uppercase tracking-wide text-[10px] text-[#7FB6C8]">User</span>
+                <span className="text-[#CFE8FF] font-medium">{userData?.name || "User"}</span>
+              </div>
+              <span className="h-4 w-px bg-[#00FFFF30]" />
+              <div className="flex items-center gap-2">
+                <span className="uppercase tracking-wide text-[10px] text-[#7FB6C8]">Department</span>
+                <span className="text-[#CFE8FF] font-medium">{userData?.deptName || "Department"}</span>
+              </div>
+              <span className="h-4 w-px bg-[#00FFFF30]" />
+              <div className="flex items-center gap-2">
+                <span className="uppercase tracking-wide text-[10px] text-[#7FB6C8]">Company</span>
+                <span className="text-[#CFE8FF] font-medium">{userData?.companyName || "Company"}</span>
+              </div>
+            </div>
           </div>
 
           <div className="flex items-center gap-2 relative">
@@ -420,8 +435,8 @@ useEffect(() => {
                   state: { userId, companyId, deptId, activeModuleId }
                 })
               }
-              className="border border-cyan-400/40 px-3 py-1 rounded"
-            >
+               className="flex items-center gap-2 border border-cyan-400/60 px-4 py-2 rounded-lg text-sm text-cyan-300 hover:bg-cyan-400/10 transition"
+          >
               View Previous Chats
             </button>
 

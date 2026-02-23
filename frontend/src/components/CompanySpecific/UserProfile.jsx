@@ -78,6 +78,12 @@ export default function UserProfile() {
     fetchRoadmap();
   }, [companyId, deptId, userId]);
 
+  const completedModulesCount = roadmapModules.filter((m) => m.completed).length;
+  const totalQuizAttempts = roadmapModules.reduce(
+    (sum, m) => sum + (m.quizAttempts ?? 0),
+    0
+  );
+
   const getModuleStartDate = (module) => {
     const raw = module.startedAt || module.FirstTimeCreatedAt || module.createdAt;
     if (!raw) return null;
@@ -180,7 +186,7 @@ if (!user) {
       <p className="text-2xl font-semibold">No user found</p>
     </div>
   );
-}
+} 
   return (
     <div className="flex min-h-screen bg-[#031C3A] text-white">
       <CompanySidebar companyId={companyId} companyName={user.companyName} />
@@ -243,7 +249,7 @@ if (!user) {
                   
                   
                   {/* Stacked column for Progress and Training On */}
-                  <div className="flex flex-col gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="px-3 py-2 rounded-lg border border-[#00FFFF30] bg-[#031C3A]/70 text-center text-sm">
                       <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Progress</p>
                       <p className="font-semibold text-[#00FFFF] mt-1">{user.progress || 0}%</p>
@@ -251,6 +257,16 @@ if (!user) {
                     <div className="px-3 py-2 rounded-lg border border-[#00FFFF30] bg-[#031C3A]/70 text-center text-sm">
                       <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Training On</p>
                       <p className="font-semibold text-[#00FFFF] mt-1 truncate">{user.trainingOn || "N/A"}</p>
+                    </div>
+                    <div className="px-3 py-2 rounded-lg border border-[#00FFFF30] bg-[#031C3A]/70 text-center text-sm">
+                      <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Modules Completed</p>
+                      <p className="font-semibold text-[#00FFFF] mt-1">
+                        {completedModulesCount} / {roadmapModules.length}
+                      </p>
+                    </div>
+                    <div className="px-3 py-2 rounded-lg border border-[#00FFFF30] bg-[#031C3A]/70 text-center text-sm">
+                      <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Quiz Attempts</p>
+                      <p className="font-semibold text-[#00FFFF] mt-1">{totalQuizAttempts}</p>
                     </div>
                     
                   </div>

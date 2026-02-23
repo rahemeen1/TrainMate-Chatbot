@@ -10,7 +10,7 @@ import {
   deleteDoc,
   collection,
 } from "firebase/firestore";
-import CompanySidebar from "./CompanySidebar";
+import CompanySidebar from "./CompanySidebar"; 
 
 export default function ManageUser() {
   const [users, setUsers] = useState([]);

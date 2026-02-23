@@ -7,6 +7,17 @@ dotenv.config();
 
 let model = null;
 
+const KNOWN_DEPARTMENTS = [
+  "HR",
+  "SOFTWAREDEVELOPMENT",
+  "AI",
+  "ACCOUNTING",
+  "MARKETING",
+  "OPERATIONS",
+  "DATASCIENCE",
+  "IT",
+];
+
 function initializeModel() {
   if (!model) {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -15,25 +26,74 @@ function initializeModel() {
   return model;
 }
 
+async function resolveDepartmentIds(companyId) {
+  const companyRef = db.collection("freshers").doc(companyId);
+  const departmentsRef = companyRef.collection("departments");
+  const departmentsSnap = await departmentsRef.get();
+  const deptIds = departmentsSnap.docs.map((doc) => doc.id);
+
+  if (deptIds.length > 0) return deptIds;
+
+  try {
+    const usersGroupSnap = await db.collectionGroup("users").get();
+    const discoveredDeptIds = new Set();
+
+    for (const userDoc of usersGroupSnap.docs) {
+      const segments = userDoc.ref.path.split("/");
+      if (
+        segments[0] === "freshers" &&
+        segments[1] === companyId &&
+        segments[2] === "departments" &&
+        segments[3]
+      ) {
+        discoveredDeptIds.add(segments[3]);
+      }
+    }
+
+    if (discoveredDeptIds.size > 0) {
+      return Array.from(discoveredDeptIds);
+    }
+  } catch {
+    // fallback to known department list
+  }
+
+  const existingDepts = [];
+  for (const deptName of KNOWN_DEPARTMENTS) {
+    try {
+      const usersSnap = await departmentsRef.doc(deptName).collection("users").limit(1).get();
+      if (!usersSnap.empty) existingDepts.push(deptName);
+    } catch {
+      // ignore malformed/unauthorized department reads and continue
+    }
+  }
+
+  return existingDepts;
+}
+
 /**
  * Fetch all freshers of a company with their performance metrics
  */
 async function getFreshersData(companyId) {
   try {
-    const freshersData = [];
-    const departmentsSnap = await db
-      .collection("freshers")
-      .doc(companyId)
-      .collection("departments")
-      .get();
+    const normalizedCompanyId = String(companyId || "").trim();
+    if (!normalizedCompanyId) return [];
 
-    for (const deptDoc of departmentsSnap.docs) {
-      const deptId = deptDoc.id;
+    const freshersData = [];
+    const departmentIds = await resolveDepartmentIds(normalizedCompanyId);
+
+    for (const deptId of departmentIds) {
+      const deptDoc = await db
+        .collection("freshers")
+        .doc(normalizedCompanyId)
+        .collection("departments")
+        .doc(deptId)
+        .get();
+
       const deptData = deptDoc.data();
 
       const usersSnap = await db
         .collection("freshers")
-        .doc(companyId)
+        .doc(normalizedCompanyId)
         .collection("departments")
         .doc(deptId)
         .collection("users")
@@ -46,7 +106,7 @@ async function getFreshersData(companyId) {
         // Fetch roadmap data
         const roadmapSnap = await db
           .collection("freshers")
-          .doc(companyId)
+          .doc(normalizedCompanyId)
           .collection("departments")
           .doc(deptId)
           .collection("users")
@@ -61,24 +121,24 @@ async function getFreshersData(companyId) {
 
         const completedModules = modules.filter((m) => m.completed).length;
         const totalModules = modules.length;
+        const activeModule =
+  modules.find(m => !m.completed && !m.moduleLocked) ||
+  modules.find(m => !m.completed);
 
         freshersData.push({
           userId,
           deptId,
-          name: userData.name || "N/A",
-          email: userData.email || "N/A",
-          status: userData.status || "inactive",
-          trainingOn: userData.trainingOn || "N/A",
-          trainingLevel: userData.trainingLevel || "N/A",
-          progress: userData.progress || 0,
-          department: deptData.departmentName || "N/A",
+          name: userData.name, 
+          email: userData.email,
+          status: userData.status,
+          trainingStatus: userData.trainingStatus,
+          trainingOn: userData.trainingOn,
+          trainingLevel: userData.trainingLevel,
+          progress: userData.progress ,
+          department: deptId,
           completedModules,
           totalModules,
-          activeModuleTitle:
-            modules.find((m) => m.status === "in-progress")?.moduleTitle ||
-            modules.find((m) => !m.completed)?.moduleTitle ||
-            "N/A",
-          trainingStats: userData.trainingStats || {},
+          activeModuleTitle: activeModule?.moduleTitle,
           onboarding: userData.onboarding || {},
         });
       }
@@ -141,13 +201,12 @@ async function getFreashersSummary(companyId) {
 /**
  * Get specific fresher details
  */
-async function getSpecificFresher(companyId, fresherName) {
+  async function getSpecificFresher(companyId, identifier) {
   try {
     const freshersData = await getFreshersData(companyId);
-    const fresher = freshersData.find(
-      (f) => f.name.toLowerCase().includes(fresherName.toLowerCase())
-    );
-    return fresher || null;
+  return freshersData.find(
+    f => f.email === identifier || f.userId === identifier
+  ) || null;
   } catch (err) {
     console.error("❌ Error getting specific fresher:", err);
     return null;
@@ -254,7 +313,9 @@ Guidelines:
 - Provide specific metrics and numbers when available
 - Highlight achievements and concerns
 - Make recommendations for improvement
-- Keep responses concise but informative`;
+- Keep responses concise but informative
+- Do not use markdown symbols like **, *, #, or backticks
+- Use plain readable text with short lines and optional bullet points`;
 
     const response = await model.generateContent({
       contents: [

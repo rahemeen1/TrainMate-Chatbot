@@ -171,20 +171,20 @@ export default function PreviousChats() {
       <div className="flex-1 flex flex-col">
 
         {/* HEADER */}
-        <div className="bg-[#021B36] p-4 border-b border-cyan-400/30 flex justify-between">
+        <div className="bg-gradient-to-r from-[#021B36] via-[#031C3A] to-[#021B36] p-5 md:p-6 border-b border-cyan-400/30 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h2 className="text-2xl text-cyan-400">
+            <h2 className="text-2xl md:text-3xl text-cyan-400 font-semibold">
               TrainMate Chatbot
             </h2>
             <p className="text-sm text-[#AFCBE3]">
-              Previous Chats
+              Review and revisit your past conversations
             </p>
           </div>
           <button
             onClick={() => navigate("/chatbot")}
-            className="flex items-center gap-1 border border-cyan-400 px-3 py-1 rounded"
+            className="flex items-center gap-2 border border-cyan-400/60 px-4 py-2 rounded-lg text-sm text-cyan-300 hover:bg-cyan-400/10 transition"
           >
-            <ArrowLeftIcon className="w-4 h-4" /> Back
+            <ArrowLeftIcon className="w-4 h-4" /> Back to Chat
           </button>
         </div>
 
@@ -192,11 +192,11 @@ export default function PreviousChats() {
         <div className="flex flex-1 overflow-hidden">
 
           {/* SIDEBAR */}
-          <div className="w-72 bg-[#021B36] border-r border-cyan-400/20 overflow-y-auto p-3">
+          <div className="w-80 bg-[#021B36]/90 border-r border-cyan-400/20 overflow-y-auto p-4">
             {["Today", "Yesterday", "Older"].map(group =>
               groupedChats[group].length > 0 && (
-                <div key={group} className="mb-4">
-                  <h3 className="text-cyan-400 mb-2 font-semibold">
+                <div key={group} className="mb-6">
+                  <h3 className="text-cyan-300 mb-3 font-semibold uppercase tracking-wide text-xs">
                     {group}
                   </h3>
 
@@ -204,21 +204,21 @@ export default function PreviousChats() {
                     <div
                       key={session.id}
                       onClick={() => loadChat(session.id)}
-                      className={`p-3 rounded-xl cursor-pointer border
+                      className={`p-3 rounded-2xl cursor-pointer border transition shadow-sm
                         ${
                           activeDate === session.id
-                            ? "border-cyan-400 bg-cyan-400/10"
-                            : "border-cyan-400/20"
+                            ? "border-cyan-400 bg-cyan-400/10 shadow-[0_0_12px_rgba(0,255,255,0.15)]"
+                            : "border-cyan-400/20 bg-[#031C3A]/60"
                         }
-                        hover:border-cyan-400`}
+                        hover:border-cyan-400 hover:bg-cyan-400/5`}
                     >
                       <div className="flex gap-2">
-                        <ChatBubbleLeftRightIcon className="w-5 h-5 text-cyan-400" />
+                        <ChatBubbleLeftRightIcon className="w-5 h-5 text-cyan-300" />
                         <div>
-                          <div className="text-sm text-cyan-400">
+                          <div className="text-sm text-cyan-300 font-medium">
                             {formatDate(session.id)}
                           </div>
-                          <div className="text-xs text-[#AFCBE3] line-clamp-2">
+                          <div className="text-xs text-[#AFCBE3] line-clamp-2 mt-1">
                             {session.lastMessage}
                           </div>
                         </div>
@@ -231,10 +231,10 @@ export default function PreviousChats() {
           </div>
 
           {/* CHAT VIEW */}
-          <div className="flex-1 overflow-y-auto px-8 py-6 space-y-4">
+          <div className="flex-1 overflow-y-auto px-8 py-6 space-y-4 bg-[#031C3A]">
             {messages.length === 0 && (
-              <div className="text-center text-gray-400 mt-20">
-                Select a chat from the left
+              <div className="text-center text-[#AFCBE3] mt-20">
+                Select a chat from the left to view details
               </div>
             )}
 
@@ -247,7 +247,14 @@ export default function PreviousChats() {
                     : "justify-start"
                 }`}
               >
-                <div className="max-w-[65%] px-4 py-2 rounded-xl bg-[#021B36] border border-cyan-400/30 text-[#AFCBE3]">
+                <div
+                  className={`max-w-[70%] px-4 py-3 rounded-2xl border text-sm leading-relaxed shadow-sm
+                    ${
+                      msg.from === "user"
+                        ? "bg-cyan-400/15 border-cyan-400/40 text-[#CFE8FF]"
+                        : "bg-[#021B36] border-cyan-400/20 text-[#AFCBE3]"
+                    }`}
+                >
                   {msg.text}
                 </div>
               </div>

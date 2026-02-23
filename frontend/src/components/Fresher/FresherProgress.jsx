@@ -16,6 +16,14 @@ export default function FresherProgress() {
   const [userData, setUserData] = useState(null);
   const [phaseProgress, setPhaseProgress] = useState([]);
   const [overallProgress, setOverallProgress] = useState(0);
+  const [animatedProgress, setAnimatedProgress] = useState(0);
+  const [roadmapModulesDetailed, setRoadmapModulesDetailed] = useState([]);
+  const [activityTimeline, setActivityTimeline] = useState([]);
+
+  const toDate = (raw) => {
+    if (!raw) return null;
+    return raw.toDate ? raw.toDate() : new Date(raw);
+  };
 
   useEffect(() => {
     if (!userId || !companyId || !deptId) {
@@ -85,6 +93,42 @@ export default function FresherProgress() {
           })
         );
 
+        setRoadmapModulesDetailed(modulesWithProgress);
+
+        const events = [];
+        modulesWithProgress.forEach((module) => {
+          const startedAt = toDate(
+            module.startedAt || module.FirstTimeCreatedAt || module.createdAt
+          );
+          const completedAt = toDate(module.completedAt);
+
+          if (startedAt) {
+            events.push({
+              date: startedAt,
+              label: `Started Module ${module.order}: ${module.moduleTitle}`,
+              order: module.order ?? 0,
+              type: "start",
+            });
+          }
+
+          if (completedAt) {
+            events.push({
+              date: completedAt,
+              label: `Completed Module ${module.order}: ${module.moduleTitle}`,
+              order: module.order ?? 0,
+              type: "complete",
+            });
+          }
+        });
+
+        events.sort((a, b) => {
+          const orderDiff = (a.order ?? 0) - (b.order ?? 0);
+          if (orderDiff !== 0) return orderDiff;
+          if (a.type === b.type) return 0;
+          return a.type === "start" ? -1 : 1;
+        });
+        setActivityTimeline(events);
+
         // Calculate overall progress as average of all module progress percentages
         const totalModuleProgress = modulesWithProgress.reduce((sum, m) => sum + m.moduleProgress, 0);
         const overallPercent = modulesWithProgress.length > 0
@@ -136,6 +180,29 @@ export default function FresherProgress() {
     fetchProgress();
   }, [userId, companyId, deptId, navigate]);
 
+  useEffect(() => {
+    let animationFrame = null;
+    const startTime = performance.now();
+    const durationMs = 900;
+
+    const step = (now) => {
+      const progress = Math.min((now - startTime) / durationMs, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const value = Math.round(eased * overallProgress);
+      setAnimatedProgress(value);
+
+      if (progress < 1) {
+        animationFrame = requestAnimationFrame(step);
+      }
+    };
+
+    animationFrame = requestAnimationFrame(step);
+
+    return () => {
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+    };
+  }, [overallProgress]);
+
   // if (loading) return <p className="text-white p-10">Loading fresher progress...</p>;
   // if (!userData) return <p className="text-white p-10">No data available.</p>;
   
@@ -185,23 +252,353 @@ if (!userData) {
         </div>
 
         {/* Overall Progress */}
-        <div className="bg-[#021B36]/80 p-6 rounded-xl border border-[#00FFFF30] mb-6">
-          <h2 className="text-xl text-[#00FFFF] font-semibold mb-2">Overall Training Progress</h2>
-          <div className="w-full h-6 bg-[#031C3A] rounded-full overflow-hidden">
-            <div className="h-full bg-gradient-to-r from-[#00FFFF] to-green-400" style={{ width: `${overallProgress}%` }} />
+        <div className="bg-gradient-to-br from-[#021B36]/90 to-[#031C3A]/70 p-6 rounded-xl border border-[#00FFFF30] mb-6 shadow-[0_0_18px_rgba(0,255,255,0.08)]">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+            <div>
+              <h2 className="text-xl text-[#00FFFF] font-semibold">Overall Training Progress</h2>
+              <p className="text-sm text-[#AFCBE3] mt-1">Average completion across all modules</p>
+            </div>
+            <div className="text-3xl font-bold text-[#00FFFF]">
+              {animatedProgress}%
+            </div>
           </div>
-          <p className="mt-2 text-[#AFCBE3]">{overallProgress}% completed</p>
+          <div className="w-full h-3 bg-[#031C3A] rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-[#00FFFF] via-[#00E5FF] to-green-400 transition-all"
+              style={{ width: `${animatedProgress}%` }}
+            />
+          </div>
+          <div className="mt-3 flex flex-wrap gap-3 text-xs text-[#AFCBE3]">
+            <span className="px-2 py-1 rounded-full bg-[#00FFFF]/10 border border-[#00FFFF25]">Live Progress</span>
+            <span className="px-2 py-1 rounded-full bg-[#031C3A]/70 border border-[#00FFFF18]">Updated on load</span>
+          </div>
         </div>
+
+        {(() => {
+          const trainingStats = userData.trainingStats || {};
+          const activeDays = trainingStats.activeDays ?? 0;
+          const currentStreak = trainingStats.currentStreak ?? 0;
+          const missedDays = trainingStats.missedDays ?? 0;
+          const totalExpectedDays = trainingStats.totalExpectedDays ?? 0;
+          const remainingDays = Math.max(
+            0,
+            totalExpectedDays - activeDays - missedDays
+          );
+          const trainingWindowPercent = totalExpectedDays
+            ? Math.min(Math.round((activeDays / totalExpectedDays) * 100), 100)
+            : 0;
+
+          const totalAttempts = roadmapModulesDetailed.reduce(
+            (sum, m) => sum + (m.quizAttempts ?? 0),
+            0
+          );
+          const quizzesGenerated = roadmapModulesDetailed.filter(
+            (m) => m.quizGenerated
+          ).length;
+          const quizzesPassed = roadmapModulesDetailed.filter(
+            (m) => m.quizPassed
+          ).length;
+          const quizzesFailed = roadmapModulesDetailed.filter(
+            (m) => m.quizGenerated && !m.quizPassed
+          ).length;
+          const passRate = quizzesGenerated
+            ? Math.round((quizzesPassed / quizzesGenerated) * 100)
+            : 0;
+
+          const totalModules = roadmapModulesDetailed.length;
+          const completedModules = roadmapModulesDetailed.filter(
+            (m) => m.completed
+          ).length;
+          const completionRate = totalModules
+            ? Math.round((completedModules / totalModules) * 100)
+            : 0;
+
+          const lockedModules = roadmapModulesDetailed.filter(
+            (m) => m.quizLocked || m.moduleLocked
+          ).length;
+          const pendingModules = roadmapModulesDetailed.filter(
+            (m) => !m.completed
+          ).length;
+          const overdueModules = roadmapModulesDetailed.filter((m) => {
+            if (m.completed) return false;
+            const startDate = toDate(
+              m.startedAt || m.FirstTimeCreatedAt || m.createdAt
+            );
+            if (!startDate || !m.estimatedDays) return false;
+            const deadline = new Date(
+              startDate.getTime() + m.estimatedDays * 24 * 60 * 60 * 1000
+            );
+            return deadline < new Date();
+          }).length;
+
+          let nextDeadline = null;
+          roadmapModulesDetailed.forEach((m) => {
+            if (m.completed) return;
+            const startDate = toDate(
+              m.startedAt || m.FirstTimeCreatedAt || m.createdAt
+            );
+            if (!startDate || !m.estimatedDays) return;
+            const deadline = new Date(
+              startDate.getTime() + m.estimatedDays * 24 * 60 * 60 * 1000
+            );
+            if (deadline < new Date()) return;
+            if (!nextDeadline || deadline < nextDeadline.date) {
+              nextDeadline = {
+                date: deadline,
+                title: m.moduleTitle,
+                order: m.order,
+              };
+            }
+          });
+
+          const nextDeadlineDays = nextDeadline
+            ? Math.max(
+                0,
+                Math.ceil((nextDeadline.date - new Date()) / (1000 * 60 * 60 * 24))
+              )
+            : null;
+
+          return (
+            <>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <div className="bg-[#021B36]/80 p-6 rounded-xl border border-[#00FFFF30]">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-xl text-[#00FFFF] font-semibold">Quiz Performance</h2>
+                    <span className="text-xs text-[#AFCBE3]">
+                      Coverage: {quizzesGenerated}/{totalModules}
+                    </span>
+                  </div>
+                  <div className="space-y-3 text-sm">
+                    <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18] flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Total Attempts</p>
+                        <p className="text-sm text-[#CFE8FF]">Across generated quizzes</p>
+                      </div>
+                      <span className="px-3 py-1 rounded-full bg-[#00FFFF]/15 text-[#00FFFF] font-semibold">
+                        {totalAttempts}
+                      </span>
+                    </div>
+                    <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18]">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Pass Rate</p>
+                        <span className="text-sm font-semibold text-[#00FFFF]">{passRate}%</span>
+                      </div>
+                      <div className="mt-2 h-2 rounded-full bg-[#031C3A] overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-[#00FFFF] to-green-400"
+                          style={{ width: `${passRate}%` }}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18]">
+                        <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Quizzes Generated</p>
+                        <p className="text-lg font-semibold text-[#00FFFF] mt-1">{quizzesGenerated}</p>
+                      </div>
+                      <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18]">
+                        <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Passed / Failed</p>
+                        <p className="text-lg font-semibold text-[#00FFFF] mt-1">
+                          {quizzesPassed} / {quizzesFailed}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-[#021B36]/80 p-6 rounded-xl border border-[#00FFFF30]">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-xl text-[#00FFFF] font-semibold">Time Metrics</h2>
+                    <span className="text-xs text-[#AFCBE3]">
+                      Window: {activeDays}/{totalExpectedDays} days
+                    </span>
+                  </div>
+                  <div className="space-y-3 text-sm">
+                    <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18]">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Training Window</p>
+                        <span className="text-sm font-semibold text-[#00FFFF]">{trainingWindowPercent}%</span>
+                      </div>
+                      <div className="mt-2 h-2 rounded-full bg-[#031C3A] overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-[#00FFFF] to-blue-400"
+                          style={{ width: `${trainingWindowPercent}%` }}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18]">
+                        <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Active Days</p>
+                        <p className="text-lg font-semibold text-[#00FFFF] mt-1">{activeDays}</p>
+                      </div>
+                      <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18]">
+                        <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Current Streak</p>
+                        <p className="text-lg font-semibold text-[#00FFFF] mt-1">{currentStreak}</p>
+                      </div>
+                      <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18]">
+                        <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Missed Days</p>
+                        <p className="text-lg font-semibold text-[#00FFFF] mt-1">{missedDays}</p>
+                      </div>
+                      <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18]">
+                        <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Remaining Days</p>
+                        <p className="text-lg font-semibold text-[#00FFFF] mt-1">{remainingDays}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <div className="bg-[#021B36]/80 p-6 rounded-xl border border-[#00FFFF30]">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-xl text-[#00FFFF] font-semibold">Roadmap Health</h2>
+                    <span className="text-xs text-[#AFCBE3]">Completion: {completionRate}%</span>
+                  </div>
+                  <div className="space-y-3 text-sm">
+                    <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18]">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Completion Rate</p>
+                        <span className="text-sm font-semibold text-[#00FFFF]">{completionRate}%</span>
+                      </div>
+                      <div className="mt-2 h-2 rounded-full bg-[#031C3A] overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-[#00FFFF] to-green-400"
+                          style={{ width: `${completionRate}%` }}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18]">
+                        <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Pending Modules</p>
+                        <p className="text-lg font-semibold text-[#00FFFF] mt-1">{pendingModules}</p>
+                      </div>
+                      <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18]">
+                        <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Locked Modules</p>
+                        <p className="text-lg font-semibold text-[#00FFFF] mt-1">{lockedModules}</p>
+                      </div>
+                      <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18]">
+                        <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Overdue Modules</p>
+                        <p className="text-lg font-semibold text-[#00FFFF] mt-1">{overdueModules}</p>
+                      </div>
+                      <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18]">
+                        <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Next Deadline</p>
+                        <p className="text-sm font-semibold text-[#00FFFF] mt-1">
+                          {nextDeadline
+                            ? `Module ${nextDeadline.order} in ${nextDeadlineDays}d`
+                            : "No upcoming"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-[#021B36]/80 p-6 rounded-xl border border-[#00FFFF30]">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-xl text-[#00FFFF] font-semibold">Learning Profile</h2>
+                    <span className="text-xs text-[#AFCBE3]">Focus and intent</span>
+                  </div>
+                  <div className="space-y-3 text-sm text-[#CFE8FF]">
+                    <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18]">
+                      <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Summary</p>
+                      <p className="mt-1">
+                        {userData.learningProfile?.summary || "No summary available."}
+                      </p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18]">
+                      <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Focus Areas</p>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {(userData.planFocusAreas || []).length > 0
+                          ? userData.planFocusAreas.map((area, idx) => (
+                              <span
+                                key={`focus-${idx}`}
+                                className="px-2 py-1 rounded-full bg-[#031C3A]/70 border border-[#00FFFF25] text-xs"
+                              >
+                                {area}
+                              </span>
+                            ))
+                          : "None"}
+                      </div>
+                    </div>
+                    <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18]">
+                      <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Plan Queries</p>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {(userData.planQueries || []).length > 0
+                          ? userData.planQueries.map((query, idx) => (
+                              <span
+                                key={`query-${idx}`}
+                                className="px-2 py-1 rounded-full bg-[#031C3A]/70 border border-[#00FFFF25] text-xs"
+                              >
+                                {query}
+                              </span>
+                            ))
+                          : "None"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-[#021B36]/80 p-6 rounded-xl border border-[#00FFFF30] mb-6">
+                <h2 className="text-xl text-[#00FFFF] font-semibold mb-4">Activity Timeline</h2>
+                {activityTimeline.length === 0 ? (
+                  <p className="text-sm text-[#AFCBE3]">No recent activity recorded.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {activityTimeline.map((item, idx) => (
+                      <div
+                        key={`activity-${idx}`}
+                        className="flex items-start gap-3 p-3 rounded-lg bg-[#031C3A]/70 border border-[#00FFFF20]"
+                      >
+                        <div className="w-2 h-2 mt-1.5 rounded-full bg-[#00FFFF]" />
+                        <div>
+                          <p className="text-sm text-[#CFE8FF] font-medium">{item.label}</p>
+                          <p className="text-xs text-[#AFCBE3] mt-0.5">
+                            {item.date.toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          );
+        })()}
 
         {/* Phase-wise Chart */}
         <div className="bg-[#021B36]/80 p-6 rounded-xl border border-[#00FFFF30] mb-6">
-          <h2 className="text-xl text-[#00FFFF] font-semibold mb-4">Phase-wise Progress</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl text-[#00FFFF] font-semibold">Phase-wise Progress</h2>
+            <span className="text-xs text-[#AFCBE3]">Modules grouped by phase</span>
+          </div>
           <ResponsiveContainer width="100%" height={250}>
             <BarChart data={phaseProgress}>
-              <XAxis dataKey="name" stroke="#ffffffff" />
-              <YAxis stroke="#ffffffff" domain={[0, 100]} />
-              <Tooltip />
-              <Bar dataKey="progress" fill="#1c5252ff" />
+              <defs>
+                <linearGradient id="phaseGradient" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stopColor="#00FFFF" />
+                  <stop offset="100%" stopColor="#1ac7ff" />
+                </linearGradient>
+              </defs>
+              <XAxis
+                dataKey="name"
+                stroke="#AFCBE3"
+                tickLine={false}
+                axisLine={{ stroke: "#123456" }}
+              />
+              <YAxis
+                stroke="#AFCBE3"
+                tickLine={false}
+                axisLine={{ stroke: "#123456" }}
+                domain={[0, 100]}
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "#021B36",
+                  border: "1px solid #00FFFF33",
+                  color: "#CFE8FF",
+                }}
+                cursor={{ fill: "#00FFFF12" }}
+              />
+              <Bar dataKey="progress" fill="url(#phaseGradient)" radius={[8, 8, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
