@@ -259,7 +259,8 @@ async function makeAgenticDecision({
 	weakAreas = [],
 	moduleTitle = "",
 	timeRemaining = null,
-	previousAttempts = []
+	previousAttempts = [],
+	maxAttempts = MAX_QUIZ_ATTEMPTS
 }) {
 	const { primaryModel } = initializeQuizModels();
 	
@@ -315,7 +316,7 @@ Return JSON only:
 }
 
 CONSTRAINTS:
-- Maximum ${MAX_QUIZ_ATTEMPTS} total attempts allowed
+- Maximum ${maxAttempts} total attempts allowed
 - Be encouraging but realistic
 - Focus on learner's growth and improvement
 - Consider time constraints if provided
@@ -336,15 +337,15 @@ CONSTRAINTS:
 	
 	// Fallback logic if AI fails
 	const scoreGap = QUIZ_PASS_THRESHOLD - score;
-	const allowRetry = attemptNumber < MAX_QUIZ_ATTEMPTS && scoreGap < 30;
-	const needsRegeneration = scoreGap > 20 && attemptNumber < MAX_QUIZ_ATTEMPTS;
+	const allowRetry = attemptNumber < maxAttempts && scoreGap < 30;
+	const needsRegeneration = scoreGap > 20 && attemptNumber < maxAttempts;
 	
 	return {
 		allowRetry,
 		retriesGranted: allowRetry ? 1 : 0,
 		requiresRoadmapRegeneration: needsRegeneration,
 		unlockResources: allowRetry ? ["quiz"] : [],
-		lockModule: !allowRetry && attemptNumber >= MAX_QUIZ_ATTEMPTS,
+		lockModule: !allowRetry && attemptNumber >= maxAttempts,
 		contactAdmin: !allowRetry,
 		message: allowRetry 
 			? `You scored ${score}%. Review the materials and try again - you're getting closer!`
@@ -906,6 +907,10 @@ export const submitQuiz = async (req, res) => {
 		const moduleSnap = await moduleRef.get();
 		const moduleData = moduleSnap.exists ? moduleSnap.data() : {};
 		const moduleTitle = moduleData.moduleTitle || "Current Module";
+		const maxAttemptsOverride = Number.isInteger(moduleData?.maxAttemptsOverride)
+			? moduleData.maxAttemptsOverride
+			: 0;
+		const effectiveMaxAttempts = Math.max(MAX_QUIZ_ATTEMPTS, maxAttemptsOverride);
 
 		const quizSnap = await quizRef.get();
 		if (!quizSnap.exists) {
@@ -920,7 +925,7 @@ export const submitQuiz = async (req, res) => {
 		const attemptsRef = moduleRef.collection("quizAttempts");
 		const attemptsSnap = await attemptsRef.get();
 		const attemptNumber = attemptsSnap.size + 1;
-		console.log(`📝 Quiz attempt #${attemptNumber} of ${MAX_QUIZ_ATTEMPTS} allowed`);
+		console.log(`📝 Quiz attempt #${attemptNumber} of ${effectiveMaxAttempts} allowed`);
 		
 		const mcqAnswers = Array.isArray(answers?.mcq) ? answers.mcq : [];
 		const oneLinerAnswers = Array.isArray(answers?.oneLiners) ? answers.oneLiners : [];
@@ -1084,7 +1089,8 @@ export const submitQuiz = async (req, res) => {
 				weakAreas,
 				moduleTitle,
 				timeRemaining,
-				previousAttempts
+				previousAttempts,
+				maxAttempts: effectiveMaxAttempts
 			});
 			
 			// Apply agentic decisions
@@ -1133,7 +1139,7 @@ export const submitQuiz = async (req, res) => {
 				message,
 				allowRetry,
 				attemptNumber,
-				maxAttempts: MAX_QUIZ_ATTEMPTS,
+				maxAttempts: effectiveMaxAttempts,
 				retriesGranted,
 				requiresRoadmapRegeneration,
 				unlockResources,
@@ -1372,7 +1378,7 @@ export const submitQuiz = async (req, res) => {
 			message,
 			allowRetry,
 			attemptNumber,
-			maxAttempts: MAX_QUIZ_ATTEMPTS,
+			maxAttempts: effectiveMaxAttempts,
 			retriesGranted,
 			requiresRoadmapRegeneration,
 			unlockResources,
@@ -1392,6 +1398,65 @@ export const submitQuiz = async (req, res) => {
 		console.error("Quiz submission error:", err);
 		console.error("Error stack:", err.stack);
 		return res.status(500).json({ error: "Quiz submission failed", details: err.message });
+	}
+};
+
+export const adminUnlockModule = async (req, res) => {
+	try {
+		const { companyId, deptId, userId, moduleId, attemptsToGrant } = req.body;
+		if (!companyId || !deptId || !userId || !moduleId) {
+			return res.status(400).json({ error: "Missing required IDs" });
+		}
+
+		const attempts = Math.max(1, Number(attemptsToGrant) || 1);
+
+		const userRef = db
+			.collection("freshers")
+			.doc(companyId)
+			.collection("departments")
+			.doc(deptId)
+			.collection("users")
+			.doc(userId);
+
+		const moduleRef = userRef.collection("roadmap").doc(moduleId);
+		const moduleSnap = await moduleRef.get();
+		if (!moduleSnap.exists) {
+			return res.status(404).json({ error: "Module not found" });
+		}
+
+		const moduleData = moduleSnap.data() || {};
+		const attemptsSnap = await moduleRef.collection("quizAttempts").get();
+		const currentAttempts = attemptsSnap.size;
+		const existingOverride = Number.isInteger(moduleData.maxAttemptsOverride)
+			? moduleData.maxAttemptsOverride
+			: 0;
+		const desiredMax = Math.max(MAX_QUIZ_ATTEMPTS, currentAttempts + attempts);
+		const maxAttemptsOverride = Math.max(existingOverride, desiredMax);
+
+		await moduleRef.set({
+			quizLocked: false,
+			moduleLocked: false,
+			requiresAdminContact: false,
+			adminUnlockAttemptsGranted: attempts,
+			maxAttemptsOverride,
+			adminUnlockedAt: admin.firestore.FieldValue.serverTimestamp(),
+		}, { merge: true });
+
+		await userRef.set({
+			trainingLocked: false,
+			trainingLockedAt: admin.firestore.FieldValue.delete(),
+			trainingLockedReason: admin.firestore.FieldValue.delete(),
+			requiresAdminContact: false,
+		}, { merge: true });
+
+		return res.json({
+			success: true,
+			currentAttempts,
+			maxAttemptsOverride,
+		});
+	} catch (err) {
+		console.error("Admin unlock error:", err);
+		return res.status(500).json({ error: "Failed to unlock module", details: err.message });
 	}
 };
 

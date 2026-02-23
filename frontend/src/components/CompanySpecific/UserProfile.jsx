@@ -11,6 +11,11 @@ export default function UserProfile() {
   const [roadmapModules, setRoadmapModules] = useState([]);
   const [roadmapLoading, setRoadmapLoading] = useState(true);
   const [expandedSkills, setExpandedSkills] = useState({});
+  const [actionLoading, setActionLoading] = useState({});
+  const [actionStatus, setActionStatus] = useState({});
+  const [attemptsToGrant, setAttemptsToGrant] = useState({});
+  const [expandedActions, setExpandedActions] = useState({});
+  const [selectedAction, setSelectedAction] = useState({});
   useEffect(() => {
     const fetchUser = async () => {
       try {
@@ -39,11 +44,11 @@ export default function UserProfile() {
       setLoading(false);
     }
   }, [companyId, deptId, userId]);
-  useEffect(() => {
   const fetchRoadmap = async () => {
     if (!companyId || !deptId || !userId) return;
 
     try {
+      setRoadmapLoading(true);
       const roadmapRef = collection(
         db,
         "freshers",
@@ -69,8 +74,77 @@ export default function UserProfile() {
     }
   };
 
-  fetchRoadmap();
-}, [companyId, deptId, userId]);
+  useEffect(() => {
+    fetchRoadmap();
+  }, [companyId, deptId, userId]);
+
+  const getModuleStartDate = (module) => {
+    const raw = module.startedAt || module.FirstTimeCreatedAt || module.createdAt;
+    if (!raw) return null;
+    return raw.toDate ? raw.toDate() : new Date(raw);
+  };
+
+  const getRemainingTimeLabel = (module) => {
+    if (module.completed) return "Completed";
+    const startDate = getModuleStartDate(module);
+    if (!startDate || !module.estimatedDays) return "Unknown";
+    const deadline = new Date(startDate.getTime() + module.estimatedDays * 24 * 60 * 60 * 1000);
+    const now = new Date();
+    const diffMs = deadline - now;
+    if (diffMs <= 0) return "Expired";
+    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    return days > 0 ? `${days}d ${hours}h remaining` : `${hours}h remaining`;
+  };
+
+  const setStatus = (moduleId, status) => {
+    setActionStatus(prev => ({ ...prev, [moduleId]: status }));
+  };
+
+  const setActionLoadingForModule = (moduleId, isLoading) => {
+    setActionLoading(prev => ({ ...prev, [moduleId]: isLoading }));
+  };
+
+  const handleRegenerate = async (moduleId) => {
+    try {
+      setActionLoadingForModule(moduleId, true);
+      setStatus(moduleId, "Regenerating roadmap...");
+      const res = await fetch("http://localhost:5000/api/roadmap/regenerate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyId, deptId, userId, moduleId })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Regeneration failed");
+      setStatus(moduleId, "Roadmap regenerated based on weaknesses.");
+      await fetchRoadmap();
+    } catch (err) {
+      setStatus(moduleId, err.message || "Regeneration failed");
+    } finally {
+      setActionLoadingForModule(moduleId, false);
+    }
+  };
+
+  const handleAdminUnlock = async (moduleId) => {
+    try {
+      const attempts = Math.max(1, Number(attemptsToGrant[moduleId] || 1));
+      setActionLoadingForModule(moduleId, true);
+      setStatus(moduleId, "Unlocking module...");
+      const res = await fetch("http://localhost:5000/api/quiz/admin-unlock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyId, deptId, userId, moduleId, attemptsToGrant: attempts })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Unlock failed");
+      setStatus(moduleId, `Module unlocked. Max attempts now ${data.maxAttemptsOverride}.`);
+      await fetchRoadmap();
+    } catch (err) {
+      setStatus(moduleId, err.message || "Unlock failed");
+    } finally {
+      setActionLoadingForModule(moduleId, false);
+    }
+  };
 
   if (loading) {
   return (
@@ -219,6 +293,108 @@ if (!user) {
           {/* Training Roadmap Section */}
           <div className="rounded-2xl border border-[#00FFFF22] bg-[#021B36]/70 p-5 md:p-6">
             <h2 className="text-xl font-semibold text-[#00FFFF] mb-4">Training Roadmap</h2>
+
+            {roadmapModules.some(m => m.quizLocked || m.moduleLocked) && (
+              <div className="mb-6 p-5 rounded-2xl border-2 border-[#00FFFF] bg-[#021B36]/90 shadow-[0_0_18px_rgba(0,255,255,0.25)]">
+                <div className="flex items-center gap-3 mb-3">
+                  <span className="px-2 py-1 text-xs font-semibold rounded-full bg-[#00FFFF]/15 text-[#00FFFF]">Action Required</span>
+                  <h3 className="text-[#00FFFF] font-semibold">Locked Quiz Actions</h3>
+                </div>
+                <div className="space-y-4">
+                  {roadmapModules.filter(m => m.quizLocked || m.moduleLocked).map((m) => (
+                    <div key={m.id} className="p-4 rounded-lg border border-[#00FFFF30] bg-[#031C3A]/70">
+                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                        <div>
+                          <div className="text-white font-semibold">Module {m.order}: {m.moduleTitle}</div>
+                          <div className="text-xs text-[#AFCBE3] mt-1">
+                            Quiz locked • Remaining time: {getRemainingTimeLabel(m)}
+                          </div>
+                        </div>
+
+                        <div>
+                          <button
+                            onClick={() => setExpandedActions(prev => ({ ...prev, [m.id]: !prev[m.id] }))}
+                            className="px-3 py-2 text-xs font-semibold rounded-lg border border-[#00FFFF] text-[#00FFFF] hover:bg-[#00FFFF]/10"
+                          >
+                            {expandedActions[m.id] ? "Hide Options" : "Show Options"}
+                          </button>
+                        </div>
+                      </div>
+
+                      {expandedActions[m.id] && (
+                        <div className="mt-4 space-y-3">
+                          <div className="flex flex-col sm:flex-row gap-2">
+                            <button
+                              onClick={() => {
+                                setSelectedAction(prev => ({ ...prev, [m.id]: "regenerate" }));
+                                alert("Selected: Regenerate Roadmap based on weaknesses");
+                              }}
+                              className={`px-3 py-2 text-xs font-semibold rounded-lg border ${
+                                selectedAction[m.id] === "regenerate"
+                                  ? "border-[#00FFFF] bg-[#00FFFF]/10 text-[#00FFFF]"
+                                  : "border-[#00FFFF30] text-[#AFCBE3]"
+                              }`}
+                            >
+                              Regenerate Roadmap (Weakness)
+                            </button>
+                            <button
+                              onClick={() => {
+                                setSelectedAction(prev => ({ ...prev, [m.id]: "unlock" }));
+                                alert("Selected: Unlock module and grant attempts");
+                              }}
+                              className={`px-3 py-2 text-xs font-semibold rounded-lg border ${
+                                selectedAction[m.id] === "unlock"
+                                  ? "border-[#00FFFF] bg-[#00FFFF]/10 text-[#00FFFF]"
+                                  : "border-[#00FFFF30] text-[#AFCBE3]"
+                              }`}
+                            >
+                              Unlock + Grant Attempts
+                            </button>
+                          </div>
+
+                          {selectedAction[m.id] === "regenerate" && (
+                            <button
+                              onClick={() => handleRegenerate(m.id)}
+                              disabled={actionLoading[m.id]}
+                              className="px-3 py-2 text-xs font-semibold rounded-lg border border-[#00FFFF] text-[#00FFFF] hover:bg-[#00FFFF]/10 disabled:opacity-50"
+                            >
+                              Confirm Regenerate
+                            </button>
+                          )}
+
+                          {selectedAction[m.id] === "unlock" && (
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="number"
+                                min="1"
+                                max="5"
+                                value={attemptsToGrant[m.id] || 1}
+                                onChange={(e) => setAttemptsToGrant(prev => ({ ...prev, [m.id]: e.target.value }))}
+                                className="w-16 px-2 py-2 text-xs rounded-lg bg-[#031C3A] border border-[#00FFFF30] text-white"
+                                title="Attempts to grant"
+                              />
+                              <button
+                                onClick={() => handleAdminUnlock(m.id)}
+                                disabled={actionLoading[m.id]}
+                                className="px-3 py-2 text-xs font-semibold rounded-lg bg-[#00FFFF] text-[#031C3A] hover:opacity-90 disabled:opacity-50"
+                              >
+                                Confirm Unlock
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {actionStatus[m.id] && (
+                        <div className="mt-3 text-xs text-[#AFCBE3]">
+                          {actionStatus[m.id]}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {roadmapLoading ? (
               <div className="flex items-center justify-center py-8">
