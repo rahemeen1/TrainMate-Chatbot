@@ -187,19 +187,41 @@ if (!user) {
 
       <div className="flex-1 p-6 md:p-8">
         <div className="max-w-6xl mx-auto space-y-6">
-          {/* Top Bar with Back Button */}
-          <div className="flex items-center justify-between">
+          {/* Top Bar: Back Button on Left | CV, Status on Right */}
+          <div className="flex items-center justify-between gap-3">
             <button 
               onClick={() => window.history.back()} 
-              className="flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-[#00FFFF]/10 transition text-[#AFCBE3] font-medium"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-[#00FFFF]/10 transition text-[#AFCBE3] font-medium whitespace-nowrap"
             >
               ← Back to Users
             </button>
+            <div className="flex gap-3 flex-col md:flex-row">
+              {user.cvUrl && (
+                <a
+                  href={user.cvUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-4 py-2 bg-[#00FFFF] text-[#031C3A] rounded-lg font-semibold hover:opacity-90 transition flex items-center justify-center"
+                >
+                  Download CV
+                </a>
+              )}
+              <div className="px-3 py-2 rounded-lg border border-[#00FFFF30] bg-[#031C3A]/70 text-center">
+                <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Status</p>
+                <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold mt-0.5
+                  ${user.status === "active"
+                    ? "bg-green-500/20 text-green-400"
+                    : "bg-red-500/20 text-red-400"}
+                `}>
+                  {user.status}
+                </span>
+              </div>
+            </div>
           </div>
 
           {/* Header Section */}
           <div className="rounded-2xl border border-[#00FFFF30] bg-[#021B36]/80 shadow-lg p-6 md:p-8">
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-6">
               <div className="flex flex-col md:flex-row md:items-center gap-6">
                 {/* Avatar */}
                 <div className="w-24 h-24 rounded-full bg-[#031C3A] border-3 border-[#00FFFF] flex items-center justify-center text-4xl font-bold text-[#00FFFF] flex-shrink-0">
@@ -214,67 +236,35 @@ if (!user) {
                 </div>
               </div>
 
-              {/* CV and Status */}
-              <div className="flex flex-col gap-3">
-                {user.cvUrl && (
-                  <a
-                    href={user.cvUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-4 py-2 bg-[#00FFFF] text-[#031C3A] rounded-lg font-semibold hover:opacity-90 transition text-center"
-                  >
-                    Download CV
-                  </a>
-                )}
-                <div className="px-4 py-2 rounded-lg border border-[#00FFFF30] bg-[#031C3A]/70 text-center">
-                  <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Status</p>
-                  <span className={`inline-block px-3 py-1 rounded-full text-sm font-semibold mt-1
-                    ${user.status === "active"
-                      ? "bg-green-500/20 text-green-400"
-                      : "bg-red-500/20 text-red-400"}
-                  `}>
-                    {user.status}
-                  </span>
+              {/* Right Side: Username, Progress, Training On */}
+              <div className="flex flex-col gap-3 w-full md:w-auto">
+                {/* Row: Username on left, Progress and Training On stacked on right */}
+                <div className="grid grid-cols-1 gap-3">
+                  
+                  
+                  {/* Stacked column for Progress and Training On */}
+                  <div className="flex flex-col gap-3">
+                    <div className="px-3 py-2 rounded-lg border border-[#00FFFF30] bg-[#031C3A]/70 text-center text-sm">
+                      <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Progress</p>
+                      <p className="font-semibold text-[#00FFFF] mt-1">{user.progress || 0}%</p>
+                    </div>
+                    <div className="px-3 py-2 rounded-lg border border-[#00FFFF30] bg-[#031C3A]/70 text-center text-sm">
+                      <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Training On</p>
+                      <p className="font-semibold text-[#00FFFF] mt-1 truncate">{user.trainingOn || "N/A"}</p>
+                    </div>
+                    
+                  </div>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Training Overview Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-4 rounded-xl bg-[#031C3A]/70 border border-[#00FFFF30]">
-              <p className="text-[#AFCBE3] text-sm font-medium">Training On</p>
-              <p className="text-lg font-semibold text-[#00FFFF] mt-2">{user.trainingOn || "N/A"}</p>
-            </div>
-
-            <div className="p-4 rounded-xl bg-[#031C3A]/70 border border-[#00FFFF30]">
-              <p className="text-[#AFCBE3] text-sm font-medium">Training Level</p>
-              <p className="text-lg font-semibold text-[#00FFFF] mt-2 capitalize">{user.trainingLevel || "N/A"}</p>
-            </div>
-
-            <div className="p-4 rounded-xl bg-[#031C3A]/70 border border-[#00FFFF30]">
-              <p className="text-[#AFCBE3] text-sm font-medium">Onboarding</p>
-              <p className="text-lg font-semibold text-[#00FFFF] mt-2">{user.onboarding?.onboardingCompleted ? "✓ Completed" : "Pending"}</p>
-            </div>
-          </div>
-
-          {/* Progress Section */}
-          <div className="rounded-2xl border border-[#00FFFF22] bg-[#021B36]/70 p-5 md:p-6">
-            <h2 className="text-xl font-semibold text-[#00FFFF] mb-4">Overall Progress</h2>
-            <div className="space-y-3">
-              <div className="w-full bg-[#00FFFF20] rounded-full h-5 overflow-hidden border border-[#00FFFF30]">
-                <div
-                  className="bg-gradient-to-r from-[#00FFFF] to-[#00BFD4] h-5 rounded-full transition-all duration-300"
-                  style={{ width: `${user.progress || 0}%` }}
-                ></div>
-              </div>
-              <p className="text-right text-[#AFCBE3] font-semibold">{user.progress || 0}% Complete</p>
-            </div>
-          </div>
-
           {/* Training Stats */}
           <div className="rounded-2xl border border-[#00FFFF22] bg-[#021B36]/70 p-5 md:p-6">
-            <h2 className="text-xl font-semibold text-[#00FFFF] mb-4">Training Statistics</h2>
+            <div className="flex items-center gap-2 mb-4">
+              <h2 className="text-xl font-semibold text-[#00FFFF]">Training Statistics</h2>
+              <p className="text-sm italic text-[#AFCBE3]">(Level: {user.trainingLevel || "N/A"})</p>
+            </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
                 { label: "Active Days", value: user.trainingStats?.activeDays },
