@@ -38,6 +38,13 @@ console.log(email);
       </button>
 
       <button
+        onClick={() => navigate("/about")}
+        className="text-left px-4 py-2 rounded-lg hover:bg-[#00FFFF]/20 transition font-medium"
+      >
+        About Us
+      </button>
+
+      <button
         onClick={() => {
           if (!roadmapGenerated) return;
           navigate(`/roadmap/${companyId}/${deptId}/${userId}/${companyName}`);
