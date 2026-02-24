@@ -61,7 +61,7 @@ export default function About() {
     {
       id: 1,
       title: "Complete Onboarding",
-      description: "Fill in your training duration, company size, and company details. This information is used to personalize your training roadmap."
+      description: "Upload your CV and tell us your expertise level (1-5) in the required domain. This helps us understand your current skills and create a personalized learning roadmap tailored to your skill gaps."
     },
     {
       id: 2,

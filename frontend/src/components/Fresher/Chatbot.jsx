@@ -408,7 +408,7 @@ useEffect(() => {
         <div className="bg-gradient-to-r from-[#021B36]/95 via-[#031C3A]/90 to-[#021B36]/95 p-5 border-b border-[#00FFFF40] flex justify-between items-center flex-none">
           <div className="space-y-2">
             <h2 className="text-2xl md:text-3xl text-[#00FFFF] font-semibold">
-              TrainMate Chatbot
+              {companyName ? `${companyName}'s Training Assistant` : "Chatbot"}
             </h2>
             <div className="flex flex-wrap items-center gap-3 text-xs text-[#AFCBE3]">
               <div className="flex items-center gap-2">
