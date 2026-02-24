@@ -465,7 +465,7 @@ if (!roadmap.length)
         module.timeRemaining.days === 0 ? "text-yellow-400" : 
         "text-[#00FFFF]"
       }`}>
-        <div>Time Left: {getDaysLeft(module)} day{getDaysLeft(module) !== 1 ? "s" : ""}</div>
+        <div>Time Left: {module.timeRemaining.message}</div>
         {module.timeRemaining.expired
           ? "⏰ EXPIRED"
           : module.timeRemaining.message.startsWith("Starts in")

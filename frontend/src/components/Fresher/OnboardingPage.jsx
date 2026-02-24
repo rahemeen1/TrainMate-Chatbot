@@ -200,9 +200,12 @@ export default function OnboardingPage({
           {/* STEP 1 */}
           {step === 1 && (
             <>
-              <h3 className="text-[#00FFFF] text-lg font-semibold mb-4">
+              <h3 className="text-[#00FFFF] text-lg font-semibold mb-2">
                 Upload your CV
               </h3>
+              <p className="text-[#AFCBE3] text-sm mb-4">
+                We'll analyze your CV to understand your current skills and experience in <span className="text-[#00FFFF] font-semibold">{trainingOn}</span>. This helps us create a personalized learning roadmap tailored to your skill gaps.
+              </p>
 
               <label className="inline-flex items-center justify-center px-4 py-2 bg-[#00FFFF] text-[#031C3A] rounded-lg cursor-pointer font-semibold hover:bg-[#00e0e0] transition-colors text-base">
       {cvFile ? `Selected` : "Choose File"}
@@ -238,7 +241,7 @@ export default function OnboardingPage({
                 </p>
               )}
 
-              <p className="text-[#AFCBE3] text-sm italic mt-2">
+              <p className="text-[#AFCBE3] text-xs italic mt-2">
                 Accepted formats: .pdf, .doc, .docx
               </p>
             </>
@@ -247,24 +250,30 @@ export default function OnboardingPage({
           {/* STEP 2 */}
           {step === 2 && (
             <>
-              <h3 className="text-[#00FFFF] text-lg font-semibold mb-4">
-                Your expertise in {trainingOn}?
+              <h3 className="text-[#00FFFF] text-lg font-semibold mb-2">
+                How expert are you in <span className="text-[#00FFC2]">{trainingOn}</span>?
               </h3>
+              <p className="text-[#AFCBE3] text-sm mb-6">
+                Tell us your expertise level on a scale of 1-5. This helps us calibrate the difficulty of your training roadmap and provide appropriate resources for your skill level.
+              </p>
               <div className="flex gap-3">
                 {[1, 2, 3, 4, 5].map((n) => (
                   <button
                     key={n}
                     onClick={() => setExpertise(n)}
-                    className={`w-12 h-12 rounded-lg ${
+                    className={`w-12 h-12 rounded-lg font-semibold transition-all ${
                       expertise === n
-                        ? "bg-[#00FFFF] text-[#031C3A]"
-                        : "bg-[#021B36] border border-[#00FFFF30]"
+                        ? "bg-[#00FFFF] text-[#031C3A] shadow-lg shadow-[#00FFFF]/50"
+                        : "bg-[#021B36] border border-[#00FFFF30] hover:border-[#00FFFF]/70 text-[#AFCBE3]"
                     }`}
                   >
                     {n}
                   </button>
                 ))}
               </div>
+              <p className="text-[#AFCBE3] text-xs mt-4">
+                1 = Beginner | 5 = Expert
+              </p>
             </>
           )}
 
