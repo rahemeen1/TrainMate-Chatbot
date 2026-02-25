@@ -152,7 +152,7 @@ export default function ComparePlans() {
               <Sparkles size={16} />
               <span>Feature Comparison</span>
             </div>
-            <h1 className="text-5xl font-bold leading-tight text-white [font-family:'Space_Grotesk',sans-serif]">
+            <h1 className="text-5xl font-bold text-white">
               Compare what <span className="text-[#00FFFF]">Basic and Pro</span> unlock for your cohort.
             </h1>
             <p className="max-w-xl text-lg text-gray-300 leading-relaxed">
