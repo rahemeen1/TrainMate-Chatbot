@@ -178,8 +178,9 @@ function Certificate() {
     return (
       <div className="flex min-h-screen bg-[#031C3A] text-white items-center justify-center">
         <div className="text-center">
-          <h2 className="text-2xl font-bold text-[#00FFFF] mb-4">Certificate Not Available</h2>
-          <p className="text-[#AFCBE3]">Complete your training roadmap to claim your certificate</p>
+          <div className="text-4xl mb-3">🔒</div>
+          <h2 className="text-2xl font-bold text-[#00FFFF] mb-3">Certificate Locked</h2>
+          <p className="text-[#AFCBE3]">Generate your roadmap to unlock the certificate</p>
         </div>
       </div>
     );

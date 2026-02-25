@@ -114,22 +114,17 @@ console.log(email);
 
       <button
         onClick={() => {
-          if (!roadmapGenerated) return;
-          navigate("/certificate", { state: { userId, companyId, deptId, companyName } });
+          return;
         }}
         className={`text-left px-4 py-2 rounded-lg transition font-medium relative group ${
-          roadmapGenerated
-            ? "hover:bg-[#00FFFF]/20 cursor-pointer text-[#AFCBE3]"
-            : "opacity-60 cursor-not-allowed text-[#AFCBE3] bg-gray-500/10"
+          "opacity-60 cursor-not-allowed text-[#AFCBE3] bg-gray-500/10"
         }`}
       >
-        {!roadmapGenerated && <span className="absolute top-1 left-1 text-xs">🔒</span>}
-        <span className={roadmapGenerated ? "" : "ml-2"}>Claim Certificate</span>
-        {!roadmapGenerated && (
-          <div className="absolute left-0 top-full mt-1 bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] text-xs font-semibold whitespace-nowrap px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition pointer-events-none shadow-lg z-50">
-            Available after roadmap completion
-          </div>
-        )}
+        <span className="absolute top-1 left-1 text-xs">🔒</span>
+        <span className="ml-2">Claim Certificate</span>
+        <div className="absolute left-0 top-full mt-1 bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] text-xs font-semibold whitespace-nowrap px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition pointer-events-none shadow-lg z-50">
+          Earn your certificate after completing final quiz
+        </div>
       </button>
 
       <button
