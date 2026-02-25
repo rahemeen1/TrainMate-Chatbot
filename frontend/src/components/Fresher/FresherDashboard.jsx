@@ -476,9 +476,9 @@ if (loading) {
             </div>
 
             <div className="bg-[#021B36]/80 p-4 rounded-lg border border-[#00FFFF]/30">
-              <p className="text-[#AFCBE3] text-xs font-semibold uppercase mb-1">Total Expected Days</p>
+              <p className="text-[#AFCBE3] text-xs font-semibold uppercase mb-1">Total Days</p>
               <p className="text-[#00FFFF] text-2xl font-bold">{missedDateInfo.totalExpectedDays}</p>
-              <p className="text-[#AFCBE3] text-xs mt-1">available for training</p>
+              <p className="text-[#AFCBE3] text-xs mt-1"> for training</p>
             </div>
 
            
