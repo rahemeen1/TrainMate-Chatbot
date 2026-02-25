@@ -235,8 +235,13 @@ export default function AdminDashboard() {
       <div
         className={`${isSidebarOpen ? "block" : "hidden"} md:block w-full md:w-64 bg-[#031C3A] border-r border-[#00FFFF30] shadow-lg p-6`}
       >
-        <h2 className="hidden md:block text-xl font-bold text-[#00FFFF] mb-8">Super Admin</h2>
-
+         {/* Logo */}
+      <div className="text-center mb-6">
+        <div className="w-16 h-16 mx-auto bg-[#00FFFF]/20 rounded-2xl flex items-center justify-center shadow-[0_0_18px_#00FFFF50] border border-[#00FFFF30]">
+          <span className="text-[#00FFFF] font-extrabold text-xl">TM</span>
+        </div>
+        <h1 className="text-[#00FFFF] font-bold text-xl mt-1">TrainMate</h1>
+       </div>
         <ul className="space-y-4 text-[#AFCBE3]">
           <li
             className={`cursor-pointer p-2 rounded-lg ${
@@ -319,7 +324,7 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
               <StatCard title="Companies Onboard" value={stats.companies} icon={<Building2 />} />
               <StatCard title="Total Companies" value={stats.totalCompanies} icon={<Building2 />} />
               <StatCard title="Total Users" value={stats.users} icon={<Users />} />
@@ -341,14 +346,12 @@ export default function AdminDashboard() {
 
 function StatCard({ title, value, icon }) {
   return (
-    <div className="h-full bg-[#031C3A]/70 border border-[#00FFFF30] rounded-xl p-5 sm:p-6 shadow-[0_0_15px_rgba(0,255,255,0.15)] hover:shadow-[0_0_25px_rgba(0,255,255,0.25)] transition-all">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-base sm:text-lg font-semibold text-[#AFCBE3] leading-6 min-h-12 flex items-start">
-          <span>{title}</span>
-        </h2>
-        <span className="text-[#00FFFF]">{icon}</span>
+    <div className="h-full bg-[#031C3A]/70 border border-[#00FFFF30] rounded-xl p-4 sm:p-5">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-sm text-[#9FC2DA]">{title}</p>
+        <span className="text-[#00FFFF] shrink-0">{icon}</span>
       </div>
-      <p className="text-3xl font-bold text-[#E8F7FF]">{value}</p>
+      <p className="text-2xl font-bold text-[#E8F7FF] mt-1">{value}</p>
     </div>
   );
 }

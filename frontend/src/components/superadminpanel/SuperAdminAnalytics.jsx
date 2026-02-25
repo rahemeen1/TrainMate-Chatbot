@@ -112,7 +112,7 @@ export default function SuperAdminAnalytics({ analytics }) {
 
   return (
     <div className="space-y-6">
-      <div className="bg-[#031C3A]/70 border border-[#00FFFF30] rounded-xl p-4 sm:p-6 space-y-5">
+      {/* <div className="bg-[#031C3A]/70 border border-[#00FFFF30] rounded-xl p-4 sm:p-6 space-y-5">
         <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4">
           <div>
             <p className="text-sm text-[#AFCBE3] font-semibold">Dashboard Slicer</p>
@@ -204,7 +204,7 @@ export default function SuperAdminAnalytics({ analytics }) {
             </table>
           </div>
         </div>
-      </div>
+      </div> */}
       
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">

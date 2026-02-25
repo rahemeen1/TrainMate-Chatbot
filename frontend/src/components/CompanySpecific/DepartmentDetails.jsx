@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import CompanySidebar from "./CompanySidebar";
 import jsPDF from "jspdf";
+import { collection, getDocs, query, orderBy, limit } from "firebase/firestore";
+import { db } from "../../firebase";
 
 import {
   fetchDepartmentUsers,
@@ -21,6 +23,8 @@ const [uploadingDoc, setUploadingDoc] = useState(false);
 const [addingUser, setAddingUser] = useState(false);
 const [userAddedSuccess, setUserAddedSuccess] = useState(false);
 const [deletingDocId, setDeletingDocId] = useState(null);
+const [companyLicense, setCompanyLicense] = useState("License Pro");
+const [totalCompanyFreshers, setTotalCompanyFreshers] = useState(0);
 
 
   const { state } = useLocation();
@@ -43,6 +47,9 @@ const [deletingDocId, setDeletingDocId] = useState(null);
   });
 
   const [lastAddedUser, setLastAddedUser] = useState(null);
+  const BASIC_MAX_FRESHERS = 15;
+  const isBasicLicense = companyLicense === "License Basic";
+  const isBasicLimitReached = isBasicLicense && totalCompanyFreshers >= BASIC_MAX_FRESHERS;
 
   // Safety
   useEffect(() => {
@@ -59,6 +66,44 @@ const [deletingDocId, setDeletingDocId] = useState(null);
     load();
   }, [companyId, deptId]);
 
+  useEffect(() => {
+    const loadCompanyLicenseAndFresherCount = async () => {
+      if (!companyId) return;
+
+      try {
+        const answersRef = collection(db, "companies", companyId, "onboardingAnswers");
+        const answersSnap = await getDocs(
+          query(answersRef, orderBy("createdAt", "desc"), limit(1))
+        );
+
+        if (!answersSnap.empty) {
+          const latestAnswers = answersSnap.docs[0].data()?.answers;
+          const savedLicense = latestAnswers?.[2] ?? latestAnswers?.["2"];
+
+          if (savedLicense === "License Basic" || savedLicense === "License Pro") {
+            setCompanyLicense(savedLicense);
+          }
+        }
+
+        const departmentSnap = await getDocs(collection(db, "companies", companyId, "departments"));
+        let totalFreshers = 0;
+
+        for (const departmentDoc of departmentSnap.docs) {
+          const usersSnap = await getDocs(
+            collection(db, "freshers", companyId, "departments", departmentDoc.id, "users")
+          );
+          totalFreshers += usersSnap.size;
+        }
+
+        setTotalCompanyFreshers(totalFreshers);
+      } catch (err) {
+        console.error("Error loading company license limits:", err);
+      }
+    };
+
+    loadCompanyLicenseAndFresherCount();
+  }, [companyId, users.length]);
+
   // Load Documents
   useEffect(() => {
     const load = async () => {
@@ -71,6 +116,11 @@ const [deletingDocId, setDeletingDocId] = useState(null);
 
   // Add User
   const handleAddUser = async () => {
+    if (isBasicLimitReached) {
+      alert("Basic license allows up to 15 freshers. Please upgrade to Pro license to add more freshers.");
+      return;
+    }
+
     try {
       setAddingUser(true); // 🔵 start
       const result = await addFresherUser({
@@ -276,14 +326,37 @@ const closeAddUserModal = () => {
         {/* USERS */}
         <div className="mb-8">
           <div className="flex justify-between mb-3">
-            <h2 className="text-xl font-semibold">Users ({users.length})</h2>
+            <div>
+              <h2 className="text-xl font-semibold">Users ({users.length})</h2>
+              {isBasicLicense && (
+                <p className="text-sm text-[#AFCBE3] mt-1">
+                  Basic license usage: {totalCompanyFreshers}/{BASIC_MAX_FRESHERS} freshers
+                </p>
+              )}
+            </div>
             <button
               onClick={() => setShowAddUserModal(true)}
-              className="px-4 py-2 bg-[#00FFFF] text-[#031C3A] rounded-lg font-semibold"
+              disabled={isBasicLimitReached}
+              className={`px-4 py-2 rounded-lg font-semibold ${
+                isBasicLimitReached
+                  ? "bg-gray-500 text-white cursor-not-allowed"
+                  : "bg-[#00FFFF] text-[#031C3A]"
+              }`}
+              title={
+                isBasicLimitReached
+                  ? "Upgrade to Pro license to add more freshers"
+                  : "Add User"
+              }
             >
-              Add User
+              {isBasicLimitReached ? "Limit Reached (🔒)" : "Add User"}
             </button>
           </div>
+
+          {isBasicLimitReached && (
+            <div className="mb-3 p-3 rounded-lg border border-[#00FFFF30] bg-[#021B36]/60 text-sm text-[#AFCBE3]">
+              You have reached the Basic license limit. Upgrade to Pro license to add more than 15 freshers.
+            </div>
+          )}
 
           {loadingUsers ? (
             <p>Loading...</p>
@@ -376,7 +449,7 @@ const closeAddUserModal = () => {
 {userAddedSuccess && (
   <div className="mb-4 p-3 bg-green-600/20 border border-green-500 rounded-lg">
     <p className="text-green-400 font-semibold">
-      ✅ User added successfully
+      User added successfully
     </p>
 
     <button

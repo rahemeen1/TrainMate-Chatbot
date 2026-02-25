@@ -1,6 +1,6 @@
 //CompanyDashboard.jsx
 import { useState, useEffect } from "react";
-import { collection, getDocs, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, getDocs, addDoc, serverTimestamp, query, orderBy, limit } from "firebase/firestore";
 import {
   BarChart,
   Bar,
@@ -23,10 +23,47 @@ import CompanyFresherChatbot from "../../components/CompanySpecific/CompanyFresh
 
 const DEPARTMENT_OPTIONS = ["HR", "SOFTWAREDEVELOPMENT", "AI", "ACCOUNTING", "MARKETING", "OPERATIONS", "DATASCIENCE","IT"];
 
+const PLAN_OPTIONS = [
+  {
+    title: "Basic",
+    subtitle: "Core Training",
+    value: "License Basic",
+    capacity: "10 to 15 freshers",
+    usdPrice: "$59/month",
+    inrPrice: "Rs 15,500/month",
+    facilities: [
+      "Customized roadmap",
+      "Email updates",
+      "Google Calendar integration",
+      "Basic completion certificate",
+      "Admin progress view",
+      "10 to 15 freshers",
+    ],
+  },
+  {
+    title: "Pro",
+    subtitle: "Adaptive Training Suite",
+    value: "License Pro",
+    capacity: "20 to 40 freshers",
+    usdPrice: "$199/month",
+    inrPrice: "Rs 52,500/month",
+    facilities: [
+      "Full quiz suite",
+      "Agentic emails",
+      "Google Calendar automation",
+      "Weak-area roadmap",
+      "Agentic scores",
+      "Final unlock quiz",
+      "Admin chatbot",
+      "20 to 40 freshers",
+    ],
+  },
+];
+
 const QUESTIONS = [
   { text: "Select your departments", type: "multi-select", options: DEPARTMENT_OPTIONS },
   { text: "Training duration", type: "single-select", options: ["1 month", "3 months", "6 months"] },
-  { text: "Batch size", type: "single-select", options: ["Small (5-10)", "Medium (10-20)", "Large (20+)"] },
+  { text: "Which plan do you want to proceed with?", type: "plan-select", options: PLAN_OPTIONS },
    { text: "Tell us about your company", type: "text" },
 ];
 export default function CompanyDashboard() {
@@ -47,6 +84,15 @@ export default function CompanyDashboard() {
   const [pieData, setPieData] = useState([]);
   const [completedFreshers, setCompletedFreshers] = useState(0);
   const [showChatbot, setShowChatbot] = useState(false);
+  const [companyLicense, setCompanyLicense] = useState("License Pro");
+  const [showUpgradeNotice, setShowUpgradeNotice] = useState(false);
+  const [savingOnboarding, setSavingOnboarding] = useState(false);
+
+  const selectedPlan = answers[2];
+  const effectiveLicense = selectedPlan || companyLicense;
+  const isBasicLicense = effectiveLicense === "License Basic";
+  const currentPlanConfig = PLAN_OPTIONS.find((plan) => plan.value === effectiveLicense);
+  const currentPlanLabel = currentPlanConfig?.title || "Pro";
 
 useEffect(() => {
   const fetchOnboardingCompletion = async () => {
@@ -83,6 +129,32 @@ useEffect(() => {
 
   fetchOnboardingCompletion();
 }, [companyId, hasDepartments, selectedDepts]);
+
+  useEffect(() => {
+    const fetchCompanyLicense = async () => {
+      if (!companyId) return;
+
+      try {
+        const answersRef = collection(db, "companies", companyId, "onboardingAnswers");
+        const answersSnap = await getDocs(
+          query(answersRef, orderBy("createdAt", "desc"), limit(1))
+        );
+
+        if (!answersSnap.empty) {
+          const latestAnswers = answersSnap.docs[0].data()?.answers;
+          const savedLicense = latestAnswers?.[2] ?? latestAnswers?.["2"];
+
+          if (savedLicense === "License Basic" || savedLicense === "License Pro") {
+            setCompanyLicense(savedLicense);
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching company license:", err);
+      }
+    };
+
+    fetchCompanyLicense();
+  }, [companyId]);
 
   useEffect(() => {
     if (companyId) {
@@ -253,12 +325,33 @@ const CustomXAxisTick = ({ x, y, payload }) => {
   );
 };
 
+  const handleAssistantClick = () => {
+    if (isBasicLicense) {
+      setShowUpgradeNotice(true);
+      setTimeout(() => setShowUpgradeNotice(false), 2600);
+      return;
+    }
+
+    setShowChatbot((prev) => !prev);
+  };
+
   // Save answers and departments
   const saveAnswersToDB = async () => {
+    if (!companyId) return;
+
     try {
+      setSavingOnboarding(true);
+      const selectedLicense = answers[2] || "License Basic";
+
       // Save onboarding answers
       const answersRef = collection(db, "companies", companyId, "onboardingAnswers");
-      await addDoc(answersRef, { answers, createdAt: serverTimestamp() });
+      const savedOnboardingDoc = await addDoc(answersRef, {
+        answers: {
+          ...answers,
+          2: selectedLicense,
+        },
+        createdAt: serverTimestamp(),
+      });
 
       // Save selected departments only if not already created
      if (!hasDepartments && selectedDepts.length > 0) {
@@ -271,8 +364,20 @@ const CustomXAxisTick = ({ x, y, payload }) => {
 
       // Mark onboarding as done
       setHasDepartments(true);
+
+      navigate("/company-license-payment", {
+        state: {
+          companyId,
+          companyName,
+          targetLicense: selectedLicense,
+          onboardingDocId: savedOnboardingDoc.id,
+          returnTo: "/CompanySpecific/CompanyDashboard",
+        },
+      });
     } catch (err) {
       console.error("Error saving data:", err);
+    } finally {
+      setSavingOnboarding(false);
     }
   };
 
@@ -312,11 +417,43 @@ const CustomXAxisTick = ({ x, y, payload }) => {
       <CompanySidebar companyId={companyId} companyName={companyName} />
 
       {/* Main Content */}
-      <div className="flex-1 p-8">
-        {/* Welcome */}
-        <div className="max-w-4xl mx-auto text-center mb-6">
-          <h1 className="text-3xl font-bold text-[#00FFFF] mb-2">Welcome, {companyName}</h1>
-          {!hasDepartments && <p className="text-[#AFCBE3]">To get started, please answer a few questions.</p>}
+      <div className="flex-1 p-4 sm:p-6 lg:p-8">
+        <div className="max-w-6xl mx-auto">
+          <div className="mb-8 pt-2 sm:pt-3 px-1 sm:px-2">
+            <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6">
+              <div className="space-y-2">
+                <p className="text-xs tracking-[0.18em] uppercase text-[#8EB6D3]">Company Workspace</p>
+                <h1 className="text-2xl sm:text-3xl font-bold text-[#E8F7FF]">
+                  Welcome back, {companyName}
+                </h1>
+                <p className="text-sm text-[#AFCBE3] pt-1">
+                  {hasDepartments
+                    ? "Track fresher progress, department activity, and training completion from one dashboard."
+                    : "Complete onboarding to configure your training setup and unlock your dashboard insights."}
+                </p>
+              </div>
+
+              <div className="flex flex-col items-start md:items-end gap-2">
+                <span className="text-xs text-[#8EB6D3] uppercase tracking-wide">Current Plan</span>
+                <span
+                  className={`px-3 py-1 rounded-lg text-sm font-semibold border ${
+                    isBasicLicense
+                      ? "bg-[#7FA3BF]/20 text-[#D8ECFF] border-[#AFCBE355]"
+                      : "bg-[#00FFFF]/20 text-[#00FFFF] border-[#00FFFF66]"
+                  }`}
+                >
+                  {currentPlanLabel} License
+                </span>
+                <span className="text-xs text-[#AFCBE3]">
+                  {new Date().toLocaleDateString("en-GB", {
+                    day: "2-digit",
+                    month: "short",
+                    year: "numeric",
+                  })}
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Show onboarding only if first login */}
@@ -352,6 +489,51 @@ const CustomXAxisTick = ({ x, y, payload }) => {
         bg-[#021B36]/50 border-[#00FFFF30] placeholder-[#AFCBE3]
         focus:outline-none focus:border-[#00FFFF] hover:border-[#00FFFF60] resize-none"
     />
+  </div>
+) : QUESTIONS[step - 1].type === "plan-select" ? (
+  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 w-full">
+    {QUESTIONS[step - 1].options.map((plan) => {
+      const isSelected = answers[step - 1] === plan.value;
+
+      return (
+        <div
+          key={plan.value}
+          onClick={() => setAnswers((prev) => ({ ...prev, [step - 1]: plan.value }))}
+          className={`cursor-pointer rounded-xl border p-5 transition-all ${
+            isSelected
+              ? "bg-[#00FFFF]/20 border-[#00FFFF]"
+              : "bg-[#021B36]/50 border-[#00FFFF30] hover:border-[#00FFFF60]"
+          }`}
+        >
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <div>
+              <h3 className="text-xl font-bold text-[#E8F7FF]">{plan.title}</h3>
+              <p className="text-sm text-[#AFCBE3]">{plan.subtitle}</p>
+            </div>
+            {isSelected ? (
+              <span className="text-xs px-2 py-1 rounded-md bg-[#00FFFF] text-[#031C3A] font-semibold">
+                Selected
+              </span>
+            ) : null}
+          </div>
+
+          <div className="space-y-1 mb-3">
+            <p className="text-sm text-[#AFCBE3]">{plan.capacity}</p>
+            <p className="text-base font-semibold text-[#00FFFF]">{plan.usdPrice}</p>
+            <p className="text-sm text-[#9FC2DA]">{plan.inrPrice}</p>
+          </div>
+
+          <div>
+            <p className="text-sm font-semibold text-[#00FFFF] mb-2">Facilities:</p>
+            <ul className="space-y-1 text-sm text-[#AFCBE3]">
+              {plan.facilities.map((facility) => (
+                <li key={facility} className="leading-5">• {facility}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      );
+    })}
   </div>
 ) : (
   <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
@@ -392,10 +574,11 @@ const CustomXAxisTick = ({ x, y, payload }) => {
                   {/* Next or Finish */}
                   {step === QUESTIONS.length ? (
                     <button
-                      onClick={() => { handleNextStep(); saveAnswersToDB(); }}
-                      className="px-6 py-2 bg-[#00FFFF] text-[#031C3A] rounded-lg font-semibold hover:opacity-90 transition"
+                      onClick={saveAnswersToDB}
+                      disabled={savingOnboarding}
+                      className="px-6 py-2 bg-[#00FFFF] text-[#031C3A] rounded-lg font-semibold hover:opacity-90 transition disabled:opacity-70 disabled:cursor-not-allowed"
                     >
-                      Finish
+                      {savingOnboarding ? "Saving..." : "Finish"}
                     </button>
                   ) : (
                     <button
@@ -413,28 +596,31 @@ const CustomXAxisTick = ({ x, y, payload }) => {
 
         {/* Dashboard + Chart */}
         {hasDepartments && (
-          <div className="max-w-5xl mx-auto space-y-6 mt-8">
-            <h1 className="text-3xl font-bold text-[#00FFFF] mb-6">Dashboard Overview</h1>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <div className="p-6 bg-[#021B36]/70 rounded-xl border border-[#00FFFF30] shadow-lg hover:scale-105 transition-all">
-                <h3 className="text-[#00FFFF] font-semibold mb-2">Total Departments</h3>
-                <p className="text-xl font-bold">{selectedDepts.length}</p>
+          <div className="max-w-6xl mx-auto space-y-6 mt-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+              <div className="bg-[#031C3A]/70 border border-[#00FFFF30] rounded-xl p-4 sm:p-5">
+                <h3 className="text-sm text-[#9FC2DA]">Current Plan</h3>
+                <p className="text-2xl font-bold text-[#E8F7FF] mt-1">{currentPlanLabel}</p>
+                <p className="text-xs text-[#7FA3BF] mt-1">{currentPlanConfig?.capacity || "Plan details available"}</p>
               </div>
-              <div className="p-6 bg-[#021B36]/70 rounded-xl border border-[#00FFFF30] shadow-lg hover:scale-105 transition-all">
-                <h3 className="text-[#00FFFF] font-semibold mb-2">Total Users</h3>
-                <p className="text-xl font-bold">{totalUsers}</p>
+              <div className="bg-[#031C3A]/70 border border-[#00FFFF30] rounded-xl p-4 sm:p-5">
+                <h3 className="text-sm text-[#9FC2DA]">Total Departments</h3>
+                <p className="text-2xl font-bold text-[#E8F7FF] mt-1">{selectedDepts.length}</p>
               </div>
-              <div className="p-6 bg-[#021B36]/70 rounded-xl border border-[#00FFFF30] shadow-lg hover:scale-105 transition-all">
-                <h3 className="text-[#00FFFF] font-semibold mb-2">Active Users</h3>
-                <p className="text-xl font-bold">{activeUsers}</p>
+              <div className="bg-[#031C3A]/70 border border-[#00FFFF30] rounded-xl p-4 sm:p-5">
+                <h3 className="text-sm text-[#9FC2DA]">Total Users</h3>
+                <p className="text-2xl font-bold text-[#E8F7FF] mt-1">{totalUsers}</p>
               </div>
-              <div className="p-6 bg-[#021B36]/70 rounded-xl border border-[#00FFFF30] shadow-lg hover:scale-105 transition-all">
-  <h3 className="text-[#00FFFF] font-semibold mb-2">Onboarding Completion</h3>
-  <p className="text-xl font-bold">
-    {completedFreshers} / {totalUsers}{" "}
-    {/* {totalUsers > 0 && `${Math.round((completedFreshers / totalUsers) * 100)}%`} */}
-  </p>
-</div>
+              <div className="bg-[#031C3A]/70 border border-[#00FFFF30] rounded-xl p-4 sm:p-5">
+                <h3 className="text-sm text-[#9FC2DA]">Active Users</h3>
+                <p className="text-2xl font-bold text-[#E8F7FF] mt-1">{activeUsers}</p>
+              </div>
+              <div className="bg-[#031C3A]/70 border border-[#00FFFF30] rounded-xl p-4 sm:p-5">
+                <h3 className="text-sm text-[#9FC2DA]">Onboarding Completion</h3>
+                <p className="text-2xl font-bold text-[#E8F7FF] mt-1">
+                  {completedFreshers} / {totalUsers}
+                </p>
+              </div>
 
             </div>
 
@@ -496,14 +682,29 @@ const CustomXAxisTick = ({ x, y, payload }) => {
         `}</style>
         
         <button
-          onClick={() => setShowChatbot(!showChatbot)}
-          className="chat-button fixed bottom-8 right-8 w-16 h-16 bg-gradient-to-br from-[#00FFFF] via-[#00D9FF] to-[#007BFF] rounded-full flex items-center justify-center shadow-2xl hover:scale-125 transition-transform duration-300 z-40 border-2 border-[#00FFFF]/30"
-          title="Ask Fresher Assistant"
+          onClick={handleAssistantClick}
+          className={`chat-button fixed bottom-8 right-8 w-16 h-16 rounded-full flex items-center justify-center shadow-2xl transition-transform duration-300 z-40 border-2 ${
+            isBasicLicense
+              ? "bg-[#7FA3BF] border-[#AFCBE3]/30 hover:scale-110"
+              : "bg-gradient-to-br from-[#00FFFF] via-[#00D9FF] to-[#007BFF] border-[#00FFFF]/30 hover:scale-125"
+          }`}
+          title={isBasicLicense ? "Upgrade to Pro to unlock AI Assistant" : "Ask Fresher Assistant"}
         >
-          <span className="text-4xl font-black text-white drop-shadow-lg select-none">?</span>
+          <span className="text-3xl font-black text-white drop-shadow-lg select-none">
+            {isBasicLicense ? "🔒" : "?"}
+          </span>
         </button>
 
+        {showUpgradeNotice && isBasicLicense && (
+          <div className="fixed bottom-28 right-8 max-w-xs bg-[#021B36] border border-[#00FFFF40] rounded-xl px-4 py-3 z-50 shadow-2xl">
+            <p className="text-sm text-[#AFCBE3]">
+              AI Assistant is available in Pro level license. Please upgrade to Pro to unlock this feature.
+            </p>
+          </div>
+        )}
+
         {/* Side Panel Chatbot */}
+        {!isBasicLicense && (
         <div
           className={`fixed top-0 right-0 h-screen w-full md:w-96 bg-[#031C3A] border-l border-[#00FFFF30] shadow-2xl transform transition-transform duration-300 z-50 ${
             showChatbot ? "translate-x-0" : "translate-x-full"
@@ -524,6 +725,7 @@ const CustomXAxisTick = ({ x, y, payload }) => {
           {/* Chatbot Component */}
           <CompanyFresherChatbot companyId={companyId} companyName={companyName} />
         </div>
+        )}
 
         {/* Overlay when panel is open */}
         {showChatbot && (

@@ -12,6 +12,7 @@ import UserProfile from "./components/CompanySpecific/UserProfile";
 import Manageuser from "./components/CompanySpecific/Manageuser";
 import CompanySettings from "./components/CompanySpecific/CompanySettings";
 import CompanyDetails from "./components/CompanySpecific/CompanyDetails";
+import CompanyLicensePayment from "./components/CompanySpecific/CompanyLicensePayment";
 import FresherTraining from "./components/Fresher/FresherTraining";
 import FresherProgress from "./components/Fresher/FresherProgress";
 import Roadmap from "./components/Fresher/Roadmap";
@@ -56,6 +57,7 @@ export default function App() {
         <Route path="/quiz/:companyId/:deptId/:userId/:moduleId" element={<ModuleQuiz />} />
         <Route path="/quiz-results/:companyId/:deptId/:userId/:moduleId" element={<ModuleQuizResults />} />
         <Route path="/CompanySpecific/CompanyDetails" element={<CompanyDetails />} />
+        <Route path="/company-license-payment" element={<CompanyLicensePayment />} />
       </Routes>
     </BrowserRouter>
   );

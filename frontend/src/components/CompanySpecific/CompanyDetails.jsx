@@ -1,13 +1,31 @@
 import { useState, useEffect } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { db } from "../../firebase";
 import { doc, getDoc, collection, getDocs, updateDoc, query, orderBy, limit } from "firebase/firestore";
 import CompanySidebar from "../../components/CompanySpecific/CompanySidebar";
 
-const COMPANY_SIZE_OPTIONS = ["Small (5-10)", "Medium (10-20)", "Large (20+)"];
+const LICENSE_PLAN_OPTIONS = ["License Basic", "License Pro"];
+
+const PRO_PLAN_DETAILS = {
+  title: "Pro",
+  subtitle: "Adaptive Training Suite",
+  capacity: "20 to 40 freshers",
+  usdPrice: "$199/month",
+  inrPrice: "Rs 52,500/month",
+  features: [
+    "Full quiz suite",
+    "Agentic emails",
+    "Google Calendar automation",
+    "Weak-area roadmap",
+    "Agentic scores",
+    "Final unlock quiz",
+    "Admin chatbot",
+  ],
+};
 
 export default function CompanyDetails() {
   const location = useLocation();
+  const navigate = useNavigate();
   const companyId = location?.state?.companyId || localStorage.getItem("companyId");
   const companyName = location?.state?.companyName || localStorage.getItem("companyName");
 
@@ -15,6 +33,9 @@ export default function CompanyDetails() {
   const [companyDetails, setCompanyDetails] = useState({});
   const [onboardingAnswers, setOnboardingAnswers] = useState({ 1: "", 2: "", 3: "" });
   const [saving, setSaving] = useState(false);
+  const [initialLicense, setInitialLicense] = useState("License Basic");
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [onboardingDocId, setOnboardingDocId] = useState("");
 
 
   // Fetch company and onboarding details
@@ -33,12 +54,14 @@ export default function CompanyDetails() {
         const snap = await getDocs(q);
         if (!snap.empty) {
           const latestDoc = snap.docs[0];
+          setOnboardingDocId(latestDoc.id);
           const answers = latestDoc.data().answers || {};
           setOnboardingAnswers({
             1: answers[1] || "",
             2: answers[2] || "",
             3: answers[3] || ""
           });
+          setInitialLicense(answers[2] || "License Basic");
         }
       } catch (err) {
         console.error("Error fetching data:", err);
@@ -52,18 +75,48 @@ export default function CompanyDetails() {
 
   const handleChange = (field, value) => {
     if (field === 1) return; // Training Duration read-only
+
+    if (field === 2 && value === "License Pro" && onboardingAnswers[2] !== "License Pro") {
+      setShowUpgradeModal(true);
+      return;
+    }
+
     setOnboardingAnswers(prev => ({ ...prev, [field]: value }));
+  };
+
+  const proceedToUpgradePayment = () => {
+    setShowUpgradeModal(false);
+    navigate("/company-license-payment", {
+      state: {
+        companyId,
+        companyName: companyDetails.name || companyName,
+        targetLicense: "License Pro",
+        onboardingDocId,
+      },
+    });
   };
 
   const saveChanges = async () => {
   setSaving(true); // Change button text
   try {
+    if (initialLicense !== "License Pro" && onboardingAnswers[2] === "License Pro") {
+      navigate("/company-license-payment", {
+        state: {
+          companyId,
+          companyName: companyDetails.name || companyName,
+          targetLicense: "License Pro",
+          onboardingDocId,
+        },
+      });
+      return;
+    }
+
     // Update latest onboardingAnswers
     const answersRef = collection(db, "companies", companyId, "onboardingAnswers");
     const q = query(answersRef, orderBy("createdAt", "desc"), limit(1));
     const snap = await getDocs(q);
     if (!snap.empty) {
-      const latestDocId = snap.docs[0].id;
+      const latestDocId = onboardingDocId || snap.docs[0].id;
       await updateDoc(doc(db, "companies", companyId, "onboardingAnswers", latestDocId), {
         answers: onboardingAnswers
       });
@@ -73,13 +126,16 @@ export default function CompanyDetails() {
     await updateDoc(doc(db, "companies", companyId), {
       name: companyDetails.name,
       phone: companyDetails.phone,
-      address: companyDetails.address
+      address: companyDetails.address,
+      licensePlan: onboardingAnswers[2] || "License Basic"
     });
 
-    alert("✅ Changes saved successfully!");
+    setInitialLicense(onboardingAnswers[2] || "License Basic");
+
+    alert("Changes saved successfully!");
   } catch (err) {
     console.error("Error saving changes:", err);
-    alert("❌ Failed to save changes.");
+    alert("Failed to save changes.");
   } finally {
     setSaving(false); // Revert button text
   }
@@ -158,16 +214,19 @@ export default function CompanyDetails() {
               </div>
 
               <div className="p-4 rounded-xl bg-[#031C3A]/70 border border-[#00FFFF30]">
-                <label className="text-[#AFCBE3] font-semibold mb-2 block">Company Size</label>
+                <label className="text-[#AFCBE3] font-semibold mb-2 block">License Plan</label>
                 <select
                   value={onboardingAnswers[2]}
                   onChange={e => handleChange(2, e.target.value)}
                   className="w-full p-2 rounded border border-[#00FFFF30] bg-[#021B36]/60 text-white focus:outline-none"
                 >
-                  {COMPANY_SIZE_OPTIONS.map(opt => (
+                  {LICENSE_PLAN_OPTIONS.map(opt => (
                     <option key={opt} value={opt}>{opt}</option>
                   ))}
                 </select>
+                <p className="text-xs text-[#AFCBE3] mt-2">
+                  Upgrade to Pro to unlock advanced AI and higher fresher capacity.
+                </p>
               </div>
 
               <div className="p-4 md:col-span-2 rounded-xl bg-[#031C3A]/70 border border-[#00FFFF30]">
@@ -193,6 +252,65 @@ export default function CompanyDetails() {
           </div>
         </div>
       </div>
+
+      {showUpgradeModal && (
+        <div className="fixed inset-0 bg-black/65 z-50 flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl rounded-2xl bg-[#021B36] border border-[#00FFFF30] p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4 mb-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.14em] text-[#8EB6D3]">Upgrade Plan</p>
+                <h3 className="text-2xl font-bold text-[#E8F7FF] mt-1">{PRO_PLAN_DETAILS.title}</h3>
+                <p className="text-[#AFCBE3]">{PRO_PLAN_DETAILS.subtitle}</p>
+              </div>
+              <button
+                onClick={() => setShowUpgradeModal(false)}
+                className="text-[#AFCBE3] hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+              <div className="rounded-lg border border-[#00FFFF30] bg-[#031C3A]/70 p-3">
+                <p className="text-xs text-[#8EB6D3] uppercase">Capacity</p>
+                <p className="text-sm font-semibold text-white mt-1">{PRO_PLAN_DETAILS.capacity}</p>
+              </div>
+              <div className="rounded-lg border border-[#00FFFF30] bg-[#031C3A]/70 p-3">
+                <p className="text-xs text-[#8EB6D3] uppercase">USD</p>
+                <p className="text-sm font-semibold text-white mt-1">{PRO_PLAN_DETAILS.usdPrice}</p>
+              </div>
+              <div className="rounded-lg border border-[#00FFFF30] bg-[#031C3A]/70 p-3">
+                <p className="text-xs text-[#8EB6D3] uppercase">INR</p>
+                <p className="text-sm font-semibold text-white mt-1">{PRO_PLAN_DETAILS.inrPrice}</p>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-[#00FFFF30] bg-[#031C3A]/60 p-4 mb-5">
+              <p className="text-sm font-semibold text-[#00FFFF] mb-2">Included Features</p>
+              <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-[#AFCBE3]">
+                {PRO_PLAN_DETAILS.features.map((feature) => (
+                  <li key={feature}>• {feature}</li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowUpgradeModal(false)}
+                className="px-4 py-2 rounded-lg border border-[#00FFFF30] text-[#AFCBE3]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={proceedToUpgradePayment}
+                className="px-5 py-2 rounded-lg bg-[#00FFFF] text-[#031C3A] font-semibold"
+              >
+                Proceed to Payment
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
