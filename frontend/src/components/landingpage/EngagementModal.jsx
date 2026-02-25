@@ -16,7 +16,7 @@ export default function EngagementModal({ isOpen, onClose }) {
         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#33FFD6]/15 text-[#33FFD6]">
           <Mail size={22} />
         </div>
-        <h2 className="mt-4 text-2xl font-semibold text-white [font-family:'Space_Grotesk',sans-serif]">
+        <h2 className="mt-4 text-2xl font-bold text-white">
           Get started with TrainMate
         </h2>
         <p className="mt-2 text-sm text-white/70">

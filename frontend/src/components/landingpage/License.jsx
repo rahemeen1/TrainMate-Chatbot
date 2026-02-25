@@ -114,7 +114,7 @@ export default function License() {
               <Sparkles size={16} />
               <span>Licensing Plans</span>
             </div>
-            <h1 className="text-5xl font-bold leading-tight text-white [font-family:'Space_Grotesk',sans-serif]">
+            <h1 className="text-5xl font-bold text-white">
               Built for <span className="text-[#00FFFF]">cohort success</span>, from 10 to 40 at a time.
             </h1>
             <p className="max-w-xl text-lg text-gray-300 leading-relaxed">
