@@ -394,7 +394,7 @@ if (!roadmap.length)
     <div className="min-h-screen bg-[#031C3A] text-white flex">
       {/* Sidebar */}
 <div className="w-64 flex-shrink-0 bg-[#021B36]/90">
-  <div className="sticky top-0 h-screen p-4 overflow-y-auto">
+  <div className="sticky top-0 h-screen p-4 overflow-hidden">
     <FresherSideMenu
       userId={userId}
       companyId={companyId}

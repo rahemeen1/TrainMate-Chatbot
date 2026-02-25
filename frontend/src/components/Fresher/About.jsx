@@ -103,7 +103,7 @@ export default function About() {
   return (
     <div className="flex h-screen bg-[#031C3A] text-white overflow-hidden">
       {/* SIDEBAR */}
-      <div className="w-64 bg-[#021B36]/90 p-4 overflow-y-auto border-r border-[#00FFFF]/20">
+      <div className="w-64 bg-[#021B36]/90 p-4 overflow-hidden border-r border-[#00FFFF]/20">
         <FresherSideMenu
           userId={userId}
           companyId={companyId}

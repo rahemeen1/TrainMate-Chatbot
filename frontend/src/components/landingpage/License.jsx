@@ -110,17 +110,15 @@ export default function License() {
       <main className="relative z-10 mx-auto flex w-full max-w-6xl flex-col gap-12 px-6 pb-16 pt-32">
         <section className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
           <div className="space-y-6 animate-fade-in-up">
-            <p className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs uppercase tracking-[0.3em] text-white/70">
-              <span className="h-2 w-2 rounded-full bg-[#00FFFF]" />
-              License options
-            </p>
-            <h1 className="text-4xl font-semibold leading-tight text-white sm:text-5xl [font-family:'Space_Grotesk',sans-serif]">
-              Built for fresher cohorts, from 10 to 40 at a time.
+            <div className="inline-flex items-center space-x-2 bg-[#00FFFF]/10 px-4 py-2 rounded-full text-[#00FFFF] text-sm font-medium backdrop-blur-sm shadow-[0_0_10px_#00FFFF40]">
+              <Sparkles size={16} />
+              <span>Licensing Plans</span>
+            </div>
+            <h1 className="text-5xl font-bold leading-tight text-white [font-family:'Space_Grotesk',sans-serif]">
+              Built for <span className="text-[#00FFFF]">cohort success</span>, from 10 to 40 at a time.
             </h1>
-            <p className="max-w-xl text-base text-white/70 sm:text-lg">
-              Choose the license that matches your training intensity. Both plans
-              include hands-on onboarding, roadmap clarity, and transparent
-              progress tracking.
+            <p className="max-w-xl text-lg text-gray-300 leading-relaxed">
+              Choose the license that matches your training intensity. Both plans include hands-on onboarding, roadmap clarity, and transparent progress tracking.
             </p>
             <div className="flex flex-wrap gap-3">
               <span className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs text-white/70">

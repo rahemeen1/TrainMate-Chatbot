@@ -351,7 +351,7 @@ if (loading) {
       <style>{scrollbarStyles}</style>
       <div className="flex h-screen bg-[#031C3A] text-white overflow-hidden">
         {/* SIDE MENU */}
-        <div className="w-64 bg-[#021B36]/90 p-4 overflow-y-auto custom-scrollbar relative">
+        <div className="w-64 bg-[#021B36]/90 p-4 overflow-hidden custom-scrollbar relative">
           {isTrainingLocked && (
             <div className="absolute inset-0 bg-[#021B36]/80 backdrop-blur-sm z-10 flex items-center justify-center">
               <div className="text-center">
