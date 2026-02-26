@@ -40,6 +40,7 @@ const [totalCompanyFreshers, setTotalCompanyFreshers] = useState(0);
 
   const [newUser, setNewUser] = useState({
     name: "",
+    email: "",
     phone: "",
     trainingOn: "",
     trainingLevel: "basic",
@@ -135,6 +136,7 @@ const [totalCompanyFreshers, setTotalCompanyFreshers] = useState(0);
       setUserAddedSuccess(true);
       setNewUser({
         name: "",
+        email: "",
         phone: "",
         trainingOn: "",
         trainingLevel: "basic",
@@ -417,6 +419,16 @@ const closeAddUserModal = () => {
               }
             />
             <input
+              placeholder="Email"
+              type="email"
+              className="w-full p-2 mb-2 bg-[#031C3A]"
+              value={newUser.email}
+              required
+              onChange={(e) =>
+                setNewUser({ ...newUser, email: e.target.value.toLowerCase() })
+              }
+            />
+            <input
               placeholder="Phone"
               className="w-full p-2 mb-2 bg-[#031C3A]"
               value={newUser.phone}
@@ -467,10 +479,10 @@ const closeAddUserModal = () => {
 
               <button
   onClick={handleAddUser}
-  disabled={addingUser || !newUser.name.trim() || !newUser.phone.trim() || !newUser.trainingOn.trim()}
+  disabled={addingUser || !newUser.name.trim() || !newUser.email.trim() || !newUser.phone.trim() || !newUser.trainingOn.trim()}
   className={`px-4 py-2 rounded font-semibold transition
     ${
-      addingUser || !newUser.name.trim() || !newUser.phone.trim() || !newUser.trainingOn.trim()
+      addingUser || !newUser.name.trim() || !newUser.email.trim() || !newUser.phone.trim() || !newUser.trainingOn.trim()
         ? "bg-gray-500 text-white cursor-not-allowed"
         : "bg-[#00FFFF] text-[#031C3A]"
     }

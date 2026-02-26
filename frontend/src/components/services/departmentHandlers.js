@@ -175,11 +175,15 @@ export const addFresherUser = async ({
   deptName,
   newUser,
 }) => {
-  const { name, phone, trainingOn = true, trainingLevel = "basic" } = newUser;
+  const { name, email, phone, trainingOn = true, trainingLevel = "basic" } = newUser;
+  const normalizedEmail = (email || "").trim().toLowerCase();
 
-  if (!name || !phone) throw new Error("Name & phone required");
+  if (!name || !normalizedEmail || !phone) throw new Error("Name, email & phone required");
   if (!/^[0-9]{11}$/.test(phone))
     throw new Error("Phone must be 11 digits");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    throw new Error("Valid email is required");
+  }
 
   // 🔹 Generate userId with training abbreviation
   const firstName = name.split(" ")[0];
@@ -221,19 +225,10 @@ export const addFresherUser = async ({
   const randomNum = Math.floor(10 + Math.random() * 90);
   const userId = `${firstName}-${deptShort}-${companyShort}-${randomNum}`;
 
-  const companyDomain =
-    companyName.toLowerCase().replace(/\s+/g, "") + ".com";
-  const emailLocal = userId
-    .toLowerCase()
-    .replace(/[^a-z0-9.]/g, ".")
-    .replace(/\.+/g, ".")
-    .replace(/^\.|\.$/g, "") || `user.${randomNum}`;
-  const email = `${emailLocal}@${companyDomain}`;
-
   const password = generatePassword();
 
   // 1️⃣ Firebase Auth
-  await createUserWithEmailAndPassword(auth, email, password);
+  await createUserWithEmailAndPassword(auth, normalizedEmail, password);
 
   // 2️⃣ Firestore (SOURCE OF TRUTH)
   await setDoc(
@@ -241,7 +236,7 @@ export const addFresherUser = async ({
     {
       userId,
       name,
-      email,
+      email: normalizedEmail,
       phone,
 
       companyId,
@@ -266,7 +261,7 @@ export const addFresherUser = async ({
   return {
     name,
     userId,
-    userEmail: email,
+    userEmail: normalizedEmail,
     password,
     companyName,
     deptName,

@@ -13,14 +13,14 @@ export const handleLogin = async ({
     // FRESHER LOGIN
     if (userType === "fresher") {
 
-      const email = formData.emailOrUsername?.trim();
+      const email = formData.emailOrUsername?.trim().toLowerCase();
       const password = formData.password;
 
       if (!email || !password) {
         return { error: "Email or password missing" };
       }
 
-      if (!/^[a-z0-9.]+@.+$/i.test(email)) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         return { error: "Invalid fresher email format" };
       }
 

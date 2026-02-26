@@ -138,7 +138,7 @@ const resetForm = () => {
                 <label className="block text-sm font-medium text-[#AFCBE3] mb-1.5">
                   {userType === "admin"
                     ? "Username / Company ID"
-                    : "Email ID (letters, numbers, dots)"}
+                    : "Email ID"}
                 </label>
                 <div className="relative">
                   {userType === "admin" ? (
@@ -162,7 +162,7 @@ const resetForm = () => {
                     placeholder={
                       userType === "admin"
                         ? "company_username"
-                        : "Enter your email (e.g. john.doe)"
+                        : "Enter your full email (e.g. john.doe@company.com)"
                     }
                     pattern={
                       userType === "fresher"
@@ -171,7 +171,7 @@ const resetForm = () => {
                     }
                     title={
                       userType === "fresher"
-                        ? "Use only letters, numbers, and periods before @"
+                        ? "Enter a valid email address"
                         : undefined
                     }
                     required
