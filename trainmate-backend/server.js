@@ -15,6 +15,10 @@ import chatRoute from "./routes/chatRoutes.js";
 import companyFresherChatRoutes from "./routes/companyFresherChatRoutes.js";
 import moduleExplain from "./routes/moduleExplain.js";
 import quizRoutes from "./routes/quizRoutes.js";
+import authRoutes from "./routes/authRoutes.js";
+import notificationRoutes from "./routes/notificationRoutes.js";
+import aiInsightsRoutes from "./routes/aiInsightsRoutes.js";
+import { initializeScheduledJobs } from "./services/scheduledJobs.js";
 
 
 
@@ -31,6 +35,13 @@ async function startServer() {
     console.error("⚠️ Failed to initialize Pinecone, continuing without it:", error.message);
   }
   
+  // Initialize scheduled jobs (daily reminders, etc.)
+  try {
+    initializeScheduledJobs();
+  } catch (error) {
+    console.error("⚠️ Failed to initialize scheduled jobs:", error.message);
+  }
+  
   const aot = await db.collection("companies").get();
 
     app.use("/api", superAdminRoutes);
@@ -42,6 +53,9 @@ async function startServer() {
 // app.use("/api/stats", statsRoutes);
 app.use("/api/module", moduleExplain);
     app.use("/api", quizRoutes);
+    app.use("/api/auth", authRoutes);
+    app.use("/api", notificationRoutes);
+    app.use("/api", aiInsightsRoutes);
   
 
     app.listen(PORT, () => {

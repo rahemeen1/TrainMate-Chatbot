@@ -5,9 +5,10 @@ import { retrieveDeptDocsFromPinecone } from "../services/pineconeService.js";
 import { generateRoadmap } from "../services/llmService.js";
 import { extractSkillsFromText } from "../services/skillExtractor.service.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { sendRoadmapEmail } from "../services/emailService.js";
+import { sendRoadmapEmail, sendDailyModuleReminderEmail, sendQuizUnlockEmail } from "../services/emailService.js";
 import { generateRoadmapPDF } from "../services/pdfService.js";
 import { createDailyModuleReminder, createQuizUnlockReminder, createRoadmapGeneratedEvent } from "../services/calendarService.js";
+import { aiAgenticSendRoadmapNotifications, aiAgenticSendModuleNotifications } from "../services/aiAgenticNotificationService.js";
 
 const MAX_QUIZ_ATTEMPTS = 3; // Must match QuizController.js
 
@@ -838,9 +839,9 @@ console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboa
       console.warn("⚠️ Failed to fetch company name:", err.message || err);
     }
 
-    // 📧 Send email with PDF attachment (async, non-blocking)
+    // 📧 Send notifications using AI Agentic Notification Service
     try {
-      console.log("📧 Generating PDF and sending email...");
+      console.log("📧 Generating PDF and preparing AI-powered notifications...");
       
       // Generate PDF
       const pdfBuffer = await generateRoadmapPDF({
@@ -850,106 +851,37 @@ console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboa
         modules: roadmapModules,
       });
       
-      // Send email
-      if (user.email) {
-        await sendRoadmapEmail({
+      // Use AI agentic service to intelligently send roadmap notifications
+      await aiAgenticSendRoadmapNotifications({
+        companyId,
+        deptId,
+        userId: user.userId,
+        userName: user.name,
+        userEmail: user.email,
+        companyName,
+        trainingTopic: trainingOn,
+        modules: roadmapModules,
+        pdfBuffer,
+        userData: user,
+      });
+
+      // Use AI agentic service for module notifications
+      const activeModule = roadmapModules[0];
+      if (activeModule && user.email) {
+        await aiAgenticSendModuleNotifications({
+          companyId,
+          deptId,
+          userId: user.userId,
+          userName: user.name,
           userEmail: user.email,
-          userName: user.name || "Trainee",
-          companyName: companyName,
-          trainingTopic: trainingOn,
-          moduleCount: roadmapModules.length,
-          pdfBuffer: pdfBuffer,
+          companyName,
+          activeModule,
+          userData: user,
         });
-        console.log("✅ Roadmap email sent successfully to:", user.email);
-
-        try {
-          const timeZone = process.env.DEFAULT_TIMEZONE || "Asia/Karachi";
-          const reminderTime = process.env.DAILY_REMINDER_TIME || "22:15";
-          const calendarId = process.env.GOOGLE_CALENDAR_ID || "primary";
-
-          await createRoadmapGeneratedEvent({
-            calendarId,
-            userName: user.name || "Trainee",
-            companyName,
-            trainingTopic: trainingOn,
-            generatedAt: new Date(),
-            reminderTime,
-            timeZone,
-            attendeeEmail: user.email,
-          });
-
-          console.log("✅ Roadmap generated event added to calendar for:", user.email);
-        } catch (calEmailErr) {
-          console.warn("⚠️ Calendar event for roadmap generation failed (non-critical):", calEmailErr.message);
-        }
-      } else {
-        console.warn("⚠️ User email not found, skipping email");
       }
-    } catch (emailErr) {
-      console.warn("⚠️ Email sending failed (non-critical):", emailErr.message);
-      // Don't fail the request if email fails
-    }
-
-    // 📅 Schedule Google Calendar notifications for ACTIVE module only
-    try {
-      const timeZone = process.env.DEFAULT_TIMEZONE || "Asia/Karachi";
-      const reminderTime = process.env.DAILY_REMINDER_TIME || "22:15";
-      const calendarId = process.env.GOOGLE_CALENDAR_ID || "primary";
-      const testRecipient = process.env.TEST_NOTIFICATION_EMAIL || null;
-      const attendeeEmail = testRecipient || user.email;
-
-      if (!attendeeEmail) {
-        console.warn("⚠️ User email not found, skipping calendar notifications");
-      } else {
-        const moduleStartDate = new Date();
-        const activeModule = roadmapModules[0];
-
-        if (!activeModule) {
-          console.warn("⚠️ No modules available, skipping calendar scheduling");
-        } else {
-          const estimatedDays = activeModule.estimatedDays || 1;
-          const unlockDate = moduleStartDate;
-
-          console.log("📅 Scheduling daily module reminders", {
-            moduleTitle: activeModule.moduleTitle,
-            estimatedDays,
-            reminderTime,
-            attendeeEmail,
-          });
-
-          await createDailyModuleReminder({
-            calendarId,
-            moduleTitle: activeModule.moduleTitle,
-            companyName: companyName,
-            startDate: moduleStartDate,
-            occurrenceCount: estimatedDays,
-            reminderTime,
-            timeZone,
-            attendeeEmail,
-          });
-
-          console.log("📅 Scheduling quiz unlock reminder", {
-            moduleTitle: activeModule.moduleTitle,
-            unlockDate: unlockDate.toISOString(),
-            reminderTime,
-            attendeeEmail,
-          });
-
-          await createQuizUnlockReminder({
-            calendarId,
-            moduleTitle: activeModule.moduleTitle,
-            companyName: companyName,
-            unlockDate,
-            reminderTime,
-            timeZone,
-            attendeeEmail,
-          });
-
-          console.log("✅ Calendar notifications scheduled for active module:", activeModule.moduleTitle);
-        }
-      }
-    } catch (calErr) {
-      console.warn("⚠️ Calendar scheduling failed (non-critical):", calErr.message);
+    } catch (notificationErr) {
+      console.warn("⚠️ Notification sending failed (non-critical):", notificationErr.message);
+      // Don't fail the request if notifications fail
     }
 
     return res.json({

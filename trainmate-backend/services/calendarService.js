@@ -1,13 +1,70 @@
 // trainmate-backend/services/calendarService.js
 import { google } from "googleapis";
+import { db } from "../config/firebase.js";
 import dotenv from "dotenv";
 
 dotenv.config();
 
 const DEFAULT_TIMEZONE = process.env.DEFAULT_TIMEZONE || "Asia/Karachi";
 const DEFAULT_REMINDER_TIME = process.env.DAILY_REMINDER_TIME || "22:30";
-const DEFAULT_CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID || "primary";
+const DEFAULT_CALENDAR_ID = "primary"; // Always use user's primary calendar
 
+/**
+ * Get user-specific OAuth client using their stored tokens
+ * @param {string} companyId 
+ * @param {string} deptId 
+ * @param {string} userId 
+ * @returns {Promise<OAuth2Client>}
+ */
+async function getUserOAuthClient(companyId, deptId, userId) {
+  try {
+    const userDoc = await db
+      .collection("freshers")
+      .doc(companyId)
+      .collection("departments")
+      .doc(deptId)
+      .collection("users")
+      .doc(userId)
+      .get();
+
+    if (!userDoc.exists) {
+      throw new Error(`User ${userId} not found`);
+    }
+
+    const userData = userDoc.data();
+    const googleOAuth = userData.googleOAuth;
+
+    if (!googleOAuth || !googleOAuth.refreshToken) {
+      throw new Error(`User ${userId} has not connected their Google Calendar`);
+    }
+
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+
+    if (!clientId || !clientSecret) {
+      throw new Error("Missing Google OAuth credentials in environment");
+    }
+
+    const oAuth2Client = new google.auth.OAuth2(clientId, clientSecret);
+    
+    // Set the user's refresh token
+    oAuth2Client.setCredentials({
+      refresh_token: googleOAuth.refreshToken,
+      access_token: googleOAuth.accessToken,
+    });
+
+    console.log(`✅ Retrieved OAuth client for user ${userId} (${userData.email})`);
+    return oAuth2Client;
+  } catch (error) {
+    console.error(`❌ Failed to get OAuth client for user ${userId}:`, error.message);
+    throw error;
+  }
+}
+
+/**
+ * Get OAuth client from environment (fallback/admin calendar)
+ * @returns {OAuth2Client}
+ */
 function getOAuthClient() {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
@@ -22,8 +79,7 @@ function getOAuthClient() {
   return oAuth2Client;
 }
 
-function getCalendarClient() {
-  const auth = getOAuthClient();
+function getCalendarClient(auth) {
   return google.calendar({ version: "v3", auth });
 }
 
@@ -69,7 +125,9 @@ function getReminderOverrides() {
 }
 
 export async function createDailyModuleReminder({
-  calendarId = DEFAULT_CALENDAR_ID,
+  companyId,
+  deptId,
+  userId,
   moduleTitle,
   companyName,
   startDate,
@@ -78,27 +136,32 @@ export async function createDailyModuleReminder({
   timeZone = DEFAULT_TIMEZONE,
   attendeeEmail,
 }) {
-  const calendar = getCalendarClient();
+  // Get user-specific OAuth client
+  const userAuth = await getUserOAuthClient(companyId, deptId, userId);
+  const calendar = getCalendarClient(userAuth);
+  const calendarId = "primary"; // User's primary calendar
+  
   const startDateTime = buildDateTime(startDate, reminderTime);
   const endDateTime = new Date(startDateTime.getTime() + 60 * 60 * 1000);
 
-  console.log("📅 Creating daily reminder event", {
-    calendarId,
+  console.log("📅 Creating daily reminder in user's calendar", {
+    userId,
+    userEmail: attendeeEmail,
     moduleTitle,
     companyName,
     start: startDateTime.toISOString(),
     timeZone,
     occurrenceCount,
-    attendeeEmail: attendeeEmail || "none",
   });
 
   const event = {
-    summary: `TrainMate: ${moduleTitle} Daily Learning`,
-    description: `Daily learning reminder for ${moduleTitle} at ${companyName}.`,
+    summary: `🎓 Your Active Module: ${moduleTitle}`,
+    description: `Hi there! 👋\n\nThis is your daily reminder to continue learning.\n\n📚 Active Module: ${moduleTitle}\n🏢 Company: ${companyName}\n\nKeep up the great work! Log in to TrainMate to continue your training journey.\n\n---\nTrainMate - Your AI-Powered Corporate Training Platform`,
     start: { dateTime: startDateTime.toISOString(), timeZone },
     end: { dateTime: endDateTime.toISOString(), timeZone },
     recurrence: [`RRULE:FREQ=DAILY;COUNT=${Math.max(1, occurrenceCount)}`],
     reminders: { useDefault: false, overrides: getReminderOverrides() },
+    colorId: "9",
   };
 
   if (attendeeEmail) {
@@ -108,18 +171,21 @@ export async function createDailyModuleReminder({
   await calendar.events.insert({
     calendarId,
     requestBody: event,
-    sendUpdates: attendeeEmail ? "all" : "none",
+    sendUpdates: "none", // Don't send email, it's their own calendar
   });
 
-  console.log("✅ Daily reminder event created", {
+  console.log("✅ Daily reminder added to user's calendar", {
+    userId,
+    userEmail: attendeeEmail,
     moduleTitle,
     occurrenceCount,
-    reminderTime: reminderTime || DEFAULT_REMINDER_TIME,
   });
 }
 
 export async function createQuizUnlockReminder({
-  calendarId = DEFAULT_CALENDAR_ID,
+  companyId,
+  deptId,
+  userId,
   moduleTitle,
   companyName,
   unlockDate,
@@ -127,25 +193,30 @@ export async function createQuizUnlockReminder({
   timeZone = DEFAULT_TIMEZONE,
   attendeeEmail,
 }) {
-  const calendar = getCalendarClient();
+  // Get user-specific OAuth client
+  const userAuth = await getUserOAuthClient(companyId, deptId, userId);
+  const calendar = getCalendarClient(userAuth);
+  const calendarId = "primary"; // User's primary calendar
+  
   const startDateTime = buildDateTime(unlockDate, reminderTime);
   const endDateTime = new Date(startDateTime.getTime() + 30 * 60 * 1000);
 
-  console.log("📅 Creating quiz unlock event", {
-    calendarId,
+  console.log("📅 Creating quiz unlock in user's calendar", {
+    userId,
+    userEmail: attendeeEmail,
     moduleTitle,
     companyName,
     unlockDate: startDateTime.toISOString(),
     timeZone,
-    attendeeEmail: attendeeEmail || "none",
   });
 
   const event = {
-    summary: `TrainMate: Quiz Unlocked - ${moduleTitle}`,
-    description: `Your quiz is now available for ${moduleTitle} at ${companyName}.`,
+    summary: `✅ Quiz Unlocked: ${moduleTitle}`,
+    description: `🎉 Great news! Your quiz has been unlocked.\n\n📝 Module: ${moduleTitle}\n🏢 Company: ${companyName}\n\n⏰ Action Required: Attempt your quiz within the given timeframe to progress to the next module.\n\n🔗 Log in to TrainMate now to take your quiz!\n\n---\nTrainMate - Your AI-Powered Corporate Training Platform`,
     start: { dateTime: startDateTime.toISOString(), timeZone },
     end: { dateTime: endDateTime.toISOString(), timeZone },
     reminders: { useDefault: false, overrides: getReminderOverrides() },
+    colorId: "11",
   };
 
   if (attendeeEmail) {
@@ -155,17 +226,20 @@ export async function createQuizUnlockReminder({
   await calendar.events.insert({
     calendarId,
     requestBody: event,
-    sendUpdates: attendeeEmail ? "all" : "none",
+    sendUpdates: "none", // Don't send email, it's their own calendar
   });
 
-  console.log("✅ Quiz unlock event created", {
+  console.log("✅ Quiz unlock added to user's calendar", {
+    userId,
+    userEmail: attendeeEmail,
     moduleTitle,
-    reminderTime: reminderTime || DEFAULT_REMINDER_TIME,
   });
 }
 
 export async function createRoadmapGeneratedEvent({
-  calendarId = DEFAULT_CALENDAR_ID,
+  companyId,
+  deptId,
+  userId,
   userName,
   companyName,
   trainingTopic,
@@ -174,26 +248,31 @@ export async function createRoadmapGeneratedEvent({
   timeZone = DEFAULT_TIMEZONE,
   attendeeEmail,
 }) {
-  const calendar = getCalendarClient();
+  // Get user-specific OAuth client
+  const userAuth = await getUserOAuthClient(companyId, deptId, userId);
+  const calendar = getCalendarClient(userAuth);
+  const calendarId = "primary"; // User's primary calendar
+  
   const startDateTime = buildDateTime(generatedAt || new Date(), reminderTime);
   const endDateTime = new Date(startDateTime.getTime() + 30 * 60 * 1000);
 
-  console.log("📅 Creating roadmap generated event", {
-    calendarId,
+  console.log("📅 Creating roadmap event in user's calendar", {
+    userId,
+    userEmail: attendeeEmail,
     userName,
     companyName,
     trainingTopic,
     start: startDateTime.toISOString(),
     timeZone,
-    attendeeEmail: attendeeEmail || "none",
   });
 
   const event = {
-    summary: `TrainMate: Roadmap Generated` ,
-    description: `Roadmap generated for ${userName || "trainee"} (${trainingTopic || "training"}) at ${companyName || "company"}.`,
+    summary: `🚀 Your Training Roadmap is Ready!`,
+    description: `Congratulations ${userName}! 🎉\n\nYour personalized training roadmap has been successfully generated.\n\n📋 Training Focus: ${trainingTopic}\n🏢 Company: ${companyName}\n\n✨ Your custom learning path is now available. Check your email for the detailed roadmap PDF and log in to TrainMate to begin your journey!\n\n---\nTrainMate - Your AI-Powered Corporate Training Platform\nSupport: trainmate01@gmail.com`,
     start: { dateTime: startDateTime.toISOString(), timeZone },
     end: { dateTime: endDateTime.toISOString(), timeZone },
     reminders: { useDefault: false, overrides: getReminderOverrides() },
+    colorId: "10",
   };
 
   if (attendeeEmail) {
@@ -203,11 +282,12 @@ export async function createRoadmapGeneratedEvent({
   await calendar.events.insert({
     calendarId,
     requestBody: event,
-    sendUpdates: attendeeEmail ? "all" : "none",
+    sendUpdates: "none", // Don't send email, it's their own calendar
   });
 
-  console.log("✅ Roadmap generated event created", {
+  console.log("✅ Roadmap event added to user's calendar", {
+    userId,
+    userEmail: attendeeEmail,
     trainingTopic,
-    reminderTime: reminderTime || DEFAULT_REMINDER_TIME,
   });
 }

@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from "react"; 
 import { useLocation, useNavigate } from "react-router-dom";
 import CompanySidebar from "./CompanySidebar";
-import jsPDF from "jspdf";
 import { collection, getDocs, query, orderBy, limit } from "firebase/firestore";
 import { db } from "../../firebase";
 
@@ -47,7 +46,6 @@ const [totalCompanyFreshers, setTotalCompanyFreshers] = useState(0);
     cvFile: null,
   });
 
-  const [lastAddedUser, setLastAddedUser] = useState(null);
   const BASIC_MAX_FRESHERS = 15;
   const isBasicLicense = companyLicense === "License Basic";
   const isBasicLimitReached = isBasicLicense && totalCompanyFreshers >= BASIC_MAX_FRESHERS;
@@ -132,7 +130,6 @@ const [totalCompanyFreshers, setTotalCompanyFreshers] = useState(0);
         newUser,
       });
 
-      setLastAddedUser(result);
       setUserAddedSuccess(true);
       setNewUser({
         name: "",
@@ -179,21 +176,8 @@ const handleAddDoc = async () => {
 
 const closeAddUserModal = () => {
   setShowAddUserModal(false);
-  setLastAddedUser(null);       // 🔴 reset PDF data
   setUserAddedSuccess(false);  // 🔴 reset success
 };
-
-
-
-  // PDF
-  const downloadUserPDF = () => {
-    if (!lastAddedUser) return;
-    const pdf = new jsPDF();
-    pdf.text(`User ID: ${lastAddedUser.userId}`, 20, 30);
-    pdf.text(`Email: ${lastAddedUser.userEmail}`, 20, 40);
-    pdf.text(`Password: ${lastAddedUser.password}`, 20, 50);
-    pdf.save(`${lastAddedUser.userId}.pdf`);
-  };
 
   return (
     <div className="flex min-h-screen bg-[#031C3A] text-white">
@@ -419,7 +403,7 @@ const closeAddUserModal = () => {
               }
             />
             <input
-              placeholder="Email"
+              placeholder="Email *"
               type="email"
               className="w-full p-2 mb-2 bg-[#031C3A]"
               value={newUser.email}
@@ -428,6 +412,9 @@ const closeAddUserModal = () => {
                 setNewUser({ ...newUser, email: e.target.value.toLowerCase() })
               }
             />
+            <p className="text-xs text-[#AFCBE3] mb-2">
+              Credentials will be emailed to this address as a PDF.
+            </p>
             <input
               placeholder="Phone"
               className="w-full p-2 mb-2 bg-[#031C3A]"
@@ -461,15 +448,8 @@ const closeAddUserModal = () => {
 {userAddedSuccess && (
   <div className="mb-4 p-3 bg-green-600/20 border border-green-500 rounded-lg">
     <p className="text-green-400 font-semibold">
-      User added successfully
+      User added successfully. Credentials were emailed to the user.
     </p>
-
-    <button
-      onClick={downloadUserPDF}
-      className="mt-2 w-full bg-green-500 text-black p-2 rounded font-semibold hover:bg-green-600 transition"
-    >
-      Download Credentials PDF
-    </button>
   </div>
 )}
 
@@ -488,7 +468,7 @@ const closeAddUserModal = () => {
     }
   `}
 >
-  {addingUser ? "Adding user..." : "Add"}
+              {addingUser ? "Adding user..." : "Add"}
 </button>
 {addingUser && (
   <p className="text-sm text-[#00FFFF] mb-2 animate-pulse">

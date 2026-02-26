@@ -28,6 +28,78 @@ const PLAN_MAX_QUERIES = 4;
 const MAX_CONTEXT_CHARS = 8000;
 const QUIZ_PASS_THRESHOLD = 80; // Base threshold, AI can adjust
 const MAX_QUIZ_ATTEMPTS = 3; // Maximum possible attempts (AI decides actual count)
+const QUIZ_UNLOCK_TIME_PERCENT = 0.5; // Quiz unlocks after 50% of module time
+
+/**
+ * Calculate when quiz should be unlocked (50% of module time)
+ * @param {Date} moduleStartDate - When module became active
+ * @param {number} estimatedDays - Total estimated days for the module
+ * @returns {Date} - The date/time when quiz unlocks
+ */
+function calculateQuizUnlockTime(moduleStartDate, estimatedDays) {
+	if (!moduleStartDate || !estimatedDays) return null;
+	
+	const startTime = moduleStartDate instanceof Date 
+		? moduleStartDate.getTime() 
+		: moduleStartDate.toDate ? moduleStartDate.toDate().getTime() : new Date(moduleStartDate).getTime();
+	
+	const unlockDelay = estimatedDays * QUIZ_UNLOCK_TIME_PERCENT * 24 * 60 * 60 * 1000; // 50% of days in ms
+	return new Date(startTime + unlockDelay);
+}
+
+/**
+ * Check if quiz is unlocked based on time requirement
+ * @param {Object} moduleData - Module data from Firestore
+ * @returns {Object} - { isUnlocked: boolean, unlockTime: Date, remainingTime: string }
+ */
+function checkQuizTimeUnlock(moduleData) {
+	const startDate = moduleData.startedAt || moduleData.startDate;
+	const estimatedDays = moduleData.estimatedDays || 1;
+	
+	if (!startDate) {
+		return {
+			isUnlocked: false,
+			unlockTime: null,
+			remainingTime: "Module not started yet",
+			message: "Please start the module before attempting the quiz."
+		};
+	}
+	
+	const unlockTime = calculateQuizUnlockTime(startDate, estimatedDays);
+	const now = Date.now();
+	const unlockTimestamp = unlockTime.getTime();
+	
+	if (now >= unlockTimestamp) {
+		return {
+			isUnlocked: true,
+			unlockTime,
+			remainingTime: null,
+			message: "Quiz is now available!"
+		};
+	}
+	
+	// Calculate remaining time
+	const remainingMs = unlockTimestamp - now;
+	const remainingDays = Math.floor(remainingMs / (1000 * 60 * 60 * 24));
+	const remainingHours = Math.floor((remainingMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+	const remainingMinutes = Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60));
+	
+	let remainingTimeStr = "";
+	if (remainingDays > 0) {
+		remainingTimeStr = `${remainingDays} day${remainingDays > 1 ? 's' : ''} and ${remainingHours} hour${remainingHours !== 1 ? 's' : ''}`;
+	} else if (remainingHours > 0) {
+		remainingTimeStr = `${remainingHours} hour${remainingHours !== 1 ? 's' : ''} and ${remainingMinutes} minute${remainingMinutes !== 1 ? 's' : ''}`;
+	} else {
+		remainingTimeStr = `${remainingMinutes} minute${remainingMinutes !== 1 ? 's' : ''}`;
+	}
+	
+	return {
+		isUnlocked: false,
+		unlockTime,
+		remainingTime: remainingTimeStr,
+		message: `Quiz will be available after you've spent 50% of the module time. Unlock in: ${remainingTimeStr}`
+	};
+}
 
 async function embedText(text) {
 	const res = await cohere.embed({
@@ -708,6 +780,23 @@ export const generateQuiz = async (req, res) => {
 		const description = moduleData?.description || "";
 		console.log(`Module title: ${title}`);
 		
+		// 🔒 CHECK: Quiz unlock time requirement (50% of module time)
+		console.log(`Checking quiz unlock time requirement...`);
+		const quizUnlockStatus = checkQuizTimeUnlock(moduleData);
+		
+		if (!quizUnlockStatus.isUnlocked) {
+			console.log(`❌ Quiz locked: ${quizUnlockStatus.message}`);
+			return res.status(403).json({
+				error: "Quiz is locked",
+				message: quizUnlockStatus.message,
+				unlockTime: quizUnlockStatus.unlockTime,
+				remainingTime: quizUnlockStatus.remainingTime,
+				requirementMet: false
+			});
+		}
+		
+		console.log(`✅ Quiz unlock requirement met - generating quiz`);
+		
 		// Fetch department settings for quiz configuration
 		console.log(`Fetching department settings...`);
 		const deptSettings = await getDepartmentSettings(companyId, deptId);
@@ -911,6 +1000,23 @@ export const submitQuiz = async (req, res) => {
 			? moduleData.maxAttemptsOverride
 			: 0;
 		const effectiveMaxAttempts = Math.max(MAX_QUIZ_ATTEMPTS, maxAttemptsOverride);
+
+		// 🔒 CHECK: Quiz unlock time requirement (50% of module time)
+		console.log(`Checking quiz unlock time requirement...`);
+		const quizUnlockStatus = checkQuizTimeUnlock(moduleData);
+		
+		if (!quizUnlockStatus.isUnlocked) {
+			console.log(`❌ Quiz submission blocked: ${quizUnlockStatus.message}`);
+			return res.status(403).json({
+				error: "Quiz is locked",
+				message: quizUnlockStatus.message,
+				unlockTime: quizUnlockStatus.unlockTime,
+				remainingTime: quizUnlockStatus.remainingTime,
+				requirementMet: false
+			});
+		}
+		
+		console.log(`✅ Quiz unlock requirement met - proceeding with submission`);
 
 		const quizSnap = await quizRef.get();
 		if (!quizSnap.exists) {

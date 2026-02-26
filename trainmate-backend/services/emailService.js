@@ -196,3 +196,254 @@ export async function sendTrainingLockedEmail({
     throw error;
   }
 }
+
+/**
+ * Send user credentials email with PDF attachment
+ * @param {Object} params - Email parameters
+ * @param {string} params.userEmail - Recipient email
+ * @param {string} params.userName - User name
+ * @param {string} params.userId - User ID
+ * @param {string} params.companyName - Company name
+ * @param {Buffer} params.pdfBuffer - PDF buffer
+ */
+export async function sendUserCredentialsEmail({
+  userEmail,
+  userName,
+  userId,
+  companyName,
+  pdfBuffer,
+}) {
+  try {
+    const transporter = createTransporter();
+    const recipientEmail = userEmail;
+
+    const mailOptions = {
+      from: {
+        name: "TrainMate",
+        address: "trainmate01@gmail.com",
+      },
+      to: recipientEmail,
+      subject: `Your TrainMate Login Credentials - ${companyName}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f4f4f4;">
+          <div style="background-color: #031C3A; padding: 24px; text-align: center; border-radius: 10px 10px 0 0;">
+            <h1 style="color: #00FFFF; margin: 0; font-size: 24px;">TrainMate</h1>
+          </div>
+          <div style="background-color: white; padding: 24px; border-radius: 0 0 10px 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+            <h2 style="color: #031C3A; margin-top: 0;">Welcome, ${userName}</h2>
+            <p style="color: #333; font-size: 15px; line-height: 1.6;">
+              Your TrainMate account has been created. Please find your login credentials attached as a PDF.
+            </p>
+            <p style="color: #333; font-size: 15px; line-height: 1.6;">
+              Use your google account and password to login to TrainMate system to start your learning.
+            </p>
+            <p style="color: #666; font-size: 13px; line-height: 1.6; margin-top: 20px;">
+              User ID: ${userId}
+            </p>
+            <p style="color: #666; font-size: 13px; line-height: 1.6; margin-top: 8px;">
+              Company: ${companyName}
+            </p>
+          </div>
+          <div style="text-align: center; padding: 16px; color: #666; font-size: 12px;">
+            <p>This is an automated message. Please do not reply.</p>
+          </div>
+        </div>
+      `,
+      attachments: [
+        {
+          filename: `TrainMate_Credentials_${userName.replace(/\s+/g, "_")}.pdf`,
+          content: pdfBuffer,
+          contentType: "application/pdf",
+        },
+      ],
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log("Credentials email sent:", info.messageId);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error("Credentials email failed:", error);
+    throw error;
+  }
+}
+
+/**
+ * Send daily module reminder email at 3pm
+ * @param {Object} params - Email parameters
+ * @param {string} params.userEmail - Recipient email
+ * @param {string} params.userName - User name
+ * @param {string} params.moduleTitle - Active module title
+ * @param {string} params.companyName - Company name
+ * @param {number} params.dayNumber - Day number of the module
+ */
+export async function sendDailyModuleReminderEmail({
+  userEmail,
+  userName,
+  moduleTitle,
+  companyName,
+  dayNumber,
+}) {
+  try {
+    console.log("📧 Sending daily module reminder email to:", userEmail);
+    const transporter = createTransporter();
+
+    const mailOptions = {
+      from: {
+        name: "TrainMate",
+        address: "trainmate01@gmail.com",
+      },
+      to: userEmail,
+      subject: `🎓 Daily Reminder: Continue Learning - ${moduleTitle}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f4f4f4;">
+          <div style="background-color: #031C3A; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+            <h1 style="color: #00FFFF; margin: 0; font-size: 28px;">📚 TrainMate</h1>
+          </div>
+          
+          <div style="background-color: white; padding: 30px; border-radius: 0 0 10px 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+            <h2 style="color: #031C3A; margin-top: 0;">Hi ${userName},</h2>
+            
+            <p style="color: #333; font-size: 16px; line-height: 1.6;">
+              👋 This is your daily reminder to continue your learning journey!
+            </p>
+            
+            <div style="background-color: #E8F4F8; padding: 20px; border-left: 4px solid #00FFFF; margin: 20px 0;">
+              <h3 style="color: #031C3A; margin-top: 0;">📖 Your Active Module</h3>
+              <p style="margin: 5px 0; color: #333; font-size: 18px;">
+                <strong>${moduleTitle}</strong>
+              </p>
+              <p style="margin: 5px 0; color: #666;">
+                Day ${dayNumber} | ${companyName}
+              </p>
+            </div>
+            
+            <p style="color: #333; font-size: 16px; line-height: 1.6;">
+              Keep up the great work! 💪 Consistent learning is the key to mastering new skills.
+            </p>
+            
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="http://localhost:3000" style="background-color: #00FFFF; color: #031C3A; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+                Continue Learning →
+              </a>
+            </div>
+            
+            <p style="color: #666; font-size: 14px; line-height: 1.6; margin-top: 30px;">
+              Best regards,<br>
+              <strong style="color: #031C3A;">TrainMate Team</strong><br>
+              Your AI-Powered Corporate Training Platform
+            </p>
+          </div>
+          
+          <div style="text-align: center; padding: 20px; color: #666; font-size: 12px;">
+            <p style="margin: 5px 0;">© 2024 TrainMate. All rights reserved.</p>
+            <p style="margin: 5px 0;">You're receiving this because you're enrolled in training at ${companyName}.</p>
+          </div>
+        </div>
+      `,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log("✅ Daily module reminder email sent:", info.messageId);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error("❌ Daily module reminder email failed:", error);
+    throw error;
+  }
+}
+
+/**
+ * Send quiz unlock notification email
+ * @param {Object} params - Email parameters
+ * @param {string} params.userEmail - Recipient email
+ * @param {string} params.userName - User name
+ * @param {string} params.moduleTitle - Module title
+ * @param {string} params.companyName - Company name
+ * @param {string} params.quizDeadline - Quiz deadline (formatted string)
+ */
+export async function sendQuizUnlockEmail({
+  userEmail,
+  userName,
+  moduleTitle,
+  companyName,
+  quizDeadline,
+}) {
+  try {
+    console.log("📧 Sending quiz unlock email to:", userEmail);
+    const transporter = createTransporter();
+
+    const mailOptions = {
+      from: {
+        name: "TrainMate",
+        address: "trainmate01@gmail.com",
+      },
+      to: userEmail,
+      subject: `✅ Quiz Unlocked: ${moduleTitle} - Action Required!`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f4f4f4;">
+          <div style="background-color: #031C3A; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+            <h1 style="color: #00FFFF; margin: 0; font-size: 28px;">🎯 TrainMate</h1>
+          </div>
+          
+          <div style="background-color: white; padding: 30px; border-radius: 0 0 10px 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+            <h2 style="color: #031C3A; margin-top: 0;">Hi ${userName},</h2>
+            
+            <div style="text-align: center; padding: 20px; background-color: #E8FCE8; border-radius: 10px; margin: 20px 0;">
+              <h2 style="color: #00AA00; margin: 0; font-size: 24px;">🎉 Quiz Unlocked!</h2>
+            </div>
+            
+            <p style="color: #333; font-size: 16px; line-height: 1.6;">
+              Great news! Your quiz for <strong>${moduleTitle}</strong> has been unlocked and is ready for you to attempt.
+            </p>
+            
+            <div style="background-color: #FFF3CD; padding: 20px; border-left: 4px solid #FFC107; margin: 20px 0;">
+              <h3 style="color: #856404; margin-top: 0;">⏰ Important: Time-Limited</h3>
+              <p style="margin: 5px 0; color: #856404; font-size: 16px;">
+                <strong>Attempt your quiz within the given timeframe</strong> to progress to the next module.
+              </p>
+              ${quizDeadline ? `<p style="margin: 10px 0 5px 0; color: #856404;">Deadline: <strong>${quizDeadline}</strong></p>` : ''}
+            </div>
+            
+            <div style="background-color: #E8F4F8; padding: 20px; border-radius: 10px; margin: 20px 0;">
+              <h3 style="color: #031C3A; margin-top: 0;">📝 Quiz Details</h3>
+              <p style="margin: 5px 0; color: #333;">
+                <strong>Module:</strong> ${moduleTitle}
+              </p>
+              <p style="margin: 5px 0; color: #333;">
+                <strong>Company:</strong> ${companyName}
+              </p>
+            </div>
+            
+            <p style="color: #333; font-size: 16px; line-height: 1.6;">
+              📊 Test your knowledge and demonstrate what you've learned. Good luck! 🍀
+            </p>
+            
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="http://localhost:3000" style="background-color: #00FFFF; color: #031C3A; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; font-size: 16px;">
+                Take Quiz Now →
+              </a>
+            </div>
+            
+            <p style="color: #666; font-size: 14px; line-height: 1.6; margin-top: 30px;">
+              Best regards,<br>
+              <strong style="color: #031C3A;">TrainMate Team</strong><br>
+              Your AI-Powered Corporate Training Platform
+            </p>
+          </div>
+          
+          <div style="text-align: center; padding: 20px; color: #666; font-size: 12px;">
+            <p style="margin: 5px 0;">© 2024 TrainMate. All rights reserved.</p>
+            <p style="margin: 5px 0;">You're receiving this because you're enrolled in training at ${companyName}.</p>
+          </div>
+        </div>
+      `,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log("✅ Quiz unlock email sent:", info.messageId);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error("❌ Quiz unlock email failed:", error);
+    throw error;
+  }
+}
+

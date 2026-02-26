@@ -21,6 +21,7 @@
     "firebase-admin": "^12.7.0",
     "googleapis": "^133.0.0",
     "mammoth": "^1.11.0",
+    "node-cron": "^3.0.3",
     "nodemailer": "^6.10.1",
     "openai": "^6.15.0",
     "pdfjs-dist": "^5.4.530",

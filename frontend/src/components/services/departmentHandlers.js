@@ -258,6 +258,33 @@ export const addFresherUser = async ({
     }
   );
 
+  try {
+    const response = await fetch(
+      "http://localhost:5000/api/company/users/credentials-email",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userName: name,
+          userEmail: normalizedEmail,
+          userId,
+          password,
+          companyName,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(errText || "Failed to send credentials email");
+    }
+  } catch (err) {
+    console.error("Failed to email credentials:", err);
+    throw new Error(
+      "User created, but credentials email failed. Please retry email sending."
+    );
+  }
+
   return {
     name,
     userId,

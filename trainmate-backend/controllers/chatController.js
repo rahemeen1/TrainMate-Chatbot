@@ -138,6 +138,54 @@ function getRoadmapGeneratedAt(userData) {
   return generatedAt.toDate ? generatedAt.toDate() : new Date(generatedAt);
 }
 
+/**
+ * Generate daily learning agenda using AI
+ * @param {number} dayNumber - Current day in the module (1, 2, 3, etc.)
+ * @param {number} totalDays - Total estimated days for the module
+ * @param {string} moduleTitle - Title of the module
+ * @param {string} moduleDescription - Description of what's covered in the module
+ * @param {Array} skillsCovered - Array of skills covered in the module
+ * @returns {Promise<string>} - AI-generated daily agenda
+ */
+async function generateDailyAgenda(dayNumber, totalDays, moduleTitle, moduleDescription, skillsCovered = []) {
+  try {
+    const model = initializeChatModel();
+    const skillsList = skillsCovered.length > 0 ? skillsCovered.join(", ") : "various topics";
+    
+    const prompt = `You are a friendly AI learning assistant for a corporate training platform called TrainMate.
+
+A learner is on Day ${dayNumber} of ${totalDays} in their learning module titled "${moduleTitle}".
+
+Module Description: ${moduleDescription || "Technical training module"}
+
+Skills Covered: ${skillsList}
+
+Generate a brief, encouraging daily agenda for today. The agenda should:
+1. Be concise (2-3 sentences max)
+2. Match the learning pace (early days = fundamentals, later days = advanced topics)
+3. Be motivating and clear about what to focus on today
+4. Use a friendly, conversational tone
+5. Include specific topics or concepts they should focus on today
+6. DO NOT use any emojis - only plain text
+7. Be professional and clear
+
+Format the response as a natural paragraph without bullet points, numbered lists, or emojis.
+
+Example format:
+"Today we'll focus on understanding the core fundamentals of [topic]. You'll explore [specific concept] and learn how it connects to [practical application]. Let's build a strong foundation together!"
+
+Generate the daily agenda (no emojis):`;
+
+    const result = await model.generateContent(prompt);
+    const agenda = result.response.text().trim();
+    return agenda;
+  } catch (error) {
+    console.error("❌ Error generating daily agenda:", error.message);
+    // Fallback message if AI fails
+    return `Today is Day ${dayNumber} of ${totalDays}. Let's continue learning about ${moduleTitle}. Ask me any questions you have!`;
+  }
+}
+
 function getModuleStartDateByOrder(sortedModules, moduleId, roadmapGeneratedAt) {
   if (!roadmapGeneratedAt || !sortedModules?.length) return null;
   const targetModule = sortedModules.find((m) => m.id === moduleId);
@@ -573,7 +621,17 @@ export const initChat = async (req, res) => {
 
     if (!comprehensiveCheck.nextActiveModule) {
       return res.json({
-        reply: "🎉 Congratulations! You've completed all training modules. Contact your company admin for next steps. 📚",
+        reply: `<div style="line-height: 1.8;">
+<div style="color: #00FF00; font-size: 20px; font-weight: 600; margin-bottom: 16px; text-align: center;">
+Congratulations!
+</div>
+<div style="color: #E0EAF5; font-size: 16px; margin-bottom: 12px;">
+You've completed all training modules.
+</div>
+<div style="color: #AFCBE3; font-size: 14px; font-style: italic;">
+Contact your company admin for next steps.
+</div>
+</div>`,
       });
     }
 
@@ -598,7 +656,10 @@ export const initChat = async (req, res) => {
         ? `Expired modules: ${expiredTitles.join(", ")}.`
         : "Expired modules were marked as completed.";
 
-      expiredModuleInfo = `\n📋 ${comprehensiveCheck.expiredCount} training module${comprehensiveCheck.expiredCount !== 1 ? "s" : ""} expired and marked as completed. ${expiredList} Now active: "${finalModuleData.moduleTitle}".\n`;
+      expiredModuleInfo = `<div style="background-color: #FF550020; border-left: 4px solid #FF5555; padding: 12px; margin-bottom: 16px; border-radius: 4px;">
+<div style="color: #FF5555; font-weight: 600; margin-bottom: 6px;">Module Expiration Notice</div>
+<div style="color: #E0EAF5; font-size: 14px;">${comprehensiveCheck.expiredCount} training module${comprehensiveCheck.expiredCount !== 1 ? "s" : ""} expired and marked as completed. ${expiredList} Now active: "${finalModuleData.moduleTitle}".</div>
+</div>`;
     }
 
     // Check for missed dates
@@ -660,6 +721,20 @@ export const initChat = async (req, res) => {
 
     // First time today reply (without company info)
     if (firstTimeToday) {
+      // Calculate what day number the user is on
+      const progress = calculateTrainingProgress(finalModuleData, moduleStartDate);
+      const dayNumber = progress.completedDays;
+      const totalDays = finalModuleData.estimatedDays || 1;
+      
+      // Generate daily agenda using AI
+      const dailyAgenda = await generateDailyAgenda(
+        dayNumber,
+        totalDays,
+        finalModuleData.moduleTitle,
+        finalModuleData.description,
+        finalModuleData.skillsCovered
+      );
+      
       let missedDatesNotification = "";
       if (missedDateInfo.hasMissedDates) {
         const firstMissedDateFormatted = new Date(missedDateInfo.firstMissedDate).toLocaleDateString("en-US", {
@@ -668,14 +743,33 @@ export const initChat = async (req, res) => {
           month: "long",
           day: "numeric"
         });
-        missedDatesNotification = `⚠️ You missed ${missedDateInfo.missedCount} day${missedDateInfo.missedCount !== 1 ? "s" : ""} of training starting from ${firstMissedDateFormatted}. Make sure to catch up!\n\n`;
+        missedDatesNotification = `<div style="background-color: #FFA50020; border-left: 4px solid #FFA500; padding: 12px; margin-bottom: 16px; border-radius: 4px;">
+<div style="color: #FFA500; font-weight: 600; margin-bottom: 6px;">Missed Training Days</div>
+<div style="color: #E0EAF5; font-size: 14px;">You missed ${missedDateInfo.missedCount} day${missedDateInfo.missedCount !== 1 ? "s" : ""} of training starting from ${firstMissedDateFormatted}. Make sure to catch up!</div>
+</div>`;
       }
 
-      const reply = `${missedDatesNotification}${expiredModuleInfo}Hi! Your active module is "${finalModuleData.moduleTitle}".
-In this module, you will learn: ${finalModuleData.description || "details coming soon"}.
+      const reply = `${missedDatesNotification}${expiredModuleInfo}<div style="line-height: 1.8;">
+<div style="color: #00FFFF; font-size: 18px; font-weight: 600; margin-bottom: 12px; border-bottom: 2px solid #00FFFF; padding-bottom: 8px;">
+Welcome to Day ${dayNumber} of ${totalDays}
+</div>
 
-Let's get started and have fun learning! 🚀
-      `;
+<div style="color: #FFFFFF; font-size: 16px; font-weight: 500; margin-bottom: 16px;">
+${finalModuleData.moduleTitle}
+</div>
+
+<div style="color: #00FFFF; font-size: 15px; font-weight: 600; margin-bottom: 8px;">
+Today's Agenda:
+</div>
+
+<div style="color: #E0EAF5; font-size: 14px; line-height: 1.6; margin-bottom: 16px;">
+${dailyAgenda}
+</div>
+
+<div style="color: #AFCBE3; font-size: 14px; font-style: italic;">
+Let's get started! Ask me anything about today's topics.
+</div>
+</div>`;
       return res.json({ reply });
     }
 
@@ -688,10 +782,20 @@ Let's get started and have fun learning! 🚀
         month: "long",
         day: "numeric"
       });
-      missedDatesNotification = `⚠️ You missed ${missedDateInfo.missedCount} day${missedDateInfo.missedCount !== 1 ? "s" : ""} of training starting from ${firstMissedDateFormatted}. Make sure to catch up!\n\n`;
+      missedDatesNotification = `<div style="background-color: #FFA50020; border-left: 4px solid #FFA500; padding: 12px; margin-bottom: 16px; border-radius: 4px;">
+<div style="color: #FFA500; font-weight: 600; margin-bottom: 6px;">Missed Training Days</div>
+<div style="color: #E0EAF5; font-size: 14px;">You missed ${missedDateInfo.missedCount} day${missedDateInfo.missedCount !== 1 ? "s" : ""} of training starting from ${firstMissedDateFormatted}. Make sure to catch up!</div>
+</div>`;
     }
     return res.json({
-      reply: `${missedDatesNotification}${expiredModuleInfo}Welcome back! Your active module is "${finalModuleData.moduleTitle}". Ask me anything related to this module.`,
+      reply: `${missedDatesNotification}${expiredModuleInfo}<div style="line-height: 1.8;">
+<div style="color: #00FFFF; font-size: 16px; font-weight: 600; margin-bottom: 12px;">
+Welcome back!
+</div>
+<div style="color: #E0EAF5; font-size: 14px;">
+Your active module is <span style="color: #FFFFFF; font-weight: 500;">${finalModuleData.moduleTitle}</span>. Ask me anything related to this module.
+</div>
+</div>`,
     });
   } catch (err) {
     console.error("❌ initChat error FULL:", err);

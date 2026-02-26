@@ -25,6 +25,7 @@ import ViewModuleDetails from "./components/Fresher/ViewModuleDetails";
 import ModuleQuiz from "./components/Fresher/ModuleQuiz";
 import ModuleQuizResults from "./components/Fresher/ModuleQuizResults";
 import Certificate from "./components/Fresher/Certificate";
+import GoogleAuthCallback from "./pages/GoogleAuthCallback";
  
 
 export default function App() {
@@ -32,6 +33,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Home />} />
+        <Route path="/auth/google/callback" element={<GoogleAuthCallback />} />
         <Route path="/license" element={<License />} />
         <Route path="/compare-plans" element={<ComparePlans />} />
         <Route path="/super-admin-dashboard" element={<AdminDashboard />} /> 
