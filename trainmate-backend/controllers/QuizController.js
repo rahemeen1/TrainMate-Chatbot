@@ -4,9 +4,9 @@ import { getPineconeIndex } from "../config/pinecone.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { CohereClient } from "cohere-ai";
 import { updateMemoryAfterQuiz } from "../services/memoryService.js";
-import { sendTrainingLockedEmail } from "../services/emailService.js";
 import { evaluateCode } from "../services/codeEvaluator.service.js";
 import { createDailyModuleReminder, createQuizUnlockReminder } from "../services/calendarService.js";
+import { sendTrainingLockedEmail, sendQuizSecurityAlertEmail } from "../services/emailService.js";
 
 let primaryModel = null;
 let fallbackModel = null;
@@ -1563,6 +1563,95 @@ export const adminUnlockModule = async (req, res) => {
 	} catch (err) {
 		console.error("Admin unlock error:", err);
 		return res.status(500).json({ error: "Failed to unlock module", details: err.message });
+	}
+};
+export const reportProctoringViolation = async (req, res) => {
+	try {
+		const {
+			companyId,
+			deptId,
+			userId,
+			moduleId,
+			quizId = null,
+			timeAwaySeconds = 0,
+			violationCount = 0,
+			action = "warning",
+			notifyAdmin = false,
+		} = req.body || {};
+
+		if (!companyId || !deptId || !userId || !moduleId) {
+			return res.status(400).json({ error: "Missing required IDs" });
+		}
+
+		const safeAwaySeconds = Math.max(0, Number(timeAwaySeconds) || 0);
+		const safeViolationCount = Math.max(0, Number(violationCount) || 0);
+
+		const userRef = db
+			.collection("freshers")
+			.doc(companyId)
+			.collection("departments")
+			.doc(deptId)
+			.collection("users")
+			.doc(userId);
+
+		const moduleRef = userRef.collection("roadmap").doc(moduleId);
+
+		const [userSnap, moduleSnap] = await Promise.all([userRef.get(), moduleRef.get()]);
+		const userData = userSnap.exists ? userSnap.data() : {};
+		const moduleData = moduleSnap.exists ? moduleSnap.data() : {};
+
+		await moduleRef.collection("proctoringViolations").add({
+			quizId,
+			timeAwaySeconds: safeAwaySeconds,
+			violationCount: safeViolationCount,
+			action,
+			notifyAdmin: Boolean(notifyAdmin),
+			createdAt: admin.firestore.FieldValue.serverTimestamp(),
+		});
+
+		await moduleRef.set(
+			{
+				lastProctoringViolationAt: admin.firestore.FieldValue.serverTimestamp(),
+				lastProctoringViolationSeconds: safeAwaySeconds,
+				proctoringViolationCount: safeViolationCount,
+			},
+			{ merge: true }
+		);
+
+		if (notifyAdmin) {
+			try {
+				const companySnap = await db.collection("companies").doc(companyId).get();
+				const companyData = companySnap.exists ? companySnap.data() : {};
+				const companyEmail = companyData?.email || companyData?.companyEmail || null;
+				const companyName = companyData?.name || "TrainMate Company";
+
+				if (!companyEmail) {
+					console.warn("Company email not found, skipping proctoring alert email");
+				} else {
+					await sendQuizSecurityAlertEmail({
+						companyEmail,
+						companyName,
+						userName: userData?.name || "",
+						userEmail: userData?.email || "",
+						moduleTitle: moduleData?.moduleTitle || "",
+						violationCount: safeViolationCount,
+						timeAwaySeconds: safeAwaySeconds,
+					});
+				}
+			} catch (emailErr) {
+				console.warn("Proctoring security alert email failed (non-critical):", emailErr.message);
+			}
+		}
+
+		return res.json({
+			success: true,
+			violationCount: safeViolationCount,
+			timeAwaySeconds: safeAwaySeconds,
+			notifyAdmin: Boolean(notifyAdmin),
+		});
+	} catch (err) {
+		console.error("Proctoring violation report error:", err);
+		return res.status(500).json({ error: "Failed to report proctoring violation", details: err.message });
 	}
 };
 

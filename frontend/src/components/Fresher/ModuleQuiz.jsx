@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { doc, updateDoc, getDoc } from "firebase/firestore";
 import { db } from "../../firebase";
 import TrainingLockedScreen from "./TrainingLockedScreen";
+
+const TAB_AWAY_THRESHOLD_SECONDS = 5;
 
 export default function ModuleQuiz() {
 	const { companyId, deptId, userId, moduleId } = useParams();
@@ -22,6 +24,11 @@ export default function ModuleQuiz() {
 	const [oneLinerAnswers, setOneLinerAnswers] = useState({});
 	const [quizLocked, setQuizLocked] = useState(false);
 	const [lockInfo, setLockInfo] = useState(null);
+	const [tabWarning, setTabWarning] = useState("");
+	const [tabSwitchAttempts, setTabSwitchAttempts] = useState(0);
+	const awayStartedAtRef = useRef(null);
+	const adminNotifiedRef = useRef(false);
+	const warningTimeoutRef = useRef(null);
 
 	const canGenerate = useMemo(() => {
 		return companyId && deptId && userId && moduleId;
@@ -75,6 +82,13 @@ export default function ModuleQuiz() {
 		setTimeLeft(600);
 		setTimerRunning(false);
 		setAutoSubmitted(false);
+		setTabSwitchAttempts(0);
+		awayStartedAtRef.current = null;
+		adminNotifiedRef.current = false;
+		if (warningTimeoutRef.current) {
+			clearTimeout(warningTimeoutRef.current);
+			warningTimeoutRef.current = null;
+		}
 		setQuizLocked(false);
 		setLockInfo(null);
 		setLoading(true);
@@ -177,6 +191,126 @@ export default function ModuleQuiz() {
 		handleSubmit();
 	}, [timeLeft, quiz, submitting, autoSubmitted]);
 
+	const showTimedWarning = (message, durationMs = 4000) => {
+			setTabWarning(message);
+			if (warningTimeoutRef.current) {
+				clearTimeout(warningTimeoutRef.current);
+			}
+			warningTimeoutRef.current = setTimeout(() => {
+				setTabWarning("");
+				warningTimeoutRef.current = null;
+			}, durationMs);
+		};
+	
+		const reportProctoringViolation = async (payload) => {
+			try {
+				await fetch("http://localhost:5000/api/quiz/proctoring-violation", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify(payload),
+				});
+			} catch (err) {
+				console.warn("Failed to report proctoring violation:", err?.message || err);
+			}
+		};
+	
+		const processAwayDuration = async () => {
+			if (!awayStartedAtRef.current) return;
+	
+			const awayMs = Date.now() - awayStartedAtRef.current;
+			awayStartedAtRef.current = null;
+			const awaySeconds = Math.floor(awayMs / 1000);
+	
+			if (awaySeconds < TAB_AWAY_THRESHOLD_SECONDS) return;
+	
+			const nextAttempt = tabSwitchAttempts + 1;
+			setTabSwitchAttempts(nextAttempt);
+	
+			const basePayload = {
+				companyId,
+				deptId,
+				userId,
+				moduleId,
+				quizId: quiz?.quizId,
+				timeAwaySeconds: awaySeconds,
+				violationCount: nextAttempt,
+			};
+	
+			if (nextAttempt === 1) {
+				showTimedWarning(
+					"You have been on another tab for more than 5 seconds. You have only one more chance. If it happens again, your quiz will be auto-submitted and admin will be notified.",
+					7000
+				);
+				await reportProctoringViolation({
+					...basePayload,
+					action: "warning",
+					notifyAdmin: false,
+				});
+				return;
+			}
+	
+			showTimedWarning("Second violation detected. Your quiz is being auto-submitted and admin has been notified.", 7000);
+			setTimerRunning(false);
+	
+			if (!adminNotifiedRef.current) {
+				adminNotifiedRef.current = true;
+				await reportProctoringViolation({
+					...basePayload,
+					action: "auto_submit",
+					notifyAdmin: true,
+				});
+			}
+	
+			if (!autoSubmitted && !submitting) {
+				setAutoSubmitted(true);
+				handleSubmit();
+			}
+		};
+	
+		useEffect(() => {
+			const quizInProgress = Boolean(quiz) && timerRunning && timeLeft > 0 && !submitting;
+			if (!quizInProgress) {
+				setTabWarning("");
+				awayStartedAtRef.current = null;
+				return undefined;
+			}
+	
+			const startAwayTracking = () => {
+				if (awayStartedAtRef.current) return;
+				awayStartedAtRef.current = Date.now();
+			};
+	
+			const handleVisibilityChange = () => {
+				if (document.hidden) {
+					startAwayTracking();
+					return;
+				}
+				processAwayDuration();
+			};
+	
+			const handleWindowBlur = () => {
+				startAwayTracking();
+			};
+	
+			const handleWindowFocus = () => {
+				processAwayDuration();
+			};
+	
+			document.addEventListener("visibilitychange", handleVisibilityChange);
+			window.addEventListener("blur", handleWindowBlur);
+			window.addEventListener("focus", handleWindowFocus);
+	
+			return () => {
+				document.removeEventListener("visibilitychange", handleVisibilityChange);
+				window.removeEventListener("blur", handleWindowBlur);
+				window.removeEventListener("focus", handleWindowFocus);
+				if (warningTimeoutRef.current) {
+					clearTimeout(warningTimeoutRef.current);
+					warningTimeoutRef.current = null;
+				}
+			};
+		}, [quiz, timerRunning, timeLeft, submitting, tabSwitchAttempts, autoSubmitted]);
+
 	const formatTime = (seconds) => {
 		const mins = Math.floor(seconds / 60);
 		const secs = seconds % 60;
@@ -226,6 +360,11 @@ export default function ModuleQuiz() {
 
 	return (
 		<div className="min-h-screen bg-[#031C3A] text-white p-8">
+			{tabWarning && (
+				<div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-[#021B36] border border-[#FF6B6B] text-[#FFAAAA] px-6 py-3 rounded-lg shadow-lg">
+					{tabWarning}
+				</div>
+			)}
 			<div className="flex items-start justify-between mb-8">
 				<div className="flex-1">
 					<h1 className="text-4xl font-bold text-[#00FFFF] mb-2">Module Quiz</h1>
