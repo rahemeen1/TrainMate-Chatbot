@@ -18,7 +18,6 @@ export default function FresherTraining() {
   const [loading, setLoading] = useState(true);
   const [selectedModule, setSelectedModule] = useState(null);
   const [showQuizConfirm, setShowQuizConfirm] = useState(false);
-  const [showQuizLocked, setShowQuizLocked] = useState(false);
   const [weaknessAnalysis, setWeaknessAnalysis] = useState(null);
   const [showWeaknessBanner, setShowWeaknessBanner] = useState(false);
   const [userData, setUserData] = useState(null);
@@ -128,72 +127,6 @@ export default function FresherTraining() {
     }
   };
 
-  // ===============================
-  // 🔒 50% TIME-BASED QUIZ LOCKING
-  // ===============================
-  
-  /**
-   * Check if quiz should be unlocked based on 50% of module time elapsed
-   * @param {Object} module - Module object with timing data
-   * @returns {boolean} - true if quiz is unlocked, false if locked
-   */
-  const checkQuizUnlockBy50Percent = (module) => {
-    if (!module) return false;
-    if (module.completed) return true;
-    
-    // Prioritize actual start time when module was unlocked
-    let createdAtTimeStamp = module.startedAt || module.FirstTimeCreatedAt || module.createdAt;
-    
-    if (!createdAtTimeStamp) {
-      console.warn("⚠️ Module has no startedAt, FirstTimeCreatedAt or createdAt:", module.id);
-      return false;
-    }
-    
-    const startDate = createdAtTimeStamp.toDate 
-      ? createdAtTimeStamp.toDate() 
-      : new Date(createdAtTimeStamp);
-    
-    const today = new Date();
-    const daysPassed = Math.floor((today - startDate) / (1000 * 60 * 60 * 24));
-    const totalDays = module.estimatedDays || 1;
-    const fiftyPercentDays = totalDays / 2;
-    
-    return daysPassed >= fiftyPercentDays;
-  };
-  
-  /**
-   * Get user-friendly message for quiz unlock status
-   * @param {Object} module - Module object with timing data
-   * @returns {string} - Message about quiz availability
-   */
-  const getQuizUnlockMessage = (module) => {
-    if (!module) return "Quiz status unknown";
-    if (module.completed) return "Quiz available";
-    
-    // Prioritize actual start time when module was unlocked
-    const createdAtTimeStamp = module.startedAt || module.FirstTimeCreatedAt || module.createdAt;
-    if (!createdAtTimeStamp) return "Quiz will unlock soon";
-    
-    const startDate = createdAtTimeStamp.toDate 
-      ? createdAtTimeStamp.toDate() 
-      : new Date(createdAtTimeStamp);
-    
-    const today = new Date();
-    const daysPassed = Math.floor((today - startDate) / (1000 * 60 * 60 * 24));
-    const totalDays = module.estimatedDays || 1;
-    const fiftyPercentDays = totalDays / 2;
-    const daysRemaining = Math.ceil(fiftyPercentDays - daysPassed);
-    
-    if (daysPassed >= fiftyPercentDays) {
-      return "Quiz is now available!";
-    }
-    
-    return `Quiz will unlock in ${daysRemaining} day(s) (${Math.round(daysPassed)}/${Math.round(fiftyPercentDays)} days completed)`;
-  };
-  
-  // Check if currently selected module has quiz unlocked
-  const isQuizUnlocked = selectedModule ? checkQuizUnlockBy50Percent(selectedModule) : false;
-  const quizUnlockMessage = selectedModule ? getQuizUnlockMessage(selectedModule) : "";
 
   /**
    * Calculate time remaining to complete module
@@ -237,11 +170,6 @@ export default function FresherTraining() {
   const moduleTimeRemaining = selectedModule ? getModuleTimeRemaining(selectedModule) : null;
 
   const takeQuiz = (moduleId) => {
-    // Check if quiz is unlocked
-    if (!isQuizUnlocked) {
-      setShowQuizLocked(true); // Show locked message modal
-      return;
-    }
     setShowQuizConfirm(true); // Show confirmation modal
   };
 
@@ -254,10 +182,6 @@ export default function FresherTraining() {
 
   const cancelQuiz = () => {
     setShowQuizConfirm(false);
-  };
-
-  const closeQuizLocked = () => {
-    setShowQuizLocked(false);
   };
 
 
@@ -482,59 +406,7 @@ return (
         </div>
       )}
       
-      {/* ===== Quiz Locked Modal ===== */}
-      {showQuizLocked && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-[#021B36] border border-yellow-500 rounded-lg p-8 max-w-md shadow-xl">
-            <div className="flex items-center gap-3 mb-4">
-              <span className="text-4xl">🔒</span>
-              <h3 className="text-2xl font-bold text-yellow-400">
-                Quiz Not Yet Available
-              </h3>
-            </div>
-            
-            <div className="mb-6 space-y-3">
-              <p className="text-[#AFCBE3]">
-                {quizUnlockMessage}
-              </p>
-              
-              <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-                <p className="text-[#AFCBE3] text-sm">
-                  <span className="font-semibold text-yellow-300">Why is the quiz locked?</span>
-                </p>
-                <p className="text-[#AFCBE3] text-xs mt-2">
-                  To ensure adequate preparation time, quizzes unlock after you've had 50% of the module's estimated duration to study the materials.
-                </p>
-              </div>
-              
-              {moduleTimeRemaining && !moduleTimeRemaining.expired && (
-                <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-                  <p className="text-[#AFCBE3] text-sm">
-                    <span className="font-semibold text-blue-300">Module Time Remaining:</span> {moduleTimeRemaining.message}
-                  </p>
-                  <p className="text-[#AFCBE3] text-xs mt-1">
-                    Make sure to complete the quiz before the module deadline!
-                  </p>
-                </div>
-              )}
-              
-              <p className="text-[#AFCBE3] text-sm">
-                Continue studying the materials. The quiz button will work automatically once the unlock time is reached.
-              </p>
-            </div>
-            
-            <div className="flex justify-center">
-              <button
-                onClick={closeQuizLocked}
-                className="px-6 py-2 bg-[#00FFFF] text-[#031C3A] 
-                  rounded font-semibold hover:bg-[#00FFFF]/90 transition"
-              >
-                Got It
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+
     </div>
   </div>
 );

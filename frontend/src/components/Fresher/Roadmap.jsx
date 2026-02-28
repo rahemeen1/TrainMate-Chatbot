@@ -39,39 +39,11 @@ const getModuleStartDate = (module) => {
   return new Date(roadmapGeneratedAt.getTime() + daysOffset * 24 * 60 * 60 * 1000);
 };
 
-  // Check if quiz should be unlocked (50% of module time has passed)
-  const checkQuizTimeUnlock = (module) => {
-    if (!module || module.completed) return { isUnlocked: true, remainingTime: null };
-    
-    const startDate = getModuleStartDate(module);
-    if (!startDate) return { isUnlocked: false, remainingTime: "Module not started yet" };
-    
-    const estimatedDays = module.estimatedDays || 1;
-    const unlockTime = new Date(startDate.getTime() + (estimatedDays * 0.5 * 24 * 60 * 60 * 1000));
-    const now = new Date();
-    
-    if (now >= unlockTime) {
-      return { isUnlocked: true, remainingTime: null };
-    }
-    
-    // Calculate remaining time
-    const remainingMs = unlockTime - now;
-    const remainingDays = Math.floor(remainingMs / (1000 * 60 * 60 * 24));
-    const remainingHours = Math.floor((remainingMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-    
-    let remainingTimeStr = "";
-    if (remainingDays > 0) {
-      remainingTimeStr = `${remainingDays}d ${remainingHours}h`;
-    } else {
-      remainingTimeStr = `${remainingHours}h`;
-    }
-    
-    return { 
-      isUnlocked: false, 
-      remainingTime: remainingTimeStr,
-      message: `Quiz unlocks in ${remainingTimeStr} (${Math.round(estimatedDays * 0.5)} days required)`
-    };
-  };
+  const checkQuizTimeUnlock = () => ({
+    isUnlocked: true,
+    remainingTime: null,
+    message: "",
+  });
 
   // Update overall progress after marking module done
   const updateProgress = async () => {
@@ -293,7 +265,7 @@ const getUnlockedModules = () => {
 
     return {
       ...module,
-      locked: !unlocked || (module.quizLocked && !module.completed) || moduleExpired || module.moduleLocked,
+      locked: !unlocked || moduleExpired || module.moduleLocked,
       quizTimeUnlocked: quizUnlockStatus.isUnlocked,
       quizUnlockMessage: quizUnlockStatus.message || "",
       timeRemaining,
@@ -602,30 +574,23 @@ if (!roadmap.length)
             { state: { companyName } }
           )
         }
-        // DISABLED when: quiz locked OR time requirement not met
-        disabled={module.quizLocked || !module.quizTimeUnlocked}
+        disabled={false}
         title={
-          module.quizLocked
-            ? "Quiz locked. Contact admin to unlock."
-            : !module.quizTimeUnlocked
-              ? `Quiz unlocks after 50% of module time. ${module.quizUnlockMessage || ''}`
-            : module.quizAttempts > 0
-              ? `Retry Quiz - TrainMate will analyze and decide retry allocation`
-              : "Take Quiz - TrainMate will evaluate and provide feedback"
+          module.quizAttempts > 0
+            ? `Retry Quiz - TrainMate will analyze and decide retry allocation`
+            : "Take Quiz - TrainMate will evaluate and provide feedback"
         }
         className={`px-4 py-2 border border-[#00FFFF] text-[#00FFFF] rounded relative group
-          ${module.quizLocked || !module.quizTimeUnlocked ? "opacity-40 cursor-not-allowed grayscale" : "hover:bg-[#00FFFF]/10"}
+          hover:bg-[#00FFFF]/10
         `}
       >
-        {module.quizLocked ? "🔒 Quiz Locked" :
-         !module.quizTimeUnlocked ? "⏳ Quiz Locked (Time)" :
-         module.quizPassed ? "✅ Quiz Passed" :
+        {module.quizPassed ? "✅ Quiz Passed" :
          module.quizAttempts > 0 
            ? ` Retry (Attempt ${module.quizAttempts + 1})` 
            : "📝 Take Quiz"}
         
         {/* Tooltip for AI-powered quiz */}
-        {!module.quizLocked && module.quizTimeUnlocked && (
+        {module.quizTimeUnlocked && (
           <div className="absolute left-full top-1/2 transform -translate-y-1/2 ml-3 hidden group-hover:block w-72 bg-[#021B36] border border-purple-500 rounded-lg p-3 text-sm z-10 whitespace-normal">
             <div className="text-purple-300 font-semibold mb-1 flex items-center gap-2">
               <span></span> TrainMate-Powered Assessment

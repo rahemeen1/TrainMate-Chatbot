@@ -780,6 +780,7 @@ export const generateQuiz = async (req, res) => {
 		const description = moduleData?.description || "";
 		console.log(`Module title: ${title}`);
 		
+		/*
 		// 🔒 CHECK: Quiz unlock time requirement (50% of module time)
 		console.log(`Checking quiz unlock time requirement...`);
 		const quizUnlockStatus = checkQuizTimeUnlock(moduleData);
@@ -796,6 +797,7 @@ export const generateQuiz = async (req, res) => {
 		}
 		
 		console.log(`✅ Quiz unlock requirement met - generating quiz`);
+		*/
 		
 		// Fetch department settings for quiz configuration
 		console.log(`Fetching department settings...`);
@@ -1001,6 +1003,7 @@ export const submitQuiz = async (req, res) => {
 			: 0;
 		const effectiveMaxAttempts = Math.max(MAX_QUIZ_ATTEMPTS, maxAttemptsOverride);
 
+		/*
 		// 🔒 CHECK: Quiz unlock time requirement (50% of module time)
 		console.log(`Checking quiz unlock time requirement...`);
 		const quizUnlockStatus = checkQuizTimeUnlock(moduleData);
@@ -1017,6 +1020,7 @@ export const submitQuiz = async (req, res) => {
 		}
 		
 		console.log(`✅ Quiz unlock requirement met - proceeding with submission`);
+		*/
 
 		const quizSnap = await quizRef.get();
 		if (!quizSnap.exists) {

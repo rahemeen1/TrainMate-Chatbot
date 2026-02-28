@@ -14,6 +14,7 @@ import {
   Target,
 } from "lucide-react";
 import EngagementModal from "./EngagementModal";
+import AuthModal from "../AuthModal";
 
 const basicFeatures = [
   {
@@ -92,7 +93,9 @@ const proFeatures = [
 ];
 
 export default function License() {
-  const [modalOpen, setModalOpen] = useState(false);
+  const [engagementOpen, setEngagementOpen] = useState(false);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authMode, setAuthMode] = useState("login");
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#02142B] via-[#031C3A] to-[#04354E] text-white relative overflow-hidden">
@@ -103,8 +106,14 @@ export default function License() {
       </div>
 
       <Header
-        onLoginClick={() => setModalOpen(true)}
-        onSignUpClick={() => setModalOpen(true)}
+        onLoginClick={() => {
+          setAuthMode("login");
+          setAuthModalOpen(true);
+        }}
+        onSignUpClick={() => {
+          setAuthMode("signup");
+          setAuthModalOpen(true);
+        }}
       />
 
       <main className="relative z-10 mx-auto flex w-full max-w-6xl flex-col gap-12 px-6 pb-16 pt-32">
@@ -250,7 +259,7 @@ export default function License() {
           </p>
           <div className="flex flex-wrap justify-center gap-3">
             <button
-              onClick={() => setModalOpen(true)}
+              onClick={() => setEngagementOpen(true)}
               className="rounded-full border border-white/20 px-5 py-2 text-sm font-semibold text-white/80 transition hover:border-white/60 hover:text-white"
             >
               Talk to Us
@@ -264,7 +273,12 @@ export default function License() {
           </div>
         </section>
       </main>
-      <EngagementModal isOpen={modalOpen} onClose={() => setModalOpen(false)} />
+      <AuthModal
+        isOpen={authModalOpen}
+        mode={authMode}
+        onClose={() => setAuthModalOpen(false)}
+      />
+      <EngagementModal isOpen={engagementOpen} onClose={() => setEngagementOpen(false)} />
     </div>
   );
 }

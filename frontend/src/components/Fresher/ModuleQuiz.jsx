@@ -22,8 +22,6 @@ export default function ModuleQuiz() {
 	const [autoSubmitted, setAutoSubmitted] = useState(false);
 	const [mcqAnswers, setMcqAnswers] = useState({});
 	const [oneLinerAnswers, setOneLinerAnswers] = useState({});
-	const [quizLocked, setQuizLocked] = useState(false);
-	const [lockInfo, setLockInfo] = useState(null);
 	const [tabWarning, setTabWarning] = useState("");
 	const [tabSwitchAttempts, setTabSwitchAttempts] = useState(0);
 	const awayStartedAtRef = useRef(null);
@@ -89,8 +87,6 @@ export default function ModuleQuiz() {
 			clearTimeout(warningTimeoutRef.current);
 			warningTimeoutRef.current = null;
 		}
-		setQuizLocked(false);
-		setLockInfo(null);
 		setLoading(true);
 
 		try {
@@ -101,14 +97,6 @@ export default function ModuleQuiz() {
 			});
 
 			const data = await res.json();
-			
-			if (res.status === 403 && data.error === "Quiz is locked") {
-				// Quiz is locked due to time requirement
-				setQuizLocked(true);
-				setLockInfo(data);
-				setLoading(false);
-				return;
-			}
 			
 			if (!res.ok) {
 				throw new Error(data?.error || "Quiz generation failed");
@@ -159,15 +147,6 @@ export default function ModuleQuiz() {
 			});
 
 			const data = await res.json();
-			
-			if (res.status === 403 && data.error === "Quiz is locked") {
-				// Quiz became locked during attempt (edge case)
-				setQuizLocked(true);
-				setLockInfo(data);
-				setQuiz(null);
-				setSubmitting(false);
-				return;
-			}
 			
 			if (!res.ok) {
 				throw new Error(data?.error || "Quiz submission failed");
@@ -400,59 +379,7 @@ export default function ModuleQuiz() {
 
 			{renderStatus()}
 
-			{quizLocked && lockInfo && (
-				<div className="flex items-center justify-center py-16">
-					<div className="max-w-2xl w-full">
-						<div className="bg-[#021B36]/80 border-2 border-[#FFA500] rounded-xl p-8 shadow-2xl">
-							<div className="flex flex-col items-center gap-6 text-center">
-								{/* Lock Icon */}
-								<div className="relative">
-									<div className="w-24 h-24 rounded-full bg-[#FFA500]/20 flex items-center justify-center">
-										<svg className="w-12 h-12 text-[#FFA500]" fill="currentColor" viewBox="0 0 20 20">
-											<path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
-										</svg>
-									</div>
-								</div>
 
-								{/* Title */}
-								<div>
-									<h2 className="text-3xl font-bold text-[#FFA500] mb-2">Quiz Locked</h2>
-									<p className="text-[#AFCBE3] text-lg">Complete 50% of module time to unlock</p>
-								</div>
-
-								{/* Message */}
-								<div className="bg-[#031C3A] border border-[#FFA500]/30 rounded-lg p-6 w-full">
-									<p className="text-white text-lg mb-4">{lockInfo.message}</p>
-									
-									{lockInfo.remainingTime && (
-										<div className="flex items-center justify-center gap-3 text-[#00FFFF]">
-											<svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-												<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-											</svg>
-											<span className="text-xl font-semibold">{lockInfo.remainingTime}</span>
-										</div>
-									)}
-								</div>
-
-								{/* Additional Info */}
-								<div className="text-[#AFCBE3] text-sm space-y-2">
-									<p>📚 Continue learning module content</p>
-									<p>⏱️ Quiz unlocks automatically when time requirement is met</p>
-									<p>💡 Use this time to thoroughly understand the concepts</p>
-								</div>
-
-								{/* Return Button */}
-								<button
-									onClick={goToRoadmap}
-									className="mt-4 px-8 py-3 bg-[#00FFFF] text-[#031C3A] font-bold rounded-lg hover:bg-[#00DDDD] transition-all duration-200 shadow-lg hover:shadow-xl"
-								>
-									Return to Roadmap
-								</button>
-							</div>
-						</div>
-					</div>
-				</div>
-			)}
 
 			{quiz && (
 				<div className="space-y-6 -mt-2">

@@ -15,6 +15,7 @@ import {
   Target,
 } from "lucide-react";
 import EngagementModal from "./EngagementModal";
+import AuthModal from "../AuthModal";
 
 const plans = [
   {
@@ -125,7 +126,9 @@ const featureRows = [
 ];
 
 export default function ComparePlans() {
-  const [modalOpen, setModalOpen] = useState(false);
+  const [engagementOpen, setEngagementOpen] = useState(false);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authMode, setAuthMode] = useState("login");
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -141,8 +144,14 @@ export default function ComparePlans() {
       </div>
 
       <Header
-        onLoginClick={() => setModalOpen(true)}
-        onSignUpClick={() => setModalOpen(true)}
+        onLoginClick={() => {
+          setAuthMode("login");
+          setAuthModalOpen(true);
+        }}
+        onSignUpClick={() => {
+          setAuthMode("signup");
+          setAuthModalOpen(true);
+        }}
       />
 
       <main className="relative z-10 mx-auto flex w-full max-w-6xl flex-col gap-12 px-6 pb-16 pt-32">
@@ -273,7 +282,7 @@ export default function ComparePlans() {
             best license option for your cohort.
           </p>
           <button
-            onClick={() => setModalOpen(true)}
+            onClick={() => setEngagementOpen(true)}
             className="rounded-full bg-[#00FFFF] px-6 py-2 text-sm font-semibold text-[#020617] shadow-[0_0_18px_rgba(0,255,255,0.45)] transition hover:shadow-[0_0_28px_rgba(0,255,255,0.6)]"
           >
             Get Started
@@ -281,7 +290,12 @@ export default function ComparePlans() {
         </section>
       </main>
 
-      <EngagementModal isOpen={modalOpen} onClose={() => setModalOpen(false)} />
+      <AuthModal
+        isOpen={authModalOpen}
+        mode={authMode}
+        onClose={() => setAuthModalOpen(false)}
+      />
+      <EngagementModal isOpen={engagementOpen} onClose={() => setEngagementOpen(false)} />
     </div>
   );
 }
