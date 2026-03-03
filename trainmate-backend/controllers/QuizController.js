@@ -28,6 +28,7 @@ const PLAN_MAX_QUERIES = 4;
 const MAX_CONTEXT_CHARS = 8000;
 const QUIZ_PASS_THRESHOLD = 80; // Base threshold, AI can adjust
 const MAX_QUIZ_ATTEMPTS = 3; // Maximum possible attempts (AI decides actual count)
+const ADMIN_FINAL_RETRY_ATTEMPTS = 1;
 const QUIZ_UNLOCK_TIME_PERCENT = 0.5; // Quiz unlocks after 50% of module time
 
 /**
@@ -99,6 +100,68 @@ function checkQuizTimeUnlock(moduleData) {
 		remainingTime: remainingTimeStr,
 		message: `Quiz will be available after you've spent 50% of the module time. Unlock in: ${remainingTimeStr}`
 	};
+}
+
+async function createOrUpdateModuleLockNotification({
+	companyId,
+	deptId,
+	userId,
+	moduleId,
+	userName,
+	userEmail,
+	moduleTitle,
+	attemptNumber,
+	score,
+}) {
+	const notificationId = `module-lock-${deptId}-${userId}-${moduleId}`;
+	const notificationRef = db
+		.collection("companies")
+		.doc(companyId)
+		.collection("adminNotifications")
+		.doc(notificationId);
+
+	await notificationRef.set(
+		{
+			type: "module_lock",
+			status: "pending",
+			companyId,
+			deptId,
+			userId,
+			moduleId,
+			userName: userName || "",
+			userEmail: userEmail || "",
+			moduleTitle: moduleTitle || "",
+			attemptNumber,
+			score,
+			message: `${userName || "Fresher"} exceeded quiz retries for ${moduleTitle || "module"}. Give one final retry?`,
+			createdAt: admin.firestore.FieldValue.serverTimestamp(),
+			resolvedAt: null,
+		},
+		{ merge: true }
+	);
+
+	return notificationId;
+}
+
+async function unlockNextModuleForUser({ userRef, currentModuleOrder }) {
+	const roadmapSnap = await userRef.collection("roadmap").orderBy("order").get();
+	const modules = roadmapSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+	const nextModule = modules
+		.filter((mod) => (mod.order || 0) > currentModuleOrder && !mod.completed)
+		.sort((a, b) => (a.order || 0) - (b.order || 0))[0];
+
+	if (!nextModule) return null;
+
+	await userRef.collection("roadmap").doc(nextModule.id).set(
+		{
+			status: "in-progress",
+			moduleLocked: false,
+			startedAt: admin.firestore.FieldValue.serverTimestamp(),
+		},
+		{ merge: true }
+	);
+
+	return nextModule;
 }
 
 async function embedText(text) {
@@ -1001,7 +1064,10 @@ export const submitQuiz = async (req, res) => {
 		const maxAttemptsOverride = Number.isInteger(moduleData?.maxAttemptsOverride)
 			? moduleData.maxAttemptsOverride
 			: 0;
-		const effectiveMaxAttempts = Math.max(MAX_QUIZ_ATTEMPTS, maxAttemptsOverride);
+		const effectiveMaxAttempts = Math.min(
+			MAX_QUIZ_ATTEMPTS + ADMIN_FINAL_RETRY_ATTEMPTS,
+			Math.max(MAX_QUIZ_ATTEMPTS, maxAttemptsOverride)
+		);
 
 		/*
 		// 🔒 CHECK: Quiz unlock time requirement (50% of module time)
@@ -1036,6 +1102,17 @@ export const submitQuiz = async (req, res) => {
 		const attemptsSnap = await attemptsRef.get();
 		const attemptNumber = attemptsSnap.size + 1;
 		console.log(`📝 Quiz attempt #${attemptNumber} of ${effectiveMaxAttempts} allowed`);
+
+		if (attemptNumber > effectiveMaxAttempts) {
+			return res.status(403).json({
+				error: "Maximum attempts exceeded",
+				message: "This module is locked. Please contact your admin.",
+				lockModule: true,
+				allowRetry: false,
+				attemptNumber,
+				maxAttempts: effectiveMaxAttempts,
+			});
+		}
 		
 		const mcqAnswers = Array.isArray(answers?.mcq) ? answers.mcq : [];
 		const oneLinerAnswers = Array.isArray(answers?.oneLiners) ? answers.oneLiners : [];
@@ -1212,6 +1289,14 @@ export const submitQuiz = async (req, res) => {
 			contactAdmin = agenticDecision.contactAdmin;
 			message = agenticDecision.message;
 			recommendations = agenticDecision.recommendations || [];
+
+			if (attemptNumber >= effectiveMaxAttempts) {
+				allowRetry = false;
+				retriesGranted = 0;
+				lockModule = true;
+				contactAdmin = true;
+				message = `You have reached the maximum allowed attempts (${effectiveMaxAttempts}) for this module. This module is now locked and your admin has been notified.`;
+			}
 			
 			console.log(`✓ Agentic Decision Applied: allowRetry=${allowRetry}, retriesGranted=${retriesGranted}, regenerate=${requiresRoadmapRegeneration}, lock=${lockModule}`);
 		}
@@ -1399,6 +1484,7 @@ export const submitQuiz = async (req, res) => {
 					if (lockModule) {
 						updateData.quizLocked = true;
 						updateData.moduleLocked = true;
+						updateData.status = "locked";
 						updateData.requiresAdminContact = contactAdmin;
 						console.log(`Module locked by TrainMate decision after ${attemptNumber} attempts`);
 						
@@ -1410,6 +1496,9 @@ export const submitQuiz = async (req, res) => {
 							.doc(deptId)
 							.collection("users")
 							.doc(userId);
+
+						const userSnap = await userRef.get();
+						const userData = userSnap.exists ? userSnap.data() : {};
 						
 						await userRef.set({
 							trainingLocked: true,
@@ -1418,6 +1507,35 @@ export const submitQuiz = async (req, res) => {
 							requiresAdminContact: true,
 						}, { merge: true });
 						console.log(`✓ User training locked - requires admin intervention`);
+
+						try {
+							const currentOrder = moduleData?.order || 0;
+							const nextModule = await unlockNextModuleForUser({ userRef, currentModuleOrder: currentOrder });
+							if (nextModule) {
+								console.log(`✓ Next module unlocked after lock: ${nextModule.moduleTitle}`);
+							}
+						} catch (unlockErr) {
+							console.warn("Failed to unlock next module after lock:", unlockErr.message);
+						}
+
+						let createdNotificationId = null;
+						try {
+							createdNotificationId = await createOrUpdateModuleLockNotification({
+								companyId,
+								deptId,
+								userId,
+								moduleId,
+								userName: userData?.name || "",
+								userEmail: userData?.email || "",
+								moduleTitle: moduleData?.moduleTitle || "",
+								attemptNumber,
+								score: finalScore,
+							});
+							updateData.adminNotificationId = createdNotificationId;
+							console.log(`✓ Admin notification created: ${createdNotificationId}`);
+						} catch (notificationErr) {
+							console.warn("Failed to create admin module-lock notification:", notificationErr.message);
+						}
 
 						// Notify company by email (non-blocking)
 						try {
@@ -1513,12 +1631,10 @@ export const submitQuiz = async (req, res) => {
 
 export const adminUnlockModule = async (req, res) => {
 	try {
-		const { companyId, deptId, userId, moduleId, attemptsToGrant } = req.body;
+		const { companyId, deptId, userId, moduleId, notificationId } = req.body;
 		if (!companyId || !deptId || !userId || !moduleId) {
 			return res.status(400).json({ error: "Missing required IDs" });
 		}
-
-		const attempts = Math.max(1, Number(attemptsToGrant) || 1);
 
 		const userRef = db
 			.collection("freshers")
@@ -1537,17 +1653,23 @@ export const adminUnlockModule = async (req, res) => {
 		const moduleData = moduleSnap.data() || {};
 		const attemptsSnap = await moduleRef.collection("quizAttempts").get();
 		const currentAttempts = attemptsSnap.size;
-		const existingOverride = Number.isInteger(moduleData.maxAttemptsOverride)
-			? moduleData.maxAttemptsOverride
-			: 0;
-		const desiredMax = Math.max(MAX_QUIZ_ATTEMPTS, currentAttempts + attempts);
-		const maxAttemptsOverride = Math.max(existingOverride, desiredMax);
+
+		if (moduleData.adminFinalRetryGranted) {
+			return res.status(400).json({
+				error: "Final retry already granted for this module",
+				maxAttemptsOverride: moduleData.maxAttemptsOverride || MAX_QUIZ_ATTEMPTS + ADMIN_FINAL_RETRY_ATTEMPTS,
+			});
+		}
+
+		const maxAttemptsOverride = MAX_QUIZ_ATTEMPTS + ADMIN_FINAL_RETRY_ATTEMPTS;
 
 		await moduleRef.set({
 			quizLocked: false,
 			moduleLocked: false,
+			status: "in-progress",
 			requiresAdminContact: false,
-			adminUnlockAttemptsGranted: attempts,
+			adminUnlockAttemptsGranted: ADMIN_FINAL_RETRY_ATTEMPTS,
+			adminFinalRetryGranted: true,
 			maxAttemptsOverride,
 			adminUnlockedAt: admin.firestore.FieldValue.serverTimestamp(),
 		}, { merge: true });
@@ -1559,9 +1681,26 @@ export const adminUnlockModule = async (req, res) => {
 			requiresAdminContact: false,
 		}, { merge: true });
 
+		if (notificationId) {
+			const notificationRef = db
+				.collection("companies")
+				.doc(companyId)
+				.collection("adminNotifications")
+				.doc(notificationId);
+
+			await notificationRef.set(
+				{
+					status: "approved",
+					resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
+				},
+				{ merge: true }
+			);
+		}
+
 		return res.json({
 			success: true,
 			currentAttempts,
+			attemptsGranted: ADMIN_FINAL_RETRY_ATTEMPTS,
 			maxAttemptsOverride,
 		});
 	} catch (err) {

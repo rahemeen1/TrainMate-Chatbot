@@ -4,6 +4,7 @@ const MENU_OPTIONS = [
   { label: "Dashboard", path: "/CompanySpecific/CompanyDashboard" },
   { label: "Manage Departments", path: "/manage-departments" },
   { label: "Manage Users", path: "/CompanySpecific/Manageuser" },
+  { label: "Notifications", path: "/CompanySpecific/CompanyNotifications" },
   { label: "Company Details", path: "/CompanySpecific/CompanyDetails" }, 
   { label: "Settings", path: "/CompanySpecific/CompanySettings" },
   { label: "Logout", path: "/" },

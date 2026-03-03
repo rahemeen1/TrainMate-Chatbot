@@ -12,6 +12,7 @@ import UserProfile from "./components/CompanySpecific/UserProfile";
 import Manageuser from "./components/CompanySpecific/Manageuser";
 import CompanySettings from "./components/CompanySpecific/CompanySettings";
 import CompanyDetails from "./components/CompanySpecific/CompanyDetails";
+import CompanyNotifications from "./components/CompanySpecific/CompanyNotifications";
 import CompanyLicensePayment from "./components/CompanySpecific/CompanyLicensePayment";
 import FresherTraining from "./components/Fresher/FresherTraining";
 import FresherProgress from "./components/Fresher/FresherProgress";
@@ -46,6 +47,7 @@ export default function App() {
         <Route path="/CompanySpecific/Manageuser" element={<Manageuser />} />
         <Route path="/CompanySpecific/CompanyDashboard" element={<CompanyDashboard />} />
         <Route path="/CompanySpecific/CompanySettings" element={<CompanySettings />} />
+        <Route path="/CompanySpecific/CompanyNotifications" element={<CompanyNotifications />} />
         <Route path="/fresher-training/:companyId/:deptId/:userId" element={<FresherTraining />}  />
         <Route path="/fresher-progress" element={<FresherProgress />} />
         <Route path="/roadmap/:companyId/:deptId/:userId/:companyName" element={<Roadmap />} /> 

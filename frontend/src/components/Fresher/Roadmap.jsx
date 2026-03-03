@@ -9,6 +9,7 @@ import { FresherSideMenu } from "./FresherSideMenu";
 import TrainingLockedScreen from "./TrainingLockedScreen";
 
 export default function Roadmap() {
+  const BASE_MAX_QUIZ_ATTEMPTS = 3;
   const { companyId, deptId, userId,companyName } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -262,10 +263,17 @@ const getUnlockedModules = () => {
     
     // Check if quiz should be unlocked (50% time requirement)
     const quizUnlockStatus = checkQuizTimeUnlock(module);
+    const moduleAttemptLimit = Number.isInteger(module.maxAttemptsOverride)
+      ? module.maxAttemptsOverride
+      : BASE_MAX_QUIZ_ATTEMPTS;
+    const quizAttemptLimitReached = !module.quizPassed && (module.quizAttempts || 0) >= moduleAttemptLimit;
+    const isLocked = !unlocked || moduleExpired || module.moduleLocked || quizAttemptLimitReached;
 
     return {
       ...module,
-      locked: !unlocked || moduleExpired || module.moduleLocked,
+      locked: isLocked,
+      quizAttemptLimitReached,
+      moduleAttemptLimit,
       quizTimeUnlocked: quizUnlockStatus.isUnlocked,
       quizUnlockMessage: quizUnlockStatus.message || "",
       timeRemaining,
@@ -445,6 +453,11 @@ if (!roadmap.length)
       🔒
       {module.moduleExpired && (
         <p className="text-red-400 text-sm mt-2">Module deadline expired</p>
+      )}
+      {module.quizAttemptLimitReached && (
+        <p className="text-red-400 text-sm mt-2 text-center px-3">
+          Quiz locked after {module.moduleAttemptLimit} attempts
+        </p>
       )}
     </div>
   )}

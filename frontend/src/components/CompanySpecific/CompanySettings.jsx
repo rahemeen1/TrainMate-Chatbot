@@ -1,7 +1,7 @@
 // CompanySettings.jsx
 import { useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, deleteField } from "firebase/firestore";
 import { db, auth } from "../../firebase";
 import CompanySidebar from "../../components/CompanySpecific/CompanySidebar";
 import { PencilIcon, CheckIcon } from "@heroicons/react/24/solid";
@@ -9,7 +9,7 @@ import {
   reauthenticateWithCredential,
   EmailAuthProvider,
   updatePassword,
-  updateEmail,
+  verifyBeforeUpdateEmail,
 } from "firebase/auth";
 
 export default function CompanySettings() {
@@ -27,6 +27,7 @@ export default function CompanySettings() {
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   const currentUser = auth.currentUser;
 
@@ -37,8 +38,33 @@ export default function CompanySettings() {
         const snap = await getDoc(ref);
         if (snap.exists()) {
           const c = snap.data();
-          setName(c.companyName || "");
-          setEmail(c.email || "");
+          const authEmail = (auth.currentUser?.email || "").toLowerCase();
+          const pendingEmail = (c.pendingEmail || "").toLowerCase();
+          const savedEmail = (c.email || "").toLowerCase();
+
+          if (pendingEmail && authEmail && pendingEmail === authEmail) {
+            await setDoc(
+              ref,
+              {
+                email: pendingEmail,
+                pendingEmail: deleteField(),
+                emailChangeRequestedAt: deleteField(),
+              },
+              { merge: true }
+            );
+
+            setSuccess("Email verified and updated successfully.");
+            setEmail(pendingEmail);
+          } else {
+            setEmail(c.email || "");
+          }
+
+          setName(c.companyName || c.name || "");
+
+          if (!pendingEmail && authEmail && savedEmail && authEmail !== savedEmail) {
+            await setDoc(ref, { email: authEmail }, { merge: true });
+            setEmail(authEmail);
+          }
         }
       } catch (err) {
         console.error(err);
@@ -53,6 +79,7 @@ export default function CompanySettings() {
 
   const saveField = async (field) => {
     setError("");
+    setSuccess("");
     try {
       const ref = doc(db, "companies", companyId);
 
@@ -76,21 +103,46 @@ export default function CompanySettings() {
 
         setOldPassword("");
         setNewPassword("");
+        setSuccess("Password updated successfully.");
       }
 
       if (field === "email") {
         if (!currentUser) throw new Error("No authenticated user");
-        await updateEmail(currentUser, email);
-        await setDoc(ref, { email }, { merge: true });
+        const normalizedEmail = (email || "").trim().toLowerCase();
+        if (!normalizedEmail) throw new Error("Email is required");
+
+        if ((currentUser.email || "").toLowerCase() === normalizedEmail) {
+          setEditMode({ ...editMode, email: false });
+          return;
+        }
+
+        await verifyBeforeUpdateEmail(currentUser, normalizedEmail);
+        await setDoc(
+          ref,
+          {
+            pendingEmail: normalizedEmail,
+            emailChangeRequestedAt: new Date(),
+          },
+          { merge: true }
+        );
+
+        setSuccess(
+          "Verification email sent to your new address. Please verify it to complete the email change."
+        );
       }
 
       if (field === "name") {
         await setDoc(ref, { companyName: name }, { merge: true });
+        setSuccess("Company name updated successfully.");
       }
 
       setEditMode({ ...editMode, [field]: false });
     } catch (err) {
-      setError(err.message);
+      if (err?.code === "auth/requires-recent-login") {
+        setError("For security, please logout and login again before changing email/password.");
+        return;
+      }
+      setError(err.message || "Failed to update settings");
     }
   };
 
@@ -243,6 +295,7 @@ export default function CompanySettings() {
           </div>
 
           {error && <p className="text-red-500">{error}</p>}
+          {success && <p className="text-green-400">{success}</p>}
         </div>
       </div>
     </div>
