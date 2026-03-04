@@ -1416,21 +1416,12 @@ export const submitQuiz = async (req, res) => {
 			message = agenticDecision.message;
 			recommendations = agenticDecision.recommendations || [];
 
-<<<<<<< HEAD
-			// Hard rule: once max attempts are exhausted, lock module/training
-			if (attemptNumber >= effectiveMaxAttempts) {
-				allowRetry = false;
-				lockModule = true;
-				contactAdmin = true;
-				message = `Maximum ${effectiveMaxAttempts} quiz attempts reached. Training has been locked. Please contact your admin.`;
-=======
 			if (attemptNumber >= effectiveMaxAttempts) {
 				allowRetry = false;
 				retriesGranted = 0;
 				lockModule = true;
 				contactAdmin = true;
 				message = `You have reached the maximum allowed attempts (${effectiveMaxAttempts}) for this module. This module is now locked and your admin has been notified.`;
->>>>>>> 237fc86cc4c83e33609f090d90cf88a9914d4100
 			}
 			
 			console.log(`✓ Agentic Decision Applied: allowRetry=${allowRetry}, retriesGranted=${retriesGranted}, regenerate=${requiresRoadmapRegeneration}, lock=${lockModule}`);
@@ -1616,8 +1607,6 @@ export const submitQuiz = async (req, res) => {
 						console.log(`Module locked by TrainMate decision after ${attemptNumber} attempts`);
 						
 						// 🔒 Lock entire training for user
-<<<<<<< HEAD
-=======
 						const userRef = db
 							.collection("freshers")
 							.doc(companyId)
@@ -1629,7 +1618,6 @@ export const submitQuiz = async (req, res) => {
 						const userSnap = await userRef.get();
 						const userData = userSnap.exists ? userSnap.data() : {};
 						
->>>>>>> 237fc86cc4c83e33609f090d90cf88a9914d4100
 						await userRef.set({
 							trainingLocked: true,
 							trainingLockedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -1638,16 +1626,6 @@ export const submitQuiz = async (req, res) => {
 						}, { merge: true });
 						console.log(`✓ User training locked - requires admin intervention`);
 
-<<<<<<< HEAD
-						await notifyTrainingLockForTesting({
-							companyId,
-							userName: fresherData?.name,
-							userEmail: fresherData?.email,
-							moduleTitle: moduleData?.moduleTitle || "",
-							attemptNumber,
-							score: finalScore,
-						});
-=======
 						try {
 							const currentOrder = moduleData?.order || 0;
 							const nextModule = await unlockNextModuleForUser({ userRef, currentModuleOrder: currentOrder });
@@ -1701,7 +1679,6 @@ export const submitQuiz = async (req, res) => {
 						} catch (emailErr) {
 							console.warn("Training lock email failed (non-critical):", emailErr.message);
 						}
->>>>>>> 237fc86cc4c83e33609f090d90cf88a9914d4100
 					} else if (allowRetry) {
 						updateData.quizLocked = false; // Unlock for retry
 						console.log(`Quiz unlocked for retry by TrainMate decision (${retriesGranted} retries granted)`);
@@ -1807,11 +1784,7 @@ export const adminUnlockModule = async (req, res) => {
 		await moduleRef.set({
 			quizLocked: false,
 			moduleLocked: false,
-<<<<<<< HEAD
-			completed: false,
-=======
 			status: "in-progress",
->>>>>>> 237fc86cc4c83e33609f090d90cf88a9914d4100
 			requiresAdminContact: false,
 			adminUnlockAttemptsGranted: ADMIN_FINAL_RETRY_ATTEMPTS,
 			adminFinalRetryGranted: true,
