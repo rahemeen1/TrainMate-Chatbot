@@ -879,6 +879,25 @@ console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboa
           userData: user,
         });
       }
+
+      // Create Google Calendar event for roadmap generation
+      try {
+        await createRoadmapGeneratedEvent({
+          companyId,
+          deptId,
+          userId: user.userId,
+          userName: user.name,
+          attendeeEmail: user.email,
+          companyName,
+          trainingTopic: trainingOn,
+          generatedAt: new Date(),
+          timeZone: user.timeZone || "UTC",
+        });
+        console.log("✅ Google Calendar event created for roadmap generation");
+      } catch (calendarErr) {
+        console.warn("⚠️ Google Calendar event creation failed (non-critical):", calendarErr.message);
+        // Don't fail the request if calendar event creation fails
+      }
     } catch (notificationErr) {
       console.warn("⚠️ Notification sending failed (non-critical):", notificationErr.message);
       // Don't fail the request if notifications fail

@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import { doc, updateDoc, getDoc } from "firebase/firestore";
 import { db } from "../../firebase";
 import TrainingLockedScreen from "./TrainingLockedScreen";
 
-const TAB_AWAY_THRESHOLD_SECONDS = 5;
+const TAB_AWAY_THRESHOLD_MS = 100;
 
 export default function ModuleQuiz() {
 	const { companyId, deptId, userId, moduleId } = useParams();
@@ -24,13 +24,50 @@ export default function ModuleQuiz() {
 	const [oneLinerAnswers, setOneLinerAnswers] = useState({});
 	const [tabWarning, setTabWarning] = useState("");
 	const [tabSwitchAttempts, setTabSwitchAttempts] = useState(0);
+	const [showInitialWarning, setShowInitialWarning] = useState(false);
 	const awayStartedAtRef = useRef(null);
 	const adminNotifiedRef = useRef(false);
 	const warningTimeoutRef = useRef(null);
+	const initialWarningTimeoutRef = useRef(null);
 
 	const canGenerate = useMemo(() => {
 		return companyId && deptId && userId && moduleId;
 	}, [companyId, deptId, userId, moduleId]);
+
+	// Function to shuffle questions in quiz
+	const shuffleQuiz = (quizData) => {
+		const shuffleArray = (arr) => {
+			const newArr = [...arr];
+			for (let i = newArr.length - 1; i > 0; i--) {
+				const j = Math.floor(Math.random() * (i + 1));
+				[newArr[i], newArr[j]] = [newArr[j], newArr[i]];
+			}
+			return newArr;
+		};
+
+		return {
+			...quizData,
+			mcq: shuffleArray(quizData.mcq || []),
+			oneLiners: shuffleArray(quizData.oneLiners || []),
+		};
+	};
+
+	// Show initial tab switching warning for 5 seconds
+	useEffect(() => {
+		if (!quiz) return;
+		if (showInitialWarning) return;
+
+		setShowInitialWarning(true);
+		initialWarningTimeoutRef.current = setTimeout(() => {
+			setShowInitialWarning(false);
+		}, 5000);
+
+		return () => {
+			if (initialWarningTimeoutRef.current) {
+				clearTimeout(initialWarningTimeoutRef.current);
+			}
+		};
+	}, [quiz]);
 
 	// Fetch user data to check training lock status
 	useEffect(() => {
@@ -81,11 +118,16 @@ export default function ModuleQuiz() {
 		setTimerRunning(false);
 		setAutoSubmitted(false);
 		setTabSwitchAttempts(0);
+		setShowInitialWarning(false);
 		awayStartedAtRef.current = null;
 		adminNotifiedRef.current = false;
 		if (warningTimeoutRef.current) {
 			clearTimeout(warningTimeoutRef.current);
 			warningTimeoutRef.current = null;
+		}
+		if (initialWarningTimeoutRef.current) {
+			clearTimeout(initialWarningTimeoutRef.current);
+			initialWarningTimeoutRef.current = null;
 		}
 		setLoading(true);
 
@@ -99,7 +141,20 @@ export default function ModuleQuiz() {
 			const data = await res.json();
 			
 			if (!res.ok) {
-				throw new Error(data?.error || "Quiz generation failed");
+				if (res.status === 403 && data?.trainingLocked) {
+					const lockedUserData = {
+						trainingLocked: true,
+						requiresAdminContact: true,
+						trainingLockedReason: data?.message || "Training locked",
+					};
+					setUserData((prev) => ({
+						...(prev || {}),
+						...lockedUserData,
+					}));
+					navigate("/fresher-dashboard", { replace: true, state: { userData: lockedUserData } });
+					return;
+				}
+				throw new Error(data?.message || data?.error || "Quiz generation failed");
 			}
 
 			setQuiz(data);
@@ -149,7 +204,20 @@ export default function ModuleQuiz() {
 			const data = await res.json();
 			
 			if (!res.ok) {
-				throw new Error(data?.error || "Quiz submission failed");
+				if (res.status === 403 && data?.trainingLocked) {
+					const lockedUserData = {
+						trainingLocked: true,
+						requiresAdminContact: true,
+						trainingLockedReason: data?.message || "Training locked",
+					};
+					setUserData((prev) => ({
+						...(prev || {}),
+						...lockedUserData,
+					}));
+					navigate("/training-locked", { replace: true, state: { userData: lockedUserData } });
+					return;
+				}
+				throw new Error(data?.message || data?.error || "Quiz submission failed");
 			}
 
 			navigate(
@@ -198,9 +266,9 @@ export default function ModuleQuiz() {
 	
 			const awayMs = Date.now() - awayStartedAtRef.current;
 			awayStartedAtRef.current = null;
-			const awaySeconds = Math.floor(awayMs / 1000);
+			const awaySeconds = Number((awayMs / 1000).toFixed(1));
 	
-			if (awaySeconds < TAB_AWAY_THRESHOLD_SECONDS) return;
+			if (awayMs < TAB_AWAY_THRESHOLD_MS) return;
 	
 			const nextAttempt = tabSwitchAttempts + 1;
 			setTabSwitchAttempts(nextAttempt);
@@ -216,79 +284,82 @@ export default function ModuleQuiz() {
 			};
 	
 			if (nextAttempt === 1) {
-				showTimedWarning(
-					"You have been on another tab for more than 5 seconds. You have only one more chance. If it happens again, your quiz will be auto-submitted and admin will be notified.",
-					7000
-				);
-				await reportProctoringViolation({
-					...basePayload,
-					action: "warning",
-					notifyAdmin: false,
-				});
+			// First violation: Shuffle quiz and show warning
+			setQuiz((prevQuiz) => shuffleQuiz(prevQuiz));
+			showTimedWarning(
+					"⚠️ Tab switch detected. One more switch and your quiz will be auto-submitted and admin will be notified.",
+				7000
+			);
+			await reportProctoringViolation({
+				...basePayload,
+				action: "warning",
+				notifyAdmin: false,
+			});
+			return;
+		}
+
+		// Second violation: Auto-submit
+		showTimedWarning("❌ Second violation detected. Your quiz is being auto-submitted and admin has been notified.", 7000);
+		setTimerRunning(false);
+
+		if (!adminNotifiedRef.current) {
+			adminNotifiedRef.current = true;
+			await reportProctoringViolation({
+				...basePayload,
+				action: "auto_submit",
+				notifyAdmin: true,
+			});
+		}
+
+		if (!autoSubmitted && !submitting) {
+			setAutoSubmitted(true);
+			handleSubmit();
+		}
+	};
+
+	useEffect(() => {
+		const quizInProgress = Boolean(quiz) && timerRunning && timeLeft > 0 && !submitting;
+		if (!quizInProgress) {
+			setTabWarning("");
+			awayStartedAtRef.current = null;
+			return undefined;
+		}
+
+		const startAwayTracking = () => {
+			if (awayStartedAtRef.current) return;
+			awayStartedAtRef.current = Date.now();
+		};
+
+		const handleVisibilityChange = () => {
+			if (document.hidden) {
+				startAwayTracking();
 				return;
 			}
-	
-			showTimedWarning("Second violation detected. Your quiz is being auto-submitted and admin has been notified.", 7000);
-			setTimerRunning(false);
-	
-			if (!adminNotifiedRef.current) {
-				adminNotifiedRef.current = true;
-				await reportProctoringViolation({
-					...basePayload,
-					action: "auto_submit",
-					notifyAdmin: true,
-				});
-			}
-	
-			if (!autoSubmitted && !submitting) {
-				setAutoSubmitted(true);
-				handleSubmit();
+			processAwayDuration();
+		};
+
+		const handleWindowBlur = () => {
+			startAwayTracking();
+		};
+
+		const handleWindowFocus = () => {
+			processAwayDuration();
+		};
+
+		document.addEventListener("visibilitychange", handleVisibilityChange);
+		window.addEventListener("blur", handleWindowBlur);
+		window.addEventListener("focus", handleWindowFocus);
+
+		return () => {
+			document.removeEventListener("visibilitychange", handleVisibilityChange);
+			window.removeEventListener("blur", handleWindowBlur);
+			window.removeEventListener("focus", handleWindowFocus);
+			if (warningTimeoutRef.current) {
+				clearTimeout(warningTimeoutRef.current);
+				warningTimeoutRef.current = null;
 			}
 		};
-	
-		useEffect(() => {
-			const quizInProgress = Boolean(quiz) && timerRunning && timeLeft > 0 && !submitting;
-			if (!quizInProgress) {
-				setTabWarning("");
-				awayStartedAtRef.current = null;
-				return undefined;
-			}
-	
-			const startAwayTracking = () => {
-				if (awayStartedAtRef.current) return;
-				awayStartedAtRef.current = Date.now();
-			};
-	
-			const handleVisibilityChange = () => {
-				if (document.hidden) {
-					startAwayTracking();
-					return;
-				}
-				processAwayDuration();
-			};
-	
-			const handleWindowBlur = () => {
-				startAwayTracking();
-			};
-	
-			const handleWindowFocus = () => {
-				processAwayDuration();
-			};
-	
-			document.addEventListener("visibilitychange", handleVisibilityChange);
-			window.addEventListener("blur", handleWindowBlur);
-			window.addEventListener("focus", handleWindowFocus);
-	
-			return () => {
-				document.removeEventListener("visibilitychange", handleVisibilityChange);
-				window.removeEventListener("blur", handleWindowBlur);
-				window.removeEventListener("focus", handleWindowFocus);
-				if (warningTimeoutRef.current) {
-					clearTimeout(warningTimeoutRef.current);
-					warningTimeoutRef.current = null;
-				}
-			};
-		}, [quiz, timerRunning, timeLeft, submitting, tabSwitchAttempts, autoSubmitted]);
+	}, [quiz, timerRunning, timeLeft, submitting, tabSwitchAttempts, autoSubmitted]);
 
 	const formatTime = (seconds) => {
 		const mins = Math.floor(seconds / 60);
@@ -334,11 +405,34 @@ export default function ModuleQuiz() {
 
 	// Check if training is locked
 	if (userData?.trainingLocked) {
-		return <TrainingLockedScreen userData={userData} />;
+		return <Navigate to="/training-locked" replace state={{ userData }} />;
 	}
 
 	return (
 		<div className="min-h-screen bg-[#031C3A] text-white p-8">
+			{/* Initial Tab Switching Warning Modal */}
+			{showInitialWarning && (
+				<div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 animate-fade-in">
+					<div className="bg-gradient-to-b from-[#021B36] to-[#031C3A] border-2 border-[#00FFFF] rounded-2xl p-8 max-w-md shadow-2xl animate-bounce-subtle">
+						<div className="text-center space-y-4">
+							<div className="text-5xl">⚠️</div>
+							<h2 className="text-2xl font-bold text-[#00FFFF]">Important: Tab Switching</h2>
+							<div className="space-y-3 text-[#AFCBE3] text-sm">
+								<p className="text-base font-semibold text-yellow-400">
+									⏰ This warning closes in 5 seconds
+								</p>
+								<div className="bg-[#031C3A]/50 border border-[#00FFFF30] rounded-lg p-4 space-y-2">
+									<p>🚫 <strong>Do not switch tabs</strong> during the quiz.</p>
+									<p>⚡ <strong>First violation (0.1 sec):</strong> Strict warning is triggered.</p>
+									<p>✋ <strong>Second violation:</strong> Quiz auto-submits and admin is notified.</p>
+								</div>
+								<p className="text-xs text-[#8EB6D3]">Stay focused to complete the quiz successfully!</p>
+							</div>
+						</div>
+					</div>
+				</div>
+			)}
+
 			{tabWarning && (
 				<div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-[#021B36] border border-[#FF6B6B] text-[#FFAAAA] px-6 py-3 rounded-lg shadow-lg">
 					{tabWarning}

@@ -1,7 +1,7 @@
 ﻿// Roadmap.jsx
 
 import { useEffect, useRef, useState } from "react";
-import { useParams, useLocation, useNavigate } from "react-router-dom";
+import { useParams, useLocation, useNavigate, Navigate } from "react-router-dom";
 import { db } from "../../firebase";
 import { collection, getDocs, doc, getDoc, updateDoc } from "firebase/firestore";
 import axios from "axios";
@@ -256,6 +256,10 @@ const getUnlockedModules = () => {
     const unlocked = unlockedNext;
     if (!module.completed) unlockedNext = false;
 
+    const moduleMaxAttempts = Math.max(3, Number(module.maxAttemptsOverride) || 0);
+    const moduleAttempts = Number(module.quizAttempts) || 0;
+    const quizAttemptsExhausted = !module.quizPassed && moduleAttempts >= moduleMaxAttempts;
+
     // Calculate module time remaining
     const timeRemaining = getModuleTimeRemaining(module);
     const moduleExpired = isModuleExpired(module);
@@ -265,11 +269,13 @@ const getUnlockedModules = () => {
 
     return {
       ...module,
-      locked: !unlocked || moduleExpired || module.moduleLocked,
+      locked: !unlocked || moduleExpired || module.moduleLocked || module.quizLocked || quizAttemptsExhausted,
       quizTimeUnlocked: quizUnlockStatus.isUnlocked,
       quizUnlockMessage: quizUnlockStatus.message || "",
       timeRemaining,
-      moduleExpired
+      moduleExpired,
+      moduleMaxAttempts,
+      quizAttemptsExhausted,
     };
   });
 };
@@ -365,10 +371,7 @@ if (loading)
     </div>
   );
 
-// Check if training is locked
-if (userData?.trainingLocked) {
-  return <TrainingLockedScreen userData={userData} />;
-}
+
 
 if (!roadmap.length)
   return (
@@ -446,6 +449,11 @@ if (!roadmap.length)
       {module.moduleExpired && (
         <p className="text-red-400 text-sm mt-2">Module deadline expired</p>
       )}
+      {module.quizAttemptsExhausted && (
+        <p className="text-red-400 text-sm mt-2 text-center px-4">
+          Max attempts reached ({module.quizAttempts}/{module.moduleMaxAttempts}). Contact admin.
+        </p>
+      )}
     </div>
   )}
 
@@ -462,6 +470,13 @@ if (!roadmap.length)
     <p className="text-xs text-[#AFCBE3] mb-2">
       ⏱ {module.estimatedDays} days
     </p>
+    
+    {module.moduleExpired && (
+      <p className="text-xs text-red-400 font-semibold mb-2 bg-red-500/10 px-2 py-1 rounded inline-block">
+        ⏰ DEADLINE EXCEEDED - Module Expired
+      </p>
+    )}
+    
     {module.completed && getCompletionDays(module) && (
       <p className="text-xs text-green-400 mb-2">
         ✓ Completed in {getCompletionDays(module)} day{getCompletionDays(module) !== 1 ? "s" : ""}
@@ -485,19 +500,15 @@ if (!roadmap.length)
   </div>
 
   {/* Status Badge */}
-  {!module.locked && (
-    <>
-      <span className={`absolute top-4 right-4 px-3 py-1 rounded-full text-xs
-        ${module.completed
-          ? "bg-green-500/20 text-green-400"
-          : "bg-yellow-500/20 text-yellow-400"}`}
-      >
-        {module.completed ? "Completed" : "In Progress"}
-      </span>
-      
-      
-    </>
-  )}
+  <span className={`absolute top-4 right-4 px-3 py-1 rounded-full text-xs font-semibold
+    ${module.moduleExpired
+      ? "bg-red-600/30 text-red-400"
+      : module.completed
+      ? "bg-green-500/20 text-green-400"
+      : "bg-yellow-500/20 text-yellow-400"}`}
+  >
+    {module.moduleExpired ? "⏰ EXPIRED" : module.completed ? "✓ Completed" : "In Progress"}
+  </span>
 
   {/* 🔒 50% TIME LOCK WARNING: Quiz not yet available */}
   {/* Displayed when quiz is locked due to insufficient time elapsed (< 50% of module time) */}

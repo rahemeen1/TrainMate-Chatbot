@@ -25,8 +25,9 @@ import ViewModuleDetails from "./components/Fresher/ViewModuleDetails";
 import ModuleQuiz from "./components/Fresher/ModuleQuiz";
 import ModuleQuizResults from "./components/Fresher/ModuleQuizResults";
 import Certificate from "./components/Fresher/Certificate";
+import TrainingLockedScreen from "./components/Fresher/TrainingLockedScreen";
 import GoogleAuthCallback from "./pages/GoogleAuthCallback";
- 
+import CompanyGoogleAuthCallback from "./pages/CompanyGoogleAuthCallback";
 
 export default function App() {
   return (
@@ -34,6 +35,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/auth/google/callback" element={<GoogleAuthCallback />} />
+        <Route path="/auth/company-google-callback" element={<CompanyGoogleAuthCallback />} />
         <Route path="/license" element={<License />} />
         <Route path="/compare-plans" element={<ComparePlans />} />
         <Route path="/super-admin-dashboard" element={<AdminDashboard />} /> 
@@ -58,6 +60,7 @@ export default function App() {
         <Route path="/module-details/:companyId/:deptId/:userId/:moduleId/:companyName" element={<ViewModuleDetails />} />
         <Route path="/quiz/:companyId/:deptId/:userId/:moduleId" element={<ModuleQuiz />} />
         <Route path="/quiz-results/:companyId/:deptId/:userId/:moduleId" element={<ModuleQuizResults />} />
+        <Route path="/training-locked" element={<TrainingLockedScreen />} />
         <Route path="/CompanySpecific/CompanyDetails" element={<CompanyDetails />} />
         <Route path="/company-license-payment" element={<CompanyLicensePayment />} />
       </Routes>

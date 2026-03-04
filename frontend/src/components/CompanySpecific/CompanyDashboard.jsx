@@ -64,7 +64,8 @@ const QUESTIONS = [
   { text: "Select your departments", type: "multi-select", options: DEPARTMENT_OPTIONS },
   { text: "Training duration", type: "single-select", options: ["1 month", "3 months", "6 months"] },
   { text: "Which plan do you want to proceed with?", type: "plan-select", options: PLAN_OPTIONS },
-   { text: "Tell us about your company", type: "text" },
+  { text: "Tell us about your company", type: "text" },
+  { text: "Connect Google Calendar (optional)", type: "calendar-connect" },
 ];
 export default function CompanyDashboard() {
   const navigate = useNavigate();
@@ -87,6 +88,8 @@ export default function CompanyDashboard() {
   const [companyLicense, setCompanyLicense] = useState("License Pro");
   const [showUpgradeNotice, setShowUpgradeNotice] = useState(false);
   const [savingOnboarding, setSavingOnboarding] = useState(false);
+  const [googleAuthUrl, setGoogleAuthUrl] = useState(null);
+  const [googleAuthLoading, setGoogleAuthLoading] = useState(false);
 
   const selectedPlan = answers[2];
   const effectiveLicense = selectedPlan || companyLicense;
@@ -199,7 +202,47 @@ console.log("companyId:", companyId);
     );
   };
 
-  const handleNextStep = () => setStep(prev => prev + 1);
+  // Generate Google Calendar Auth URL
+  const generateGoogleAuthUrl = async () => {
+    console.log("Connecting to Google Calendar for company:", companyId);
+    setGoogleAuthLoading(true);
+    try {
+      const response = await fetch(
+        `/api/auth/company-google-auth-url?companyId=${companyId}`
+      );
+      
+      console.log("Response status:", response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Failed to fetch auth URL:", errorText);
+        alert(`Failed to connect: ${errorText}`);
+        return;
+      }
+      
+      const data = await response.json();
+      console.log("Auth URL response:", data);
+      
+      if (data.authUrl) {
+        setGoogleAuthUrl(data.authUrl);
+        // Redirect to Google OAuth
+        console.log("Redirecting to Google OAuth...");
+        window.location.href = data.authUrl;
+      } else {
+        console.error("No auth URL received:", data);
+        alert("Failed to get authorization URL from server");
+      }
+    } catch (err) {
+      console.error("Error generating Google Auth URL:", err);
+      alert(`Error: ${err.message}. Make sure the backend server is running.`);
+    } finally {
+      setGoogleAuthLoading(false);
+    }
+  };
+
+  const handleNextStep = () => {
+    setStep(prev => prev + 1);
+  };
   const handlePrevStep = () => setStep(prev => (prev > 1 ? prev - 1 : prev));
 
   // Fetch total users
@@ -433,25 +476,27 @@ const CustomXAxisTick = ({ x, y, payload }) => {
                 </p>
               </div>
 
-              <div className="flex flex-col items-start md:items-end gap-2">
-                <span className="text-xs text-[#8EB6D3] uppercase tracking-wide">Current Plan</span>
-                <span
-                  className={`px-3 py-1 rounded-lg text-sm font-semibold border ${
-                    isBasicLicense
-                      ? "bg-[#7FA3BF]/20 text-[#D8ECFF] border-[#AFCBE355]"
-                      : "bg-[#00FFFF]/20 text-[#00FFFF] border-[#00FFFF66]"
-                  }`}
-                >
-                  {currentPlanLabel} License
-                </span>
-                <span className="text-xs text-[#AFCBE3]">
-                  {new Date().toLocaleDateString("en-GB", {
-                    day: "2-digit",
-                    month: "short",
-                    year: "numeric",
-                  })}
-                </span>
-              </div>
+              {hasDepartments && (
+                <div className="flex flex-col items-start md:items-end gap-2">
+                  <span className="text-xs text-[#8EB6D3] uppercase tracking-wide">Current Plan</span>
+                  <span
+                    className={`px-3 py-1 rounded-lg text-sm font-semibold border ${
+                      isBasicLicense
+                        ? "bg-[#7FA3BF]/20 text-[#D8ECFF] border-[#AFCBE355]"
+                        : "bg-[#00FFFF]/20 text-[#00FFFF] border-[#00FFFF66]"
+                    }`}
+                  >
+                    {currentPlanLabel} License
+                  </span>
+                  <span className="text-xs text-[#AFCBE3]">
+                    {new Date().toLocaleDateString("en-GB", {
+                      day: "2-digit",
+                      month: "short",
+                      year: "numeric",
+                    })}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -535,6 +580,47 @@ const CustomXAxisTick = ({ x, y, payload }) => {
       );
     })}
   </div>
+) : QUESTIONS[step - 1].type === "calendar-connect" ? (
+  <div className="w-full max-w-2xl mx-auto space-y-6">
+    <div className="bg-gradient-to-br from-[#00FFFF]/10 to-[#007BFF]/10 border-2 border-[#00FFFF] rounded-xl p-8 text-center">
+      <div className="text-5xl mb-4">📅</div>
+      <h2 className="text-2xl font-bold text-[#E8F7FF] mb-2">Connect Google Calendar</h2>
+      <p className="text-sm italic text-[#9FC2DA] mb-4">
+        We'll sync your freshers' training schedules, reminders, and quiz deadlines directly to your calendar so nothing gets missed.
+      </p>
+      <p className="text-[#AFCBE3] mb-6">
+        Enable automatic calendar event scheduling for your training program. This will allow us to create reminders, module updates, and roadmap notifications directly in your calendar.
+      </p>
+      <div className="space-y-3 text-sm text-[#9FC2DA] text-left mb-6 bg-[#021B36]/50 p-4 rounded-lg">
+        <p className="flex items-center gap-2">
+          <span className="text-[#00FFFF]">✓</span> Daily training reminders
+        </p>
+        <p className="flex items-center gap-2">
+          <span className="text-[#00FFFF]">✓</span> Module unlock notifications
+        </p>
+        <p className="flex items-center gap-2">
+          <span className="text-[#00FFFF]">✓</span> Roadmap generation updates
+        </p>
+        <p className="flex items-center gap-2">
+          <span className="text-[#00FFFF]">✓</span> Quiz scheduling
+        </p>
+      </div>
+      <button
+        onClick={generateGoogleAuthUrl}
+        disabled={googleAuthLoading}
+        className={`w-full px-8 py-3 rounded-lg font-semibold transition-all text-[#031C3A] ${
+          googleAuthLoading
+            ? "bg-[#00FFFF]/50 cursor-not-allowed"
+            : "bg-[#00FFFF] hover:bg-[#00FFD1] hover:shadow-lg"
+        }`}
+      >
+        {googleAuthLoading ? "Connecting..." : "🔗 Connect Google Calendar"}
+      </button>
+      <p className="text-xs text-[#7FA3BF] mt-4">
+        You can skip this step and connect later from company settings.
+      </p>
+    </div>
+  </div>
 ) : (
   <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
     {QUESTIONS[step - 1].options.map((opt) => (
@@ -558,10 +644,10 @@ const CustomXAxisTick = ({ x, y, payload }) => {
     ))}
   </div>
 )}
-                </div>
+                  </div>
 
                 {/* Navigation */}
-                <div className="flex justify-between mt-6">
+                <div className="flex justify-between items-center gap-3 mt-6">
                   {step > 1 && step <= QUESTIONS.length && (
                     <button
                       onClick={handlePrevStep}
@@ -681,21 +767,23 @@ const CustomXAxisTick = ({ x, y, payload }) => {
           }
         `}</style>
         
-        <button
-          onClick={handleAssistantClick}
-          className={`chat-button fixed bottom-8 right-8 w-16 h-16 rounded-full flex items-center justify-center shadow-2xl transition-transform duration-300 z-40 border-2 ${
-            isBasicLicense
-              ? "bg-[#7FA3BF] border-[#AFCBE3]/30 hover:scale-110"
-              : "bg-gradient-to-br from-[#00FFFF] via-[#00D9FF] to-[#007BFF] border-[#00FFFF]/30 hover:scale-125"
-          }`}
-          title={isBasicLicense ? "Upgrade to Pro to unlock AI Assistant" : "Ask Fresher Assistant"}
-        >
-          <span className="text-3xl font-black text-white drop-shadow-lg select-none">
-            {isBasicLicense ? "🔒" : "?"}
-          </span>
-        </button>
+        {hasDepartments && (
+          <button
+            onClick={handleAssistantClick}
+            className={`chat-button fixed bottom-8 right-8 w-16 h-16 rounded-full flex items-center justify-center shadow-2xl transition-transform duration-300 z-40 border-2 ${
+              isBasicLicense
+                ? "bg-[#7FA3BF] border-[#AFCBE3]/30 hover:scale-110"
+                : "bg-gradient-to-br from-[#00FFFF] via-[#00D9FF] to-[#007BFF] border-[#00FFFF]/30 hover:scale-125"
+            }`}
+            title={isBasicLicense ? "Upgrade to Pro to unlock AI Assistant" : "Ask Fresher Assistant"}
+          >
+            <span className="text-3xl font-black text-white drop-shadow-lg select-none">
+              {isBasicLicense ? "🔒" : "?"}
+            </span>
+          </button>
+        )}
 
-        {showUpgradeNotice && isBasicLicense && (
+        {hasDepartments && showUpgradeNotice && isBasicLicense && (
           <div className="fixed bottom-28 right-8 max-w-xs bg-[#021B36] border border-[#00FFFF40] rounded-xl px-4 py-3 z-50 shadow-2xl">
             <p className="text-sm text-[#AFCBE3]">
               AI Assistant is available in Pro level license. Please upgrade to Pro to unlock this feature.
@@ -704,7 +792,7 @@ const CustomXAxisTick = ({ x, y, payload }) => {
         )}
 
         {/* Side Panel Chatbot */}
-        {!isBasicLicense && (
+        {!isBasicLicense && hasDepartments && (
         <div
           className={`fixed top-0 right-0 h-screen w-full md:w-96 bg-[#031C3A] border-l border-[#00FFFF30] shadow-2xl transform transition-transform duration-300 z-50 ${
             showChatbot ? "translate-x-0" : "translate-x-full"

@@ -1,6 +1,6 @@
 //FresherDashboard.jsx
 import { useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, Navigate } from "react-router-dom";
 import { signOut } from "firebase/auth";
 import {
   doc,
@@ -351,16 +351,8 @@ if (loading) {
       <style>{scrollbarStyles}</style>
       <div className="flex h-screen bg-[#031C3A] text-white overflow-hidden">
         {/* SIDE MENU */}
-        <div className="w-64 bg-[#021B36]/90 p-4 overflow-hidden custom-scrollbar relative">
-          {isTrainingLocked && (
-            <div className="absolute inset-0 bg-[#021B36]/80 backdrop-blur-sm z-10 flex items-center justify-center">
-              <div className="text-center">
-                <div className="text-sm text-[#AFCBE3]">Sidebar Locked</div>
-                <div className="text-xs text-[#6D8BAB]">Contact admin to unlock</div>
-              </div>
-            </div>
-          )}
-          <div className={isTrainingLocked ? "pointer-events-none opacity-50" : ""}>
+        <div className={`w-64 bg-[#021B36]/90 p-4 overflow-hidden custom-scrollbar ${isTrainingLocked ? "pointer-events-none opacity-50" : ""}`}>
+          <div>
             <FresherSideMenu
               userId={userId}
               companyId={companyId}
@@ -373,23 +365,14 @@ if (loading) {
 
         {/* MAIN */}
         <div className="flex-1 p-10 overflow-y-auto custom-scrollbar">
+        {/* TRAINING LOCKED MESSAGE */}
         {isTrainingLocked && (
-          <div className="bg-[#00FFFF]/10 border border-[#00FFFF]/30 rounded-lg p-4 mb-4 flex items-start gap-3">
-            <div className="text-[#00FFFF] text-2xl flex-shrink-0">🔒</div>
-            <div className="flex-1">
-              <h3 className="text-[#00FFFF] font-semibold text-lg">Training Locked</h3>
-              <p className="text-[#AFCBE3] text-sm">
-                Your access is paused. Contact your company admin to unlock training.
-              </p>
-            </div>
-            <button
-              onClick={handleLogout}
-              className="ml-2 px-4 py-2 border border-[#00FFFF] text-[#00FFFF] rounded-lg text-sm hover:bg-[#00FFFF]/10 transition"
-            >
-              Logout
-            </button>
+          <div className="bg-red-500/20 border-l-4 border-red-500 px-4 py-3 mb-6 rounded flex items-center gap-3">
+            <span className="text-2xl">🔒</span>
+            <p className="text-red-200 font-medium">Your admin is notified. According to your progress, they will take action.</p>
           </div>
         )}
+
         {/* MISSED DATES NOTIFICATION - Only shown for first 10 minutes */}
         {showMissedDates && missedDateInfo?.hasMissedDates && (
           <div className="bg-red-900/40 border border-red-500 rounded-lg p-4 mb-4 flex items-start gap-3">
@@ -426,7 +409,12 @@ if (loading) {
               Your training journey starts here
             </p>
           </div>
-          {missedDateInfo && missedDateInfo.currentStreak > 0 && (
+          {isTrainingLocked ? (
+            <div className="bg-red-500/20 border border-red-500/50 rounded-lg px-4 py-2 flex items-center gap-2">
+              <span className="text-2xl">🔒</span>
+              <span className="text-red-300 font-semibold">Your training is locked</span>
+            </div>
+          ) : missedDateInfo && missedDateInfo.currentStreak > 0 && (
             <div className="bg-gradient-to-r from-yellow-600/30 to-orange-600/30 border border-yellow-400 rounded-full px-3 py-1.5 flex items-center gap-2">
               <span className="text-lg">🔥</span>
               <div className="flex items-baseline gap-1">
@@ -453,38 +441,33 @@ if (loading) {
         </div>
 
         {/* TRAINING STATS */}
-        {missedDateInfo && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-            <div className="bg-[#021B36]/80 p-4 rounded-lg border border-green-500/30">
-              <p className="text-[#AFCBE3] text-xs font-semibold uppercase mb-1">Active Days</p>
-              <p className="text-green-400 text-2xl font-bold">{missedDateInfo.activeDays}</p>
-              <p className="text-[#AFCBE3] text-xs mt-1">days trained</p>
-            </div>
-
-            <div className="bg-[#021B36]/80 p-4 rounded-lg border border-red-500/30">
-              <p className="text-[#AFCBE3] text-xs font-semibold uppercase mb-1">Missed Days</p>
-              <p className="text-red-400 text-2xl font-bold">{missedDateInfo.missedDays || 0}</p>
-              <p className="text-[#AFCBE3] text-xs mt-1">days missed</p>
-            </div>
-            
-             <div className="bg-[#021B36]/80 p-4 rounded-lg border border-purple-500/30">
-              <p className="text-[#AFCBE3] text-xs font-semibold uppercase mb-1">Active Module</p>
-              <p className="text-cyan-400 text-sm font-bold line-clamp-2" title={missedDateInfo.activeModuleName}>
-                {missedDateInfo.activeModuleName || "No active module"}
-              </p>
-              <p className="text-[#AFCBE3] text-xs mt-1">current focus</p>
-            </div>
-
-            <div className="bg-[#021B36]/80 p-4 rounded-lg border border-[#00FFFF]/30">
-              <p className="text-[#AFCBE3] text-xs font-semibold uppercase mb-1">Total Days</p>
-              <p className="text-[#00FFFF] text-2xl font-bold">{missedDateInfo.totalExpectedDays}</p>
-              <p className="text-[#AFCBE3] text-xs mt-1"> for training</p>
-            </div>
-
-           
-
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+          <div className="bg-[#021B36]/80 p-4 rounded-lg border border-green-500/30">
+            <p className="text-[#AFCBE3] text-xs font-semibold uppercase mb-1">Active Days</p>
+            <p className="text-green-400 text-2xl font-bold">{missedDateInfo?.activeDays || "-"}</p>
+            <p className="text-[#AFCBE3] text-xs mt-1">days trained</p>
           </div>
-        )}
+
+          <div className="bg-[#021B36]/80 p-4 rounded-lg border border-red-500/30">
+            <p className="text-[#AFCBE3] text-xs font-semibold uppercase mb-1">Missed Days</p>
+            <p className="text-red-400 text-2xl font-bold">{missedDateInfo?.missedDays || 0}</p>
+            <p className="text-[#AFCBE3] text-xs mt-1">days missed</p>
+          </div>
+          
+          <div className="bg-[#021B36]/80 p-4 rounded-lg border border-purple-500/30">
+            <p className="text-[#AFCBE3] text-xs font-semibold uppercase mb-1">Active Module</p>
+            <p className="text-cyan-400 text-sm font-bold line-clamp-2" title={missedDateInfo?.activeModuleName || ""}>
+              {missedDateInfo?.activeModuleName || "No active module"}
+            </p>
+            <p className="text-[#AFCBE3] text-xs mt-1">current focus</p>
+          </div>
+
+          <div className="bg-[#021B36]/80 p-4 rounded-lg border border-[#00FFFF]/30">
+            <p className="text-[#AFCBE3] text-xs font-semibold uppercase mb-1">Total Days</p>
+            <p className="text-[#00FFFF] text-2xl font-bold">{missedDateInfo?.totalExpectedDays || "-"}</p>
+            <p className="text-[#AFCBE3] text-xs mt-1"> for training</p>
+          </div>
+        </div>
 
         <div className="bg-[#021B36]/80 p-6 rounded-xl border border-[#00FFFF30] mb-6">
           <h2 className="text-xl text-[#00FFFF] font-semibold mb-2">Overall Training Progress</h2>
@@ -498,24 +481,19 @@ if (loading) {
         </div>
 
            <div className="flex gap-4 mt-4">
-  {roadmapGenerated ? (
+  {roadmapGenerated && !isTrainingLocked ? (
     <button
       onClick={() => {
-        if (isTrainingLocked) return;
         navigate(`/roadmap/${companyId}/${deptId}/${userId}/${companyName}`);
       }}
-      disabled={isTrainingLocked}
-      className={`px-6 py-3 bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] font-semibold rounded-xl shadow-lg transition-transform duration-200 ${
-        isTrainingLocked ? "opacity-50 cursor-not-allowed" : "hover:scale-105 hover:shadow-2xl"
-      }`}
-      title={isTrainingLocked ? "Training locked. Contact admin to unlock." : "View Roadmap"}
+      className="px-6 py-3 bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] font-semibold rounded-xl shadow-lg transition-transform duration-200 hover:scale-105 hover:shadow-2xl"
+      title="View Roadmap"
     >
       View Roadmap
     </button>
-  ) : (
+  ) : !isTrainingLocked ? (
     <button
       onClick={async () => {
-        if (isTrainingLocked) return;
         setGeneratingRoadmap(true);
         try {
           // Navigate to roadmap page while generating
@@ -527,13 +505,13 @@ if (loading) {
           setGeneratingRoadmap(false);
         }
       }}
-      disabled={generatingRoadmap || isTrainingLocked}
+      disabled={generatingRoadmap}
       className="px-6 py-3 bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] font-semibold rounded-xl shadow-lg hover:scale-105 hover:shadow-2xl transition-transform duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-      title={isTrainingLocked ? "Training locked. Contact admin to unlock." : "Generate Roadmap"}
+      title="Generate Roadmap"
     >
       {generatingRoadmap ? "Generating..." : " Generate Roadmap"}
     </button>
-  )}
+  ) : null}
  
 </div>
         <p className="text-center text-xs text-[#AFCBE3] mt-2">

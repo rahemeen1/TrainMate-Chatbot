@@ -1,6 +1,5 @@
 //AddCompany.jsx
 import { useState } from "react";
-import { jsPDF } from "jspdf";
 
 export default function AddCompanyForm() {
   const [name, setName] = useState("");
@@ -11,28 +10,6 @@ export default function AddCompanyForm() {
   const [createdUser, setCreatedUser] = useState(null);
   const [status] = useState("active");
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  /* ================= PDF GENERATOR ================= */
-  const downloadPDF = () => {
-    const doc = new jsPDF();
-
-    doc.setFontSize(18);
-    doc.text("Company Login Credentials", 20, 20);
-
-    doc.setFontSize(12);
-    doc.text(`User ID (Email): ${createdUser.email}`, 20, 40);
-    doc.text(`Username: ${createdUser.username}`, 20, 55);
-    doc.text(`Password: ${createdUser.password}`, 20, 70);
-
-    doc.setFontSize(10);
-    doc.text(
-      "Please store these credentials securely. Password is shown once only.",
-      20,
-      90
-    );
-
-    doc.save(`${createdUser.username}_credentials.pdf`);
-  };
 
   /* ================= FORM SUBMIT ================= */
  const handleSubmit = async (e) => {
@@ -202,41 +179,35 @@ export default function AddCompanyForm() {
         </div>
 
         <div className="bg-[#031C3A]/70 border border-[#00FFFF30] rounded-2xl p-5 sm:p-6 h-fit">
-          <h3 className="text-lg font-semibold text-[#AFCBE3] mb-1">Login Credentials</h3>
-          <p className="text-sm text-[#7FA3BF] mb-4">Credentials appear after successful company creation.</p>
+          <h3 className="text-lg font-semibold text-[#AFCBE3] mb-1">Account Setup</h3>
+          <p className="text-sm text-[#7FA3BF] mb-4">Status appears after successful company creation.</p>
 
           {createdUser ? (
-            <div className="space-y-3">
-              <div>
-                <p className="text-[#00FFFF] text-sm mb-1">Username</p>
-                <input
-                  readOnly
-                  value={createdUser.username}
-                  className="w-full p-2.5 bg-[#021B36] text-white rounded-lg border border-[#00FFFF20]"
-                />
+            <div className="space-y-4">
+              <div className="rounded-lg bg-green-500/10 border border-green-500/30 p-4 space-y-2">
+                <p className="flex items-center gap-2 text-green-300 font-semibold">
+                  <span className="text-xl">✅</span> Company Created Successfully
+                </p>
+                <p className="text-sm text-green-200">
+                  Login credentials have been securely sent to:
+                </p>
+                <p className="text-sm font-mono text-[#00FFFF] break-all">
+                  {createdUser.email}
+                </p>
               </div>
 
-              <div>
-                <p className="text-[#00FFFF] text-sm mb-1">Password</p>
-                <input
-                  readOnly
-                  value={createdUser.password}
-                  className="w-full p-2.5 bg-[#021B36] text-white rounded-lg border border-[#00FFFF20]"
-                />
+              <div className="rounded-lg bg-blue-500/10 border border-blue-500/30 p-4 space-y-2">
+                <p className="text-sm text-blue-200">
+                  <span className="font-semibold">📧 Password Delivery:</span> For security, the password is not displayed here. The complete login credentials have been securely sent to the company email address.
+                </p>
               </div>
 
-              <p className="text-xs text-[#AFCBE3]">Password will not be shown again. Download securely.</p>
-
-              <button
-                onClick={downloadPDF}
-                className="w-full py-2.5 bg-[#7FFFD4] text-black rounded-lg font-semibold hover:brightness-95 transition-all"
-              >
-                Download PDF
-              </button>
+             
+              
             </div>
           ) : (
             <div className="rounded-lg border border-dashed border-[#00FFFF30] p-4 text-sm text-[#AFCBE3]">
-              Submit the form to generate username and password for the company account.
+              Submit the form to create the company account and send login credentials to the provided email.
             </div>
           )}
         </div>

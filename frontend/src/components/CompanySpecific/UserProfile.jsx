@@ -7,6 +7,7 @@ import CompanySidebar from "./CompanySidebar";
 export default function UserProfile() {
   const { companyId, deptId, userId } = useParams();
   const [user, setUser] = useState(null);
+  const [company, setCompany] = useState(null);
   const [loading, setLoading] = useState(true);
   const [roadmapModules, setRoadmapModules] = useState([]);
   const [roadmapLoading, setRoadmapLoading] = useState(true);
@@ -28,6 +29,13 @@ export default function UserProfile() {
         } else {
           console.warn("User not found");
           alert("User not found");
+        }
+        
+        // Fetch company data
+        const companyRef = doc(db, "companies", companyId);
+        const companSnap = await getDoc(companyRef);
+        if (companSnap.exists()) {
+          setCompany(companSnap.data());
         }
       } catch (err) {
         console.error("Error fetching user info:", err);
@@ -78,7 +86,7 @@ export default function UserProfile() {
     fetchRoadmap();
   }, [companyId, deptId, userId]);
 
-  const completedModulesCount = roadmapModules.filter((m) => m.completed).length;
+  const completedModulesCount = roadmapModules.filter((m) => m.completed && m.quizPassed).length;
   const totalQuizAttempts = roadmapModules.reduce(
     (sum, m) => sum + (m.quizAttempts ?? 0),
     0
@@ -91,7 +99,7 @@ export default function UserProfile() {
   };
 
   const getRemainingTimeLabel = (module) => {
-    if (module.completed) return "Completed";
+    if (module.completed && module.quizPassed) return "Completed";
     const startDate = getModuleStartDate(module);
     if (!startDate || !module.estimatedDays) return "Unknown";
     const deadline = new Date(startDate.getTime() + module.estimatedDays * 24 * 60 * 60 * 1000);
@@ -122,6 +130,30 @@ export default function UserProfile() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Regeneration failed");
+      
+      // Find module title
+      const module = roadmapModules.find(m => m.id === moduleId);
+      const moduleTitle = module?.moduleTitle || "Module";
+      
+      // Send email to user
+      if (user?.email) {
+        try {
+          await fetch("http://localhost:5000/api/email/admin-regenerated-roadmap", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userEmail: user.email,
+              userName: user.displayName || user.name || "User",
+              moduleTitle,
+              companyName: user.companyName || "Company",
+              companyEmail: company?.email || "admin@company.com"
+            })
+          });
+        } catch (emailErr) {
+          console.warn("Email send failed (non-blocking):", emailErr);
+        }
+      }
+      
       setStatus(moduleId, "Roadmap regenerated based on weaknesses.");
       await fetchRoadmap();
     } catch (err) {
@@ -143,6 +175,31 @@ export default function UserProfile() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Unlock failed");
+      
+      // Find module title
+      const module = roadmapModules.find(m => m.id === moduleId);
+      const moduleTitle = module?.moduleTitle || "Module";
+      
+      // Send email to user
+      if (user?.email) {
+        try {
+          await fetch("http://localhost:5000/api/email/admin-granted-attempts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userEmail: user.email,
+              userName: user.displayName || user.name || "User",
+              moduleTitle,
+              attemptsGranted: attempts,
+              companyName: user.companyName || "Company",
+              companyEmail: company?.email || "admin@company.com"
+            })
+          });
+        } catch (emailErr) {
+          console.warn("Email send failed (non-blocking):", emailErr);
+        }
+      }
+      
       setStatus(moduleId, `Module unlocked. Max attempts now ${data.maxAttemptsOverride}.`);
       await fetchRoadmap();
     } catch (err) {
@@ -470,11 +527,11 @@ if (!user) {
 
                         <td className="px-4 py-4 text-center">
                           <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold
-                            ${m.completed
+                            ${m.completed && m.quizPassed
                               ? "bg-green-500/20 text-green-400"
                               : "bg-yellow-500/20 text-yellow-400"}
                           `}>
-                            {m.completed ? "✓ Completed" : "Pending"}
+                            {m.completed && m.quizPassed ? "✓ Completed" : "Pending"}
                           </span>
                         </td>
 

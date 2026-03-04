@@ -169,4 +169,19 @@
   .animate-blob {
     animation: blob 7s infinite;
   }
+
+  .animate-bounce-subtle {
+    animation: bounce-subtle 1.2s ease-in-out forwards;
+  }
+}
+
+@keyframes bounce-subtle {
+  0%, 100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  50% {
+    transform: translateY(-8px);
+    opacity: 0.95;
+  }
 }

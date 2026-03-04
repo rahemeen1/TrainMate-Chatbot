@@ -201,6 +201,7 @@ export default function CompanyDetails() {
           <div className="rounded-2xl border border-[#00FFFF22] bg-[#021B36]/70 p-5 md:p-6 space-y-5">
             <h2 className="text-xl font-semibold text-[#00FFFF]">Onboarding Details</h2>
 
+            {/* Row 1: Training Duration and License */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
               <div className="p-4 rounded-xl bg-[#031C3A]/70 border border-[#00FFFF30]">
                 <label className="text-[#AFCBE3] font-semibold mb-2 block">Training Duration</label>
@@ -213,31 +214,36 @@ export default function CompanyDetails() {
                 <p className="text-sm text-[#AFCBE3] mt-1">Cannot be changed</p>
               </div>
 
-              <div className="p-4 rounded-xl bg-[#031C3A]/70 border border-[#00FFFF30]">
-                <label className="text-[#AFCBE3] font-semibold mb-2 block">License Plan</label>
-                <select
-                  value={onboardingAnswers[2]}
-                  onChange={e => handleChange(2, e.target.value)}
-                  className="w-full p-2 rounded border border-[#00FFFF30] bg-[#021B36]/60 text-white focus:outline-none"
-                >
-                  {LICENSE_PLAN_OPTIONS.map(opt => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </select>
-                <p className="text-xs text-[#AFCBE3] mt-2">
-                  Upgrade to Pro to unlock advanced AI and higher fresher capacity.
-                </p>
+              <div className="p-4 rounded-xl bg-[#031C3A]/70 border border-[#00FFFF30] flex flex-col justify-start">
+                <label className="text-[#AFCBE3] font-semibold mb-3 block">Current Plan</label>
+                <div className="space-y-2">
+                  <span className={`px-3 py-1.5 rounded-lg text-sm font-semibold border text-center block ${
+                    onboardingAnswers[2] === "License Pro"
+                      ? "bg-[#00FFFF]/20 text-[#00FFFF] border-[#00FFFF66]"
+                      : "bg-[#7FA3BF]/20 text-[#D8ECFF] border-[#AFCBE355]"
+                  }`}>
+                    {(onboardingAnswers[2] || "License Basic").replace("License ", "")} License
+                  </span>
+                  <p className="text-xs text-[#AFCBE3] italic">
+                    Valid till {new Date(new Date().setMonth(new Date().getMonth() + 1)).toLocaleDateString("en-GB", {
+                      day: "2-digit",
+                      month: "short",
+                      year: "numeric",
+                    })}
+                  </p>
+                </div>
               </div>
+            </div>
 
-              <div className="p-4 md:col-span-2 rounded-xl bg-[#031C3A]/70 border border-[#00FFFF30]">
-                <label className="text-[#AFCBE3] font-semibold mb-2 block">Company Description</label>
-                <textarea
-                  rows={6}
-                  value={onboardingAnswers[3]}
-                  onChange={e => handleChange(3, e.target.value)}
-                  className="w-full p-2 rounded border border-[#00FFFF30] resize-none bg-[#021B36]/60 text-white focus:outline-none"
-                />
-              </div>
+            {/* Row 2: Company Description */}
+            <div className="p-4 rounded-xl bg-[#031C3A]/70 border border-[#00FFFF30]">
+              <label className="text-[#AFCBE3] font-semibold mb-2 block">Company Description</label>
+              <textarea
+                rows={6}
+                value={onboardingAnswers[3]}
+                onChange={e => handleChange(3, e.target.value)}
+                className="w-full p-2 rounded border border-[#00FFFF30] resize-none bg-[#021B36]/60 text-white focus:outline-none"
+              />
             </div>
           </div>
 

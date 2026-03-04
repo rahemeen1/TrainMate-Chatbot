@@ -18,6 +18,7 @@ import quizRoutes from "./routes/quizRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import aiInsightsRoutes from "./routes/aiInsightsRoutes.js";
+import emailRoutes from "./routes/emailRoutes.js";
 import { initializeScheduledJobs } from "./services/scheduledJobs.js";
 
 
@@ -56,6 +57,7 @@ app.use("/api/module", moduleExplain);
     app.use("/api/auth", authRoutes);
     app.use("/api", notificationRoutes);
     app.use("/api", aiInsightsRoutes);
+    app.use("/api", emailRoutes);
   
 
     app.listen(PORT, () => {

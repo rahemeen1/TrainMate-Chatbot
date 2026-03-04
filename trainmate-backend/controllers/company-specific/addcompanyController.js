@@ -1,4 +1,5 @@
 import { db, admin } from "../../config/firebase.js";
+import { sendCompanyCredentialsEmail } from "../../services/emailService.js";
 
 // ✅ Add Company (Auth + Firestore)
 export const addCompany = async (req, res) => {
@@ -35,11 +36,25 @@ export const addCompany = async (req, res) => {
     });
     console.log("✅ Firestore doc created for:", userRecord.uid);
 
+    // 🔹 Send credentials email
+    try {
+      await sendCompanyCredentialsEmail({
+        companyEmail: email,
+        companyName: name,
+        tempPassword: tempPassword,
+      });
+      console.log("✅ Credentials email sent to:", email);
+    } catch (emailError) {
+      console.error("⚠️ Failed to send credentials email:", emailError.message);
+      // Don't fail the entire request if email fails, just log it
+    }
+
     res.status(201).json({
       uid: userRecord.uid,
       username: name,
       email,
       password: tempPassword,
+      message: "Company created successfully. Credentials sent to email.",
     });
   } catch (err) {
     console.error("❌ /add-company error:", err);

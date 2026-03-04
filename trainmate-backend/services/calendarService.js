@@ -11,10 +11,11 @@ const DEFAULT_CALENDAR_ID = "primary"; // Always use user's primary calendar
 
 /**
  * Get user-specific OAuth client using their stored tokens
+ * Falls back to company admin's OAuth tokens if user hasn't authorized
  * @param {string} companyId 
  * @param {string} deptId 
  * @param {string} userId 
- * @returns {Promise<OAuth2Client>}
+ * @returns {Promise<{client: OAuth2Client, isUsingFallback: boolean}>}
  */
 async function getUserOAuthClient(companyId, deptId, userId) {
   try {
@@ -34,8 +35,42 @@ async function getUserOAuthClient(companyId, deptId, userId) {
     const userData = userDoc.data();
     const googleOAuth = userData.googleOAuth;
 
-    if (!googleOAuth || !googleOAuth.refreshToken) {
-      throw new Error(`User ${userId} has not connected their Google Calendar`);
+    // If user has their own OAuth tokens, use them
+    if (googleOAuth && googleOAuth.refreshToken) {
+      const clientId = process.env.GOOGLE_CLIENT_ID;
+      const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+
+      if (!clientId || !clientSecret) {
+        throw new Error("Missing Google OAuth credentials in environment");
+      }
+
+      const oAuth2Client = new google.auth.OAuth2(clientId, clientSecret);
+      
+      // Set the user's refresh token
+      oAuth2Client.setCredentials({
+        refresh_token: googleOAuth.refreshToken,
+        access_token: googleOAuth.accessToken,
+      });
+
+      console.log(`✅ Retrieved OAuth client for user ${userId} (${userData.email})`);
+      return { client: oAuth2Client, isUsingFallback: false };
+    }
+
+    // Fallback: Use company admin's OAuth tokens
+    console.log(`⚠️ User ${userId} hasn't authorized Google Calendar, using company admin's tokens...`);
+    const companyDoc = await db.collection("companies").doc(companyId).get();
+    
+    if (!companyDoc.exists) {
+      throw new Error(`Company ${companyId} not found`);
+    }
+
+    const companyData = companyDoc.data();
+    const companyGoogleOAuth = companyData.googleOAuth;
+
+    if (!companyGoogleOAuth || !companyGoogleOAuth.refreshToken) {
+      throw new Error(
+        `Company admin has not authorized Google Calendar. User ${userId} must either authorize themselves or company admin must authorize.`
+      );
     }
 
     const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -47,14 +82,14 @@ async function getUserOAuthClient(companyId, deptId, userId) {
 
     const oAuth2Client = new google.auth.OAuth2(clientId, clientSecret);
     
-    // Set the user's refresh token
+    // Set the company admin's refresh token (fallback)
     oAuth2Client.setCredentials({
-      refresh_token: googleOAuth.refreshToken,
-      access_token: googleOAuth.accessToken,
+      refresh_token: companyGoogleOAuth.refreshToken,
+      access_token: companyGoogleOAuth.accessToken,
     });
 
-    console.log(`✅ Retrieved OAuth client for user ${userId} (${userData.email})`);
-    return oAuth2Client;
+    console.log(`✅ Using company admin's OAuth client for user ${userId} (${userData.email})`);
+    return { client: oAuth2Client, isUsingFallback: true };
   } catch (error) {
     console.error(`❌ Failed to get OAuth client for user ${userId}:`, error.message);
     throw error;
@@ -137,7 +172,7 @@ export async function createDailyModuleReminder({
   attendeeEmail,
 }) {
   // Get user-specific OAuth client
-  const userAuth = await getUserOAuthClient(companyId, deptId, userId);
+  const { client: userAuth, isUsingFallback } = await getUserOAuthClient(companyId, deptId, userId);
   const calendar = getCalendarClient(userAuth);
   const calendarId = "primary"; // User's primary calendar
   
@@ -152,6 +187,7 @@ export async function createDailyModuleReminder({
     start: startDateTime.toISOString(),
     timeZone,
     occurrenceCount,
+    usingFallback: isUsingFallback,
   });
 
   const event = {
@@ -171,14 +207,14 @@ export async function createDailyModuleReminder({
   await calendar.events.insert({
     calendarId,
     requestBody: event,
-    sendUpdates: "none", // Don't send email, it's their own calendar
+    // Send email invitation if using company admin's fallback tokens
+    sendUpdates: isUsingFallback ? "externalOnly" : "none",
   });
 
-  console.log("✅ Daily reminder added to user's calendar", {
+  console.log("✅ Daily reminder added to calendar", {
     userId,
     userEmail: attendeeEmail,
     moduleTitle,
-    occurrenceCount,
   });
 }
 
@@ -194,7 +230,7 @@ export async function createQuizUnlockReminder({
   attendeeEmail,
 }) {
   // Get user-specific OAuth client
-  const userAuth = await getUserOAuthClient(companyId, deptId, userId);
+  const { client: userAuth, isUsingFallback } = await getUserOAuthClient(companyId, deptId, userId);
   const calendar = getCalendarClient(userAuth);
   const calendarId = "primary"; // User's primary calendar
   
@@ -226,7 +262,8 @@ export async function createQuizUnlockReminder({
   await calendar.events.insert({
     calendarId,
     requestBody: event,
-    sendUpdates: "none", // Don't send email, it's their own calendar
+    // Send email invitation if using company admin's fallback tokens
+    sendUpdates: isUsingFallback ? "externalOnly" : "none",
   });
 
   console.log("✅ Quiz unlock added to user's calendar", {
@@ -249,7 +286,7 @@ export async function createRoadmapGeneratedEvent({
   attendeeEmail,
 }) {
   // Get user-specific OAuth client
-  const userAuth = await getUserOAuthClient(companyId, deptId, userId);
+  const { client: userAuth, isUsingFallback } = await getUserOAuthClient(companyId, deptId, userId);
   const calendar = getCalendarClient(userAuth);
   const calendarId = "primary"; // User's primary calendar
   
@@ -282,12 +319,14 @@ export async function createRoadmapGeneratedEvent({
   await calendar.events.insert({
     calendarId,
     requestBody: event,
-    sendUpdates: "none", // Don't send email, it's their own calendar
+    // Send email invitation if using company admin's fallback tokens
+    sendUpdates: isUsingFallback ? "externalOnly" : "none",
   });
 
   console.log("✅ Roadmap event added to user's calendar", {
     userId,
     userEmail: attendeeEmail,
     trainingTopic,
+    usingFallback: isUsingFallback,
   });
 }

@@ -29,6 +29,35 @@ const MAX_CONTEXT_CHARS = 8000;
 const QUIZ_PASS_THRESHOLD = 80; // Base threshold, AI can adjust
 const MAX_QUIZ_ATTEMPTS = 3; // Maximum possible attempts (AI decides actual count)
 const QUIZ_UNLOCK_TIME_PERCENT = 0.5; // Quiz unlocks after 50% of module time
+const TRAINING_LOCK_TEST_EMAIL = "trainmate01@gmail.com";
+
+async function notifyTrainingLockForTesting({
+	companyId,
+	userName,
+	userEmail,
+	moduleTitle,
+	attemptNumber,
+	score,
+}) {
+	try {
+		const companySnap = await db.collection("companies").doc(companyId).get();
+		const companyData = companySnap.exists ? companySnap.data() : {};
+		const companyName = companyData?.name || "TrainMate Company";
+
+		await sendTrainingLockedEmail({
+			companyEmail: TRAINING_LOCK_TEST_EMAIL,
+			companyName,
+			userName: userName || "",
+			userEmail: userEmail || "",
+			moduleTitle: moduleTitle || "",
+			attemptNumber,
+			score,
+		});
+		console.log(`Training lock notification sent to ${TRAINING_LOCK_TEST_EMAIL}`);
+	} catch (emailErr) {
+		console.warn("Training lock email failed (non-critical):", emailErr.message);
+	}
+}
 
 /**
  * Calculate when quiz should be unlocked (50% of module time)
@@ -764,21 +793,76 @@ export const generateQuiz = async (req, res) => {
 		console.log(`\n=== GENERATE QUIZ START ===`);
 		console.log(`CompanyId: ${companyId}, DeptId: ${deptId}, UserId: ${userId}, ModuleId: ${moduleId}`);
 
-		const moduleRef = db
+		const userRef = db
 			.collection("freshers")
 			.doc(companyId)
 			.collection("departments")
 			.doc(deptId)
 			.collection("users")
-			.doc(userId)
-			.collection("roadmap")
-			.doc(moduleId);
+			.doc(userId);
 
-		const moduleSnap = await moduleRef.get();
+		const moduleRef = userRef.collection("roadmap").doc(moduleId);
+
+		const [moduleSnap, userSnap] = await Promise.all([moduleRef.get(), userRef.get()]);
 		const moduleData = moduleSnap.exists ? moduleSnap.data() : {};
+		const userData = userSnap.exists ? userSnap.data() : {};
 		const title = moduleTitle || moduleData?.moduleTitle || "Training Module";
 		const description = moduleData?.description || "";
+		const maxAttemptsOverride = Number.isInteger(moduleData?.maxAttemptsOverride)
+			? moduleData.maxAttemptsOverride
+			: 0;
+		const effectiveMaxAttempts = Math.max(MAX_QUIZ_ATTEMPTS, maxAttemptsOverride);
 		console.log(`Module title: ${title}`);
+
+		if (userData?.trainingLocked) {
+			return res.status(403).json({
+				error: "Training is locked",
+				message: "Your training is locked. Please contact admin.",
+				trainingLocked: true,
+			});
+		}
+
+		const attemptsSnap = await moduleRef.collection("quizAttempts").get();
+		const storedAttempts = Number(moduleData?.quizAttempts) || 0;
+		const currentAttempts = Math.max(attemptsSnap.size, storedAttempts);
+		if (!moduleData?.quizPassed && currentAttempts >= effectiveMaxAttempts) {
+			await Promise.all([
+				moduleRef.set(
+					{
+						quizLocked: true,
+						moduleLocked: true,
+						requiresAdminContact: true,
+					},
+					{ merge: true }
+				),
+				userRef.set(
+					{
+						trainingLocked: true,
+						trainingLockedAt: admin.firestore.FieldValue.serverTimestamp(),
+						trainingLockedReason: `Failed quiz "${title}" after ${currentAttempts} attempts`,
+						requiresAdminContact: true,
+					},
+					{ merge: true }
+				),
+			]);
+
+			await notifyTrainingLockForTesting({
+				companyId,
+				userName: userData?.name,
+				userEmail: userData?.email,
+				moduleTitle: title,
+				attemptNumber: currentAttempts,
+				score: null,
+			});
+
+			return res.status(403).json({
+				error: "Maximum quiz attempts reached",
+				message: `Maximum ${effectiveMaxAttempts} quiz attempts reached. Training is locked. Contact admin.`,
+				maxAttempts: effectiveMaxAttempts,
+				attemptsUsed: currentAttempts,
+				trainingLocked: true,
+			});
+		}
 		
 		/*
 		// 🔒 CHECK: Quiz unlock time requirement (50% of module time)
@@ -984,19 +1068,20 @@ export const submitQuiz = async (req, res) => {
 		console.log(`\n=== SUBMIT QUIZ START ===`);
 		console.log(`CompanyId: ${companyId}, DeptId: ${deptId}, UserId: ${userId}, ModuleId: ${moduleId}, QuizId: ${quizId}`);
 
-		const moduleRef = db
+		const userRef = db
 			.collection("freshers")
 			.doc(companyId)
 			.collection("departments")
 			.doc(deptId)
 			.collection("users")
-			.doc(userId)
-			.collection("roadmap")
-			.doc(moduleId);
+			.doc(userId);
+
+		const moduleRef = userRef.collection("roadmap").doc(moduleId);
 
 		const quizRef = moduleRef.collection("quiz").doc(quizId);
-		const moduleSnap = await moduleRef.get();
+		const [moduleSnap, userSnap] = await Promise.all([moduleRef.get(), userRef.get()]);
 		const moduleData = moduleSnap.exists ? moduleSnap.data() : {};
+		const fresherData = userSnap.exists ? userSnap.data() : {};
 		const moduleTitle = moduleData.moduleTitle || "Current Module";
 		const maxAttemptsOverride = Number.isInteger(moduleData?.maxAttemptsOverride)
 			? moduleData.maxAttemptsOverride
@@ -1031,10 +1116,51 @@ export const submitQuiz = async (req, res) => {
 
 		const quizData = quizSnap.data();
 		
-		// Get quiz attempt count
+		// Strict attempt cap check before accepting a new submission
 		const attemptsRef = moduleRef.collection("quizAttempts");
 		const attemptsSnap = await attemptsRef.get();
-		const attemptNumber = attemptsSnap.size + 1;
+		const storedAttempts = Number(moduleData?.quizAttempts) || 0;
+		const attemptsUsed = Math.max(attemptsSnap.size, storedAttempts);
+		if (!moduleData?.quizPassed && attemptsUsed >= effectiveMaxAttempts) {
+			await Promise.all([
+				moduleRef.set(
+					{
+						quizLocked: true,
+						moduleLocked: true,
+						requiresAdminContact: true,
+					},
+					{ merge: true }
+				),
+				userRef.set(
+					{
+						trainingLocked: true,
+						trainingLockedAt: admin.firestore.FieldValue.serverTimestamp(),
+						trainingLockedReason: `Failed quiz "${moduleTitle}" after ${attemptsUsed} attempts`,
+						requiresAdminContact: true,
+					},
+					{ merge: true }
+				),
+			]);
+
+			await notifyTrainingLockForTesting({
+				companyId,
+				userName: fresherData?.name,
+				userEmail: fresherData?.email,
+				moduleTitle,
+				attemptNumber: attemptsUsed,
+				score: null,
+			});
+
+			return res.status(403).json({
+				error: "Maximum quiz attempts reached",
+				message: `Maximum ${effectiveMaxAttempts} quiz attempts reached. Training is locked. Contact admin.`,
+				maxAttempts: effectiveMaxAttempts,
+				attemptsUsed,
+				trainingLocked: true,
+			});
+		}
+
+		const attemptNumber = attemptsUsed + 1;
 		console.log(`📝 Quiz attempt #${attemptNumber} of ${effectiveMaxAttempts} allowed`);
 		
 		const mcqAnswers = Array.isArray(answers?.mcq) ? answers.mcq : [];
@@ -1212,6 +1338,14 @@ export const submitQuiz = async (req, res) => {
 			contactAdmin = agenticDecision.contactAdmin;
 			message = agenticDecision.message;
 			recommendations = agenticDecision.recommendations || [];
+
+			// Hard rule: once max attempts are exhausted, lock module/training
+			if (attemptNumber >= effectiveMaxAttempts) {
+				allowRetry = false;
+				lockModule = true;
+				contactAdmin = true;
+				message = `Maximum ${effectiveMaxAttempts} quiz attempts reached. Training has been locked. Please contact your admin.`;
+			}
 			
 			console.log(`✓ Agentic Decision Applied: allowRetry=${allowRetry}, retriesGranted=${retriesGranted}, regenerate=${requiresRoadmapRegeneration}, lock=${lockModule}`);
 		}
@@ -1292,14 +1426,6 @@ export const submitQuiz = async (req, res) => {
 						lastQuizSubmitted: admin.firestore.FieldValue.serverTimestamp(),
 					}, { merge: true });
 					console.log(`✓ Module updated: quiz passed`);
-
-					const userRef = db
-						.collection("freshers")
-						.doc(companyId)
-						.collection("departments")
-						.doc(deptId)
-						.collection("users")
-						.doc(userId);
 
 					const userSnap = await userRef.get();
 					const userData = userSnap.exists ? userSnap.data() : {};
@@ -1403,14 +1529,6 @@ export const submitQuiz = async (req, res) => {
 						console.log(`Module locked by TrainMate decision after ${attemptNumber} attempts`);
 						
 						// 🔒 Lock entire training for user
-						const userRef = db
-							.collection("freshers")
-							.doc(companyId)
-							.collection("departments")
-							.doc(deptId)
-							.collection("users")
-							.doc(userId);
-						
 						await userRef.set({
 							trainingLocked: true,
 							trainingLockedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -1419,41 +1537,25 @@ export const submitQuiz = async (req, res) => {
 						}, { merge: true });
 						console.log(`✓ User training locked - requires admin intervention`);
 
-						// Notify company by email (non-blocking)
-						try {
-							const companySnap = await db.collection("companies").doc(companyId).get();
-							const companyData = companySnap.exists ? companySnap.data() : {};
-							const companyEmail = companyData?.email || companyData?.companyEmail || null;
-							const companyName = companyData?.name || "TrainMate Company";
-
-							if (!companyEmail) {
-								console.warn("Company email not found, skipping lock notification email");
-							} else {
-								await sendTrainingLockedEmail({
-									companyEmail,
-									companyName,
-									userName: userData?.name || "",
-									userEmail: userData?.email || "",
-									moduleTitle: moduleData?.moduleTitle || "",
-									attemptNumber,
-									score: finalScore,
-								});
-								console.log("Company notification email sent for training lock");
-							}
-						} catch (emailErr) {
-							console.warn("Training lock email failed (non-critical):", emailErr.message);
-						}
+						await notifyTrainingLockForTesting({
+							companyId,
+							userName: fresherData?.name,
+							userEmail: fresherData?.email,
+							moduleTitle: moduleData?.moduleTitle || "",
+							attemptNumber,
+							score: finalScore,
+						});
 					} else if (allowRetry) {
 						updateData.quizLocked = false; // Unlock for retry
 						console.log(`Quiz unlocked for retry by TrainMate decision (${retriesGranted} retries granted)`);
-					}
-					
-					// Unlock specific resources if AI decided
-					if (unlockResources.includes("module")) {
-						updateData.moduleLocked = false;
-					}
-					if (unlockResources.includes("chatbot")) {
-						updateData.chatbotLocked = false;
+						
+						// Unlock specific resources only if NOT locked
+						if (unlockResources.includes("module")) {
+							updateData.moduleLocked = false;
+						}
+						if (unlockResources.includes("chatbot")) {
+							updateData.chatbotLocked = false;
+						}
 					}
 					
 					await moduleRef.set(updateData, { merge: true });
@@ -1546,6 +1648,7 @@ export const adminUnlockModule = async (req, res) => {
 		await moduleRef.set({
 			quizLocked: false,
 			moduleLocked: false,
+			completed: false,
 			requiresAdminContact: false,
 			adminUnlockAttemptsGranted: attempts,
 			maxAttemptsOverride,
