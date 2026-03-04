@@ -12,6 +12,13 @@ import {
   deleteDepartmentDoc,
 } from "../services/departmentHandlers";
 
+const normalizeId = (value) => {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "";
+  if (["undefined", "null", "nan"].includes(normalized.toLowerCase())) return "";
+  return normalized;
+};
+
 export default function DepartmentDetails() {
 
   // inside component
@@ -24,12 +31,15 @@ const [userAddedSuccess, setUserAddedSuccess] = useState(false);
 const [deletingDocId, setDeletingDocId] = useState(null);
 const [companyLicense, setCompanyLicense] = useState("License Pro");
 const [totalCompanyFreshers, setTotalCompanyFreshers] = useState(0);
+const [quotaStatus, setQuotaStatus] = useState(null);
+const [quotaLoading, setQuotaLoading] = useState(false);
 
 
   const { state } = useLocation();
   const navigate = useNavigate();
 
-  const { companyId, companyName, deptId, deptName } = state || {};
+  const { companyName, deptId, deptName } = state || {};
+  const companyId = normalizeId(state?.companyId || localStorage.getItem("companyId"));
 
   const [users, setUsers] = useState([]);
   
@@ -48,7 +58,10 @@ const [totalCompanyFreshers, setTotalCompanyFreshers] = useState(0);
 
   const BASIC_MAX_FRESHERS = 15;
   const isBasicLicense = companyLicense === "License Basic";
-  const isBasicLimitReached = isBasicLicense && totalCompanyFreshers >= BASIC_MAX_FRESHERS;
+  
+  // Check quota: use quotaStatus if available, otherwise fall back to totalCompanyFreshers
+  const isLimitReached = quotaStatus ? !quotaStatus.canAdd : (isBasicLicense && totalCompanyFreshers >= BASIC_MAX_FRESHERS);
+  const quotaMessage = quotaStatus?.message || "";
 
   // Safety
   useEffect(() => {
@@ -64,6 +77,32 @@ const [totalCompanyFreshers, setTotalCompanyFreshers] = useState(0);
     };
     load();
   }, [companyId, deptId]);
+
+  // Fetch quota status
+  useEffect(() => {
+    const fetchQuota = async () => {
+      if (!companyId) return;
+      try {
+        setQuotaLoading(true);
+        const res = await fetch(`http://localhost:5000/api/company/${companyId}/user-quota`);
+        if (res.ok) {
+          const quotaData = await res.json();
+          setQuotaStatus(quotaData);
+        } else {
+          console.error("Failed to fetch quota status:", res.status);
+        }
+      } catch (err) {
+        console.error("Error fetching quota:", err);
+      } finally {
+        setQuotaLoading(false);
+      }
+    };
+
+    fetchQuota();
+    // Refetch quota every 30 seconds to stay up-to-date
+    const quotaInterval = setInterval(fetchQuota, 30000);
+    return () => clearInterval(quotaInterval);
+  }, [companyId]);
 
   useEffect(() => {
     const loadCompanyLicenseAndFresherCount = async () => {
@@ -115,8 +154,12 @@ const [totalCompanyFreshers, setTotalCompanyFreshers] = useState(0);
 
   // Add User
   const handleAddUser = async () => {
-    if (isBasicLimitReached) {
-      alert("Basic license allows up to 15 freshers. Please upgrade to Pro license to add more freshers.");
+    if (isLimitReached) {
+      if (quotaStatus) {
+        alert(quotaStatus.message || "Cannot add more users. Plan limit reached.");
+      } else if (isBasicLicense) {
+        alert("Basic license allows up to 15 freshers. Please upgrade to Pro license to add more freshers.");
+      }
       return;
     }
 
@@ -140,6 +183,12 @@ const [totalCompanyFreshers, setTotalCompanyFreshers] = useState(0);
         cvFile: null,
       });
       setUsers(await fetchDepartmentUsers(companyId, deptId));
+      // Refetch quota after adding user
+      const res = await fetch(`http://localhost:5000/api/company/${companyId}/user-quota`);
+      if (res.ok) {
+        const quotaData = await res.json();
+        setQuotaStatus(quotaData);
+      }
     } catch (err) {
       alert(err.message);
       
@@ -314,31 +363,41 @@ const closeAddUserModal = () => {
           <div className="flex justify-between mb-3">
             <div>
               <h2 className="text-xl font-semibold">Users ({users.length})</h2>
-              {isBasicLicense && (
+              {quotaStatus ? (
+                <p className="text-sm text-[#AFCBE3] mt-1">
+                  {quotaStatus.plan} plan: {quotaStatus.currentCount} active / {quotaStatus.totalEverAdded} total / {quotaStatus.maxAllowed} max
+                </p>
+              ) : isBasicLicense ? (
                 <p className="text-sm text-[#AFCBE3] mt-1">
                   Basic license usage: {totalCompanyFreshers}/{BASIC_MAX_FRESHERS} freshers
                 </p>
-              )}
+              ) : null}
             </div>
             <button
               onClick={() => setShowAddUserModal(true)}
-              disabled={isBasicLimitReached}
+              disabled={isLimitReached || quotaLoading}
               className={`px-4 py-2 rounded-lg font-semibold ${
-                isBasicLimitReached
+                isLimitReached || quotaLoading
                   ? "bg-gray-500 text-white cursor-not-allowed"
                   : "bg-[#00FFFF] text-[#031C3A]"
               }`}
               title={
-                isBasicLimitReached
-                  ? "Upgrade to Pro license to add more freshers"
+                isLimitReached
+                  ? quotaStatus?.message || "Plan limit reached"
                   : "Add User"
               }
             >
-              {isBasicLimitReached ? "Limit Reached (🔒)" : "Add User"}
+              {isLimitReached ? "Limit Reached (🔒)" : quotaLoading ? "Loading..." : "Add User"}
             </button>
           </div>
 
-          {isBasicLimitReached && (
+          {isLimitReached && quotaStatus && (
+            <div className="mb-3 p-3 rounded-lg border border-[#00FFFF30] bg-[#021B36]/60 text-sm text-[#AFCBE3]">
+              {quotaStatus.message}
+            </div>
+          )}
+
+          {isLimitReached && !quotaStatus && isBasicLicense && (
             <div className="mb-3 p-3 rounded-lg border border-[#00FFFF30] bg-[#021B36]/60 text-sm text-[#AFCBE3]">
               You have reached the Basic license limit. Upgrade to Pro license to add more than 15 freshers.
             </div>
@@ -455,7 +514,17 @@ const closeAddUserModal = () => {
 
             
             <div className="flex justify-end gap-2">
-             <button onClick={closeAddUserModal}>Cancel</button>
+             <button 
+               onClick={closeAddUserModal}
+               disabled={addingUser}
+               className={`px-4 py-2 rounded font-semibold transition ${
+                 addingUser 
+                   ? "bg-gray-600 text-gray-400 cursor-not-allowed" 
+                   : "bg-gray-700 text-white hover:bg-gray-600"
+               }`}
+             >
+               Cancel
+             </button>
 
               <button
   onClick={handleAddUser}

@@ -9,6 +9,7 @@ import { deleteUser } from "../controllers/company-specific/deleteuserController
 import { sendUserCredentials } from "../controllers/company-specific/sendCredentialsController.js";
 import { getModuleLockNotifications, resolveModuleLockNotification } from "../controllers/company-specific/moduleLockNotificationsController.js";
 import { updateDepartmentSettings, getDepartmentSettings } from "../controllers/company-specific/updateDepartmentSettings.js";
+import { checkCompanyUserQuota } from "../controllers/company-specific/userQuotaController.js";
 
 
 const router = express.Router();
@@ -23,6 +24,9 @@ router.delete("/company/users/:email", deleteUser);
 router.post("/company/users/credentials-email", sendUserCredentials);
 router.get("/company/notifications/module-lock/:companyId", getModuleLockNotifications);
 router.patch("/company/notifications/module-lock/:companyId/:notificationId", resolveModuleLockNotification);
+
+// User quota check
+router.get("/company/:companyId/user-quota", checkCompanyUserQuota);
 
 // Department settings
 router.put("/department/settings", updateDepartmentSettings);

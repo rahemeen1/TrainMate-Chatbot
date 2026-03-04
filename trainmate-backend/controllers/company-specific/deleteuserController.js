@@ -32,6 +32,18 @@ export const deleteUser = async (req, res) => {
     const { email } = req.params;
     if (!email) return res.status(400).json({ error: "Email missing" });
 
+    // Find user document first to get companyId
+    const usersSnap = await db.collectionGroup("users").where("email", "==", email).get();
+    
+    if (usersSnap.empty) {
+      return res.status(404).json({ error: "User not found in Firestore" });
+    }
+
+    // Get company ID from user document path
+    const userDoc = usersSnap.docs[0];
+    const pathSegments = userDoc.ref.path.split('/');
+    const companyId = pathSegments[1]; // Path: freshers/{companyId}/departments/{dept}/users/{userId}
+
     // Delete from Auth (if exists)
     try {
       const user = await admin.auth().getUserByEmail(email);
@@ -44,9 +56,28 @@ export const deleteUser = async (req, res) => {
     }
 
     // Delete from Firestore
-    const usersSnap = await db.collectionGroup("users").where("email", "==", email).get();
     const deletePromises = usersSnap.docs.map((docSnap) => docSnap.ref.delete());
     await Promise.all(deletePromises);
+
+    // Track deleted users count in company document
+    if (companyId) {
+      try {
+        const companyRef = db.collection("companies").doc(companyId);
+        const companyDoc = await companyRef.get();
+        
+        if (companyDoc.exists()) {
+          const currentDeletedCount = companyDoc.data().deletedUsersCount || 0;
+          await companyRef.update({
+            deletedUsersCount: currentDeletedCount + 1,
+            lastUserDeletedAt: new Date()
+          });
+          console.log(`✅ Updated deletedUsersCount for company ${companyId}: ${currentDeletedCount + 1}`);
+        }
+      } catch (trackingErr) {
+        console.error("⚠️ Failed to track deleted users count:", trackingErr);
+        // Don't fail the delete operation if tracking fails
+      }
+    }
 
     res.status(200).json({ message: "User deleted successfully" });
   } catch (err) {

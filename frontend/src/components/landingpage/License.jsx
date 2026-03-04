@@ -47,6 +47,11 @@ const basicFeatures = [
     title: "10 to 15 freshers",
     description: "One license supports up to 15 freshers at a time.",
   },
+  {
+    icon: Layers,
+    title: "Up to 3 departments",
+    description: "Manage training for up to 3 different departments or teams.",
+  },
 ];
 
 const proFeatures = [
@@ -89,6 +94,11 @@ const proFeatures = [
     icon: Layers,
     title: "20 to 40 freshers",
     description: "One license supports up to 40 freshers at a time.",
+  },
+  {
+    icon: Target,
+    title: "5+ departments",
+    description: "Manage training across 5 or more departments simultaneously.",
   },
 ];
 

@@ -5,12 +5,20 @@ import { db } from "../../firebase";
 import {
   collectionGroup,
   getDocs,
+  query,
+  where,
   doc,
   updateDoc,
   deleteDoc,
-  collection,
 } from "firebase/firestore";
 import CompanySidebar from "./CompanySidebar"; 
+
+const normalizeId = (value) => {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "";
+  if (["undefined", "null", "nan"].includes(normalized.toLowerCase())) return "";
+  return normalized;
+};
 
 export default function ManageUser() {
   const [users, setUsers] = useState([]);
@@ -20,15 +28,21 @@ export default function ManageUser() {
   const [deleteSuccessMsg, setDeleteSuccessMsg] = useState("");
   const [departmentsList, setDepartmentsList] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [quotaStatus, setQuotaStatus] = useState(null);
+  const [quotaLoading, setQuotaLoading] = useState(false);
 
   const navigate = useNavigate();
   const location = window.history.state?.usr || {};
-  const companyId = location.companyId || localStorage.getItem("companyId");
+  const companyId = normalizeId(location.companyId || localStorage.getItem("companyId"));
   const companyName =
     location.companyName || localStorage.getItem("companyName");
 
   useEffect(() => {
-    if (companyId) localStorage.setItem("companyId", companyId);
+    if (companyId) {
+      localStorage.setItem("companyId", companyId);
+    } else {
+      localStorage.removeItem("companyId");
+    }
     if (companyName) localStorage.setItem("companyName", companyName);
   }, [companyId, companyName]);
 
@@ -36,73 +50,32 @@ export default function ManageUser() {
     if (!companyId) return;
     setLoading(true);
     try {
-      const usersArr = [];
-
-      // 1. Get all departments
-      const departmentsRef = collection(
-        db,
-        "freshers",
-        companyId,
-        "departments" 
+      const usersQuery = query(
+        collectionGroup(db, "users"),
+        where("companyId", "==", companyId)
       );
+      const usersSnap = await getDocs(usersQuery);
 
-      const deptSnap = await getDocs(departmentsRef);
-      let deptIds = deptSnap.docs.map((d) => d.id);
-      
-      // Fallback: if no departments found via collection, try common department names
-      if (deptIds.length === 0) {
-        console.log("No departments found via collection, trying known departments...");
-        const knownDepts = ["HR", "SOFTWAREDEVELOPMENT", "AI", "ACCOUNTING", "MARKETING", "OPERATIONS", "DATASCIENCE","IT"];
-        const existingDepts = [];
-        
-        for (const deptName of knownDepts) {
-          try {
-            const usersRef = collection(
-              db,
-              "freshers",
-              companyId,
-              "departments",
-              deptName,
-              "users"
-            );
-            const snap = await getDocs(usersRef);
-            if (!snap.empty) {
-              existingDepts.push(deptName);
-            }
-          } catch (e) {
-            // Skip if error
-          }
-        }
-        deptIds = existingDepts;
-      }
-      
-      setDepartmentsList(deptIds);
+      const usersArr = [];
+      const deptSet = new Set();
 
-      // 2. Loop through each department
-      for (const deptName of deptIds) {
-        const usersRef = collection(
-          db,
-          "freshers",
-          companyId,
-          "departments",
+      usersSnap.forEach((u) => {
+        const data = u.data();
+        const pathSegments = u.ref.path.split("/");
+        const deptFromPath = pathSegments[3] || "Unknown";
+        const deptName = data.deptName || data.deptId || deptFromPath;
+
+        deptSet.add(deptName);
+        usersArr.push({
+          id: u.id,
           deptName,
-          "users"
-        );
-
-        const usersSnap = await getDocs(usersRef);
-
-        usersSnap.forEach((u) => {
-          const data = u.data();
-          usersArr.push({
-            id: u.id,
-            deptName,
-            status: data.status || "active",
-            trainingStatus: data.trainingStatus || "ongoing",
-            ...data,
-          });
+          status: data.status || "active",
+          trainingStatus: data.trainingStatus || "ongoing",
+          ...data,
         });
-      }
+      });
 
+      setDepartmentsList(Array.from(deptSet).sort());
       setUsers(usersArr);
     } catch (err) {
       console.error("❌ Fetch users failed:", err);
@@ -113,6 +86,32 @@ export default function ManageUser() {
 
   useEffect(() => {
     fetchUsers();
+  }, [companyId]);
+
+  // Fetch quota status
+  useEffect(() => {
+    const fetchQuota = async () => {
+      if (!companyId) return;
+      try {
+        setQuotaLoading(true);
+        const res = await fetch(`http://localhost:5000/api/company/${companyId}/user-quota`);
+        if (res.ok) {
+          const quotaData = await res.json();
+          setQuotaStatus(quotaData);
+        } else {
+          console.error("Failed to fetch quota status:", res.status);
+        }
+      } catch (err) {
+        console.error("Error fetching quota:", err);
+      } finally {
+        setQuotaLoading(false);
+      }
+    };
+
+    fetchQuota();
+    // Refetch quota every 30 seconds
+    const quotaInterval = setInterval(fetchQuota, 30000);
+    return () => clearInterval(quotaInterval);
   }, [companyId]);
 
   const handleUpdate = async () => {
@@ -132,6 +131,7 @@ export default function ManageUser() {
   };
 
   const handleDelete = async (user) => {
+    if (deletingUserId) return;
     if (!user?.email || !user?.id || !user?.deptName) return;
 
     if (!window.confirm(`Delete ${user.name}?`)) return;
@@ -155,6 +155,19 @@ export default function ManageUser() {
       fetchUsers();
       setDeleteSuccessMsg(`✅ ${user.name} deleted successfully`);
       setTimeout(() => setDeleteSuccessMsg(""), 3000);
+      
+      // Refetch quota after deletion with delay to allow backend tracking to complete
+      setTimeout(async () => {
+        try {
+          const res = await fetch(`http://localhost:5000/api/company/${companyId}/user-quota`);
+          if (res.ok) {
+            const quotaData = await res.json();
+            setQuotaStatus(quotaData);
+          }
+        } catch (err) {
+          console.error("Failed to refetch quota:", err);
+        }
+      }, 800);
     } catch (err) {
       console.error("❌ Delete failed:", err);
       alert("❌ Failed to delete user. Please try again.");
@@ -172,6 +185,7 @@ export default function ManageUser() {
   );
 
   const displayedCount = sortedUsers.length;
+  const isDeletingAnyUser = deletingUserId !== null;
 
   return (
     <div className="flex min-h-screen bg-[#031C3A] text-white">
@@ -187,6 +201,36 @@ export default function ManageUser() {
           <p className="text-[#AFCBE3] mt-1">
             {companyName} — Manage and view your company users here.
           </p>
+
+          {/* Quota Status */}
+          {quotaStatus && (
+            <div className="mt-4 p-4 bg-[#021B36] border border-[#00FFFF]/30 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[#00FFFF] font-semibold">{quotaStatus.plan} Plan</p>
+                  <p className="text-[#AFCBE3] text-sm mt-1">
+                    Active Users: {quotaStatus.currentCount} | Total Added (including deleted): {quotaStatus.totalEverAdded} | Maximum: {quotaStatus.maxAllowed}
+                  </p>
+                  {quotaStatus.deletedCount > 0 && (
+                    <p className="text-[#AFCBE3]/60 text-xs mt-1">
+                      ({quotaStatus.deletedCount} deleted users count towards limit)
+                    </p>
+                  )}
+                </div>
+                <div className="text-right">
+                  <div className="w-32 h-2 bg-[#00FFFF]/20 rounded-full overflow-hidden">
+                    <div 
+                      className={`h-full transition-all ${quotaStatus.canAdd ? 'bg-green-500' : 'bg-red-500'}`}
+                      style={{width: `${Math.min(100, (quotaStatus.totalEverAdded / quotaStatus.maxAllowed) * 100)}%`}}
+                    ></div>
+                  </div>
+                  <p className="text-xs text-[#AFCBE3] mt-1">
+                    {Math.round((quotaStatus.totalEverAdded / quotaStatus.maxAllowed) * 100)}%
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
           <br />
 
           {deleteSuccessMsg && (
@@ -201,6 +245,7 @@ export default function ManageUser() {
             <select
               value={filterDept}
               onChange={(e) => setFilterDept(e.target.value)}
+              disabled={isDeletingAnyUser}
               className="px-4 py-2 bg-[#021B36] border border-[#00FFFF]/50 text-[#00FFFF] rounded font-semibold hover:border-[#00FFFF] transition"
             >
               <option value="all">All Departments</option>
@@ -295,11 +340,12 @@ export default function ManageUser() {
                               },
                             })
                           }
+                          disabled={isDeletingAnyUser}
                           className={`px-3 py-1 rounded text-xs font-semibold hover:opacity-80 transition ${
                             u.progress >= 100
                               ? "bg-teal-400 text-black"
                               : "bg-teal-400/20 text-teal-300"
-                          }`}
+                          } ${isDeletingAnyUser ? "opacity-60 cursor-not-allowed" : ""}`}
                         >
                           {u.progress >= 100
                             ? "Completed"
@@ -311,17 +357,22 @@ export default function ManageUser() {
                         <div className="flex justify-center gap-2">
                           <button
                             onClick={() => setEditingUser(u)}
-                            className="px-3 py-1 bg-yellow-400 text-black rounded border border-yellow-500 hover:opacity-80"
+                            disabled={isDeletingAnyUser}
+                            className={`px-3 py-1 bg-yellow-400 text-black rounded border border-yellow-500 hover:opacity-80 ${
+                              isDeletingAnyUser ? "opacity-60 cursor-not-allowed" : ""
+                            }`}
                           >
                             Edit
                           </button>
                           <button
                             onClick={() => handleDelete(u)}
-                            disabled={deletingUserId === u.id}
+                            disabled={isDeletingAnyUser}
                             className={`px-3 py-1 rounded border transition
                               ${
                                 deletingUserId === u.id
                                   ? "bg-gray-500 cursor-not-allowed border-gray-600"
+                                  : isDeletingAnyUser
+                                  ? "bg-red-600/60 cursor-not-allowed border-red-700"
                                   : "bg-red-600 border-red-700 hover:opacity-80"
                               }
                             `}
@@ -332,7 +383,10 @@ export default function ManageUser() {
                             onClick={() =>
                               navigate(`/user-profile/${companyId}/${u.deptName}/${u.id}`)
                             }
-                            className="px-3 py-1 bg-[#00FFFF] text-[#031C3A] rounded border border-cyan-400"
+                            disabled={isDeletingAnyUser}
+                            className={`px-3 py-1 bg-[#00FFFF] text-[#031C3A] rounded border border-cyan-400 ${
+                              isDeletingAnyUser ? "opacity-60 cursor-not-allowed" : ""
+                            }`}
                           >
                             View Profile
                           </button>
@@ -372,13 +426,19 @@ export default function ManageUser() {
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => setEditingUser(null)}
-                className="px-4 py-2 bg-gray-600 rounded"
+                disabled={isDeletingAnyUser}
+                className={`px-4 py-2 bg-gray-600 rounded ${
+                  isDeletingAnyUser ? "opacity-60 cursor-not-allowed" : ""
+                }`}
               >
                 Cancel
               </button>
               <button
                 onClick={handleUpdate}
-                className="px-4 py-2 bg-teal-400 text-black rounded"
+                disabled={isDeletingAnyUser}
+                className={`px-4 py-2 bg-teal-400 text-black rounded ${
+                  isDeletingAnyUser ? "opacity-60 cursor-not-allowed" : ""
+                }`}
               >
                 Save
               </button>

@@ -773,7 +773,11 @@ function generateCredentialsPDF(companyName, companyEmail, tempPassword) {
 
       doc.moveTo(50, 190).lineTo(550, 190).stroke("#00FFFF");
 
-      // Credentials
+      // Credentials section with dark blue background
+      doc.save();
+      doc.rect(40, 200, 520, 140).fill("#031C3A");
+      doc.restore();
+
       doc
         .fontSize(12)
         .fillColor("#00FFFF")

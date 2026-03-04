@@ -18,45 +18,44 @@ export default function AuthModal({ isOpen, mode: initialMode, onClose }) {
     emailOrUsername: "",
     password: "",
   });
-  const handleClose = () => {
-  resetForm();
-  onClose();
-};
 
+  const handleClose = () => {
+    resetForm();
+    onClose();
+  };
 
   useEffect(() => {
-  if (isOpen) {
-    resetForm();
-  }
-}, [isOpen, initialMode]);
+    if (isOpen) {
+      resetForm();
+    }
+  }, [isOpen, initialMode]);
 
-const resetForm = () => {
-  setMode(initialMode);
-  setUserType(null);
-  setFormData({ emailOrUsername: "", password: "" });
-  setShowPassword(false);
-  setRememberMe(false);
-  setError("");
-};
+  const resetForm = () => {
+    setMode(initialMode);
+    setUserType(null);
+    setFormData({ emailOrUsername: "", password: "" });
+    setShowPassword(false);
+    setRememberMe(false);
+    setError("");
+  };
 
   if (!isOpen) return null;
 
   const isLogin = mode === "login";
 
- const handleSubmit = async (e) => {
-  e.preventDefault();
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    const result = await handleLogin({
+      userType,
+      formData,
+      navigate,
+      onClose,
+    });
 
-  setLoading(true);   
-  const result = await handleLogin({
-    userType,
-    formData,
-    navigate,
-    onClose,
-  });
-
-  if (result?.error) setError(result.error);
-   setLoading(false);
-};
+    if (result?.error) setError(result.error);
+    setLoading(false);
+  };
 
 
   const SelectCard = ({ type, icon: Icon, label }) => (
@@ -75,13 +74,13 @@ const resetForm = () => {
     </div>
   );
 
-   return (
+  return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-[#02142B]/95 via-[#031C3A]/95 to-[#04354E]/95 backdrop-blur-md animate-fade-in-up">
       <div className="relative w-[95%] sm:w-[480px] md:w-[540px]
-        bg-gradient-to-br from-[#031C3A]/95 via-[#021B36]/95 to-[#011627]/95 
-        border border-[#00FFFF40] rounded-2xl backdrop-blur-xl 
-        shadow-[0_0_35px_rgba(0,255,255,0.25)] 
-        hover:shadow-[0_0_45px_rgba(0,255,255,0.35)] 
+        bg-gradient-to-br from-[#031C3A]/95 via-[#021B36]/95 to-[#011627]/95
+        border border-[#00FFFF40] rounded-2xl backdrop-blur-xl
+        shadow-[0_0_35px_rgba(0,255,255,0.25)]
+        hover:shadow-[0_0_45px_rgba(0,255,255,0.35)]
         transition-all duration-500 ease-in-out animate-scale-in overflow-hidden"
       >
         <button
@@ -101,23 +100,21 @@ const resetForm = () => {
               {isLogin ? "Welcome Back" : "Create Account"}
             </h2>
             <p className="text-[#AFCBE3] text-sm">
-  {isLogin
-    ? "Sign in to continue your learning journey"
-    : "Start your learning journey with TrainMate"}
-</p>
-
-{!isLogin && (
-  <p className="text-[#AFCBE3] text-xs mt-2">
-    Contact:{" "}
-    <a
-      href="mailto:trainmate01@gmail.com"
-      className="text-[#00FFFF] hover:underline"
-    >
-      trainmate01@gmail.com
-    </a>
-  </p>
-)}
-
+              {isLogin
+                ? "Sign in to continue your learning journey"
+                : "Start your learning journey with TrainMate"}
+            </p>
+            {!isLogin && (
+              <p className="text-[#AFCBE3] text-xs mt-2">
+                Contact:{" "}
+                <a
+                  href="mailto:trainmate01@gmail.com"
+                  className="text-[#00FFFF] hover:underline"
+                >
+                  trainmate01@gmail.com
+                </a>
+              </p>
+            )}
           </div>
 
           {isLogin && !userType && (
@@ -203,19 +200,17 @@ const resetForm = () => {
 
               {error && <p className="text-red-500 text-sm">{error}</p>}
 
-             
               <div className="flex items-center mt-2">
-  <label className="flex items-center space-x-2 cursor-pointer text-[#AFCBE3] text-sm">
-    <input
-      type="checkbox"
-      checked={rememberMe}
-      onChange={(e) => setRememberMe(e.target.checked)}
-      className="w-4 h-4 accent-[#00FFFF] border-gray-600 rounded focus:ring-[#00FFFF]"
-    />
-    <span>Remember Me</span>
-  </label>
-</div>
-
+                <label className="flex items-center space-x-2 cursor-pointer text-[#AFCBE3] text-sm">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="w-4 h-4 accent-[#00FFFF] border-gray-600 rounded focus:ring-[#00FFFF]"
+                  />
+                  <span>Remember Me</span>
+                </label>
+              </div>
 
               <button
                 type="submit"

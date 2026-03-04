@@ -275,13 +275,9 @@ const getUnlockedModules = () => {
 
     return {
       ...module,
-<<<<<<< HEAD
-      locked: !unlocked || moduleExpired || module.moduleLocked || module.quizLocked || quizAttemptsExhausted,
-=======
       locked: isLocked,
       quizAttemptLimitReached,
       moduleAttemptLimit,
->>>>>>> 237fc86cc4c83e33609f090d90cf88a9914d4100
       quizTimeUnlocked: quizUnlockStatus.isUnlocked,
       quizUnlockMessage: quizUnlockStatus.message || "",
       timeRemaining,
@@ -461,15 +457,9 @@ if (!roadmap.length)
       {module.moduleExpired && (
         <p className="text-red-400 text-sm mt-2">Module deadline expired</p>
       )}
-<<<<<<< HEAD
-      {module.quizAttemptsExhausted && (
-        <p className="text-red-400 text-sm mt-2 text-center px-4">
-          Max attempts reached ({module.quizAttempts}/{module.moduleMaxAttempts}). Contact admin.
-=======
       {module.quizAttemptLimitReached && (
         <p className="text-red-400 text-sm mt-2 text-center px-3">
           Quiz locked after {module.moduleAttemptLimit} attempts
->>>>>>> 237fc86cc4c83e33609f090d90cf88a9914d4100
         </p>
       )}
     </div>
