@@ -1,7 +1,7 @@
 //frontend/src/components/services/authHandlers.js
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth, db } from "../../firebase";
-import { collection, collectionGroup, getDoc, getDocs, doc, query, where } from "firebase/firestore";
+import { collection, collectionGroup, getDoc, getDocs, doc, query, where, setDoc, deleteField } from "firebase/firestore";
 
 export const handleLogin = async ({
   userType,
@@ -76,11 +76,13 @@ export const handleLogin = async ({
 
     // ADMIN LOGIN
     if (userType === "admin") {
+      const inputEmail = (formData.emailOrUsername || "").trim().toLowerCase();
+
       const superSnap = await getDoc(doc(db, "super_admins", "1"));
 
       if (superSnap.exists()) {
         const { email, role } = superSnap.data();
-        if (role === "SUPER_ADMIN" && email === formData.emailOrUsername) {
+        if (role === "SUPER_ADMIN" && email?.toLowerCase?.() === inputEmail) {
           await signInWithEmailAndPassword(
             auth,
             email,
@@ -98,8 +100,12 @@ export const handleLogin = async ({
       let companyId = null;
 
       companiesSnap.forEach((c) => {
-        if (c.data().email === formData.emailOrUsername) {
-          company = c.data();
+        const companyData = c.data() || {};
+        const companyEmail = (companyData.email || "").toLowerCase();
+        const pendingEmail = (companyData.pendingEmail || "").toLowerCase();
+
+        if (companyEmail === inputEmail || pendingEmail === inputEmail) {
+          company = companyData;
           companyId = c.id;
         }
       });
@@ -108,11 +114,47 @@ export const handleLogin = async ({
       if (company.status !== "active")
         return { error: "Company suspended" };
 
-      await signInWithEmailAndPassword(
-        auth,
-        company.email,
-        formData.password
+      const authEmailCandidates = Array.from(
+        new Set(
+          [inputEmail, (company.email || "").toLowerCase(), (company.pendingEmail || "").toLowerCase()].filter(Boolean)
+        )
       );
+
+      let loginError = null;
+      let signedInEmail = "";
+
+      for (const candidateEmail of authEmailCandidates) {
+        try {
+          await signInWithEmailAndPassword(auth, candidateEmail, formData.password);
+          signedInEmail = candidateEmail;
+          loginError = null;
+          break;
+        } catch (err) {
+          loginError = err;
+        }
+      }
+
+      if (loginError) {
+        throw loginError;
+      }
+
+      try {
+        const authEmail = (auth.currentUser?.email || signedInEmail || "").toLowerCase();
+        const savedEmail = (company.email || "").toLowerCase();
+        const pendingEmail = (company.pendingEmail || "").toLowerCase();
+
+        if (authEmail && authEmail !== savedEmail) {
+          const updates = { email: authEmail };
+          if (pendingEmail && pendingEmail === authEmail) {
+            updates.pendingEmail = deleteField();
+            updates.emailChangeRequestedAt = deleteField();
+          }
+          await setDoc(doc(db, "companies", companyId), updates, { merge: true });
+          company.email = authEmail;
+        }
+      } catch (syncErr) {
+        console.warn("Failed to sync company email after login:", syncErr);
+      }
 
       onClose();
       navigate("/company-dashboard", {

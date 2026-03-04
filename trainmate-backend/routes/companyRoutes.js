@@ -7,6 +7,7 @@ import { getAllCompanies } from "../controllers/company-specific/getcompaniesCon
 import { getTotalCompanies } from "../controllers/company-specific/totalcompaniesController.js";
 import { deleteUser } from "../controllers/company-specific/deleteuserController.js";
 import { sendUserCredentials } from "../controllers/company-specific/sendCredentialsController.js";
+import { getModuleLockNotifications, resolveModuleLockNotification } from "../controllers/company-specific/moduleLockNotificationsController.js";
 import { updateDepartmentSettings, getDepartmentSettings } from "../controllers/company-specific/updateDepartmentSettings.js";
 
 
@@ -20,6 +21,8 @@ router.get("/companies", getAllCompanies);
 router.get("/stats/companies", getTotalCompanies);
 router.delete("/company/users/:email", deleteUser);
 router.post("/company/users/credentials-email", sendUserCredentials);
+router.get("/company/notifications/module-lock/:companyId", getModuleLockNotifications);
+router.patch("/company/notifications/module-lock/:companyId/:notificationId", resolveModuleLockNotification);
 
 // Department settings
 router.put("/department/settings", updateDepartmentSettings);
