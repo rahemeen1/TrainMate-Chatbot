@@ -228,29 +228,62 @@ const closeAddUserModal = () => {
   setUserAddedSuccess(false);  // 🔴 reset success
 };
 
+  if (!companyId || !deptId) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#031C3A] text-white">
+        <div className="flex flex-col items-center gap-4">
+          <svg
+            className="animate-spin h-8 w-8 text-[#00FFFF]"
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+          >
+            <path
+              fill="currentColor"
+              d="M12 2C6.477 2 2 6.477 2 12h2a8 8 0 0116 0h2c0-5.523-4.477-10-10-10zm0 20c5.523 0 10-4.477 10-10h-2a8 8 0 01-16 0H2c0 5.523 4.477 10 10 10z"
+            />
+          </svg>
+          <p className="text-base font-medium">Loading department...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen bg-[#031C3A] text-white">
       <CompanySidebar companyId={companyId} companyName={companyName} />
 
-      <div className="flex-1 p-6">
-        <button onClick={() => navigate(-1)} className="mb-4 text-[#00FFFF]">
-          ← Back
-        </button>
-        <h1 className="text-3xl font-bold mb-6">{(deptName || "").toUpperCase()} Department</h1>
+      <div className="flex-1 p-6 md:p-8">
+        <div className="max-w-6xl mx-auto">
+           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div>
+                <h1 className="text-3xl font-bold text-[#00FFFF]">{(deptName || "").toUpperCase()} Department</h1>
+                <p className="text-[#AFCBE3] mt-2 text-sm">
+                  Manage documents and freshers for this department.
+                </p>
+              </div>
+              <button
+                onClick={() => navigate(-1)}
+                className="px-4 py-2 rounded-lg border border-[#00FFFF30] bg-[#031C3A]/70 hover:bg-[#00FFFF]/10 text-[#AFCBE3] font-semibold"
+              >
+                ← Back
+              </button>
+            </div>
+         <br />
 
         {/* DOCUMENTS */}
-        <div className="mb-10">
+        <div className="mb-8 rounded-2xl border border-[#00FFFF22] bg-[#021B36]/70 p-5 md:p-6">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold">
+            <h2 className="text-xl font-semibold text-[#00FFFF]">
               {(deptName || "").toUpperCase()} Documents ({docs.length})
             </h2>
           </div>
 
-         <div className="flex items-center justify-between gap-3 mb-4">
+         <div className="flex flex-col md:flex-row md:items-center gap-3 mb-4">
             <input
       type="file"
       ref={fileInputRef} // attach ref here
-      className="text-sm flex-1"
+      className="text-sm flex-1 bg-[#031C3A]/80 border border-[#00FFFF30] rounded-lg p-2"
       onChange={(e) => setDocFile(e.target.files[0])}
     />
 
@@ -261,7 +294,7 @@ const closeAddUserModal = () => {
     ${
       uploadingDoc
         ? "bg-gray-500 text-white cursor-not-allowed"
-        : "bg-[#00FFFF] text-[#031C3A]"
+        : "bg-[#00FFFF] text-[#031C3A] hover:opacity-90"
     }
   `}
 >
@@ -277,30 +310,35 @@ const closeAddUserModal = () => {
           </div>
 
           {loadingDocs ? (
-            <p>Loading documents...</p>
+            <div className="py-8 flex items-center justify-center gap-3 text-[#AFCBE3]">
+              <svg className="animate-spin h-5 w-5 text-[#00FFFF]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <path fill="currentColor" d="M12 2C6.477 2 2 6.477 2 12h2a8 8 0 0116 0h2c0-5.523-4.477-10-10-10z" />
+              </svg>
+              Loading documents...
+            </div>
           ) : (
-          <div className="mb-10">
+          <div className="mb-2 overflow-x-auto rounded-xl border border-[#00FFFF30] bg-[#021B36]/80">
 
-  <table className="w-full border border-[#00FFFF30]">
-    <thead className="bg-[#021B36] text-[#00FFFF]">
+  <table className="w-full text-sm">
+    <thead className="bg-[#031C3A]/80 text-[#00FFFF] border-b border-[#00FFFF30]">
       <tr>
-        <th className="p-2 text-left">Document</th>
-        <th className="p-2 text-center">Actions</th>
+        <th className="p-3 text-left font-semibold">Document</th>
+        <th className="p-3 text-center font-semibold">Actions</th>
       </tr>
     </thead>
     <tbody>
       {docs.length === 0 && (
         <tr>
-          <td colSpan="2" className="p-3 text-center text-gray-400">
+          <td colSpan="2" className="p-6 text-center text-[#AFCBE3]">
             No documents uploaded
           </td>
         </tr>
       )}
 
       {docs.map((doc) => (
-        <tr key={doc.id} className="border-t border-[#00FFFF20]">
-          <td className="p-2">{doc.name}</td>
-          <td className="p-2 text-center">
+        <tr key={doc.id} className="border-t border-[#00FFFF20] hover:bg-[#00FFFF10] transition">
+          <td className="p-3">{doc.name}</td>
+          <td className="p-3 text-center">
             <div className="flex justify-center items-center gap-2">
               {/* View button */}
               <a
@@ -359,10 +397,10 @@ const closeAddUserModal = () => {
         </div>
 
         {/* USERS */}
-        <div className="mb-8">
-          <div className="flex justify-between mb-3">
+        <div className="mb-8 rounded-2xl border border-[#00FFFF22] bg-[#021B36]/70 p-5 md:p-6">
+          <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-3 mb-3">
             <div>
-              <h2 className="text-xl font-semibold">Users ({users.length})</h2>
+              <h2 className="text-xl font-semibold text-[#00FFFF]">Users ({users.length})</h2>
               {quotaStatus ? (
                 <p className="text-sm text-[#AFCBE3] mt-1">
                   {quotaStatus.plan} plan: {quotaStatus.currentCount} active / {quotaStatus.totalEverAdded} total / {quotaStatus.maxAllowed} max
@@ -379,7 +417,7 @@ const closeAddUserModal = () => {
               className={`px-4 py-2 rounded-lg font-semibold ${
                 isLimitReached || quotaLoading
                   ? "bg-gray-500 text-white cursor-not-allowed"
-                  : "bg-[#00FFFF] text-[#031C3A]"
+                  : "bg-[#00FFFF] text-[#031C3A] hover:opacity-90"
               }`}
               title={
                 isLimitReached
@@ -404,37 +442,43 @@ const closeAddUserModal = () => {
           )}
 
           {loadingUsers ? (
-            <p>Loading...</p>
+            <div className="py-8 flex items-center justify-center gap-3 text-[#AFCBE3]">
+              <svg className="animate-spin h-5 w-5 text-[#00FFFF]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <path fill="currentColor" d="M12 2C6.477 2 2 6.477 2 12h2a8 8 0 0116 0h2c0-5.523-4.477-10-10-10z" />
+              </svg>
+              Loading users...
+            </div>
           ) : (
-            <table className="w-full border border-[#00FFFF30]">
-              <thead className="bg-[#021B36] text-[#00FFFF]">
+            <div className="overflow-x-auto rounded-xl border border-[#00FFFF30] bg-[#021B36]/80">
+            <table className="w-full text-sm">
+              <thead className="bg-[#031C3A]/80 text-[#00FFFF] border-b border-[#00FFFF30]">
   <tr>
-    <th className="p-2 text-center">Name</th>
-    <th className="p-2 text-center">Email</th>
-    <th className="p-2 text-center">Phone</th>
-    <th className="p-2 text-center">Training On</th>
-    <th className="p-2 text-center">Level</th>
+    <th className="p-3 text-center font-semibold">Name</th>
+    <th className="p-3 text-center font-semibold">Email</th>
+    <th className="p-3 text-center font-semibold">Phone</th>
+    <th className="p-3 text-center font-semibold">Training On</th>
+    <th className="p-3 text-center font-semibold">Level</th>
   </tr>
 </thead>
 
               <tbody>
       {users.map((u) => (
-    <tr key={u.id} className="border-t border-[#00FFFF20]">
-      <td className="p-2">{(u.name || "").toUpperCase()}</td>
+    <tr key={u.id} className="border-t border-[#00FFFF20] hover:bg-[#00FFFF10] transition">
+      <td className="p-3">{(u.name || "").toUpperCase()}</td>
 
-      <td className="p-2 text-center">
+      <td className="p-3 text-center">
         {u.email || "—"}
       </td>
 
-      <td className="p-2 text-center">
+      <td className="p-3 text-center">
         {u.phone || "—"}
       </td>
 
-      <td className="p-2 text-center capitalize">
+      <td className="p-3 text-center capitalize">
         {u.trainingOn || "—"}
       </td>
 
-      <td className="p-2 text-center capitalize">
+      <td className="p-3 text-center capitalize">
         {u.trainingLevel || "—"}
       </td>
     </tr>
@@ -442,19 +486,21 @@ const closeAddUserModal = () => {
 </tbody>
 
             </table>
+            </div>
           )}
+        </div>
         </div>
       </div>
 
       {/* ADD USER MODAL */}
       {showAddUserModal && (
-        <div className="fixed inset-0 bg-black/60 flex justify-center items-center">
-          <div className="bg-[#021B36] p-6 rounded-xl w-full max-w-md">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center p-4 z-50">
+          <div className="bg-[#021B36] border border-[#00FFFF30] p-6 rounded-2xl w-full max-w-md shadow-2xl">
             <h3 className="text-xl font-bold text-[#00FFFF] mb-4">Add Fresher</h3>
 
             <input
               placeholder="Name"
-              className="w-full p-2 mb-2 bg-[#031C3A]"
+              className="w-full p-2 mb-2 rounded-lg bg-[#031C3A] border border-[#00FFFF20]"
               value={newUser.name}
               required
               onChange={(e) =>
@@ -464,7 +510,7 @@ const closeAddUserModal = () => {
             <input
               placeholder="Email *"
               type="email"
-              className="w-full p-2 mb-2 bg-[#031C3A]"
+              className="w-full p-2 mb-2 rounded-lg bg-[#031C3A] border border-[#00FFFF20]"
               value={newUser.email}
               required
               onChange={(e) =>
@@ -476,7 +522,7 @@ const closeAddUserModal = () => {
             </p>
             <input
               placeholder="Phone"
-              className="w-full p-2 mb-2 bg-[#031C3A]"
+              className="w-full p-2 mb-2 rounded-lg bg-[#031C3A] border border-[#00FFFF20]"
               value={newUser.phone}
               required
               onChange={(e) =>
@@ -485,7 +531,7 @@ const closeAddUserModal = () => {
             />
             <input
               placeholder="Training On"
-              className="w-full p-2 mb-2 bg-[#031C3A]"
+              className="w-full p-2 mb-2 rounded-lg bg-[#031C3A] border border-[#00FFFF20]"
               value={newUser.trainingOn}
               required
               onChange={(e) =>
@@ -493,7 +539,7 @@ const closeAddUserModal = () => {
               }
             />
             <select
-              className="w-full p-2 mb-2 bg-[#031C3A]"
+              className="w-full p-2 mb-2 rounded-lg bg-[#031C3A] border border-[#00FFFF20]"
               value={newUser.trainingLevel}
               required
               onChange={(e) =>
@@ -513,7 +559,7 @@ const closeAddUserModal = () => {
 )}
 
             
-            <div className="flex justify-end gap-2">
+            <div className="mt-4 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
              <button 
                onClick={closeAddUserModal}
                disabled={addingUser}
@@ -539,13 +585,13 @@ const closeAddUserModal = () => {
 >
               {addingUser ? "Adding user..." : "Add"}
 </button>
-{addingUser && (
-  <p className="text-sm text-[#00FFFF] mb-2 animate-pulse">
+
+            </div>
+            {addingUser && (
+  <p className="text-sm text-[#00FFFF] mt-3 animate-pulse">
     Creating user account, please wait...
   </p>
 )}
-
-            </div>
           </div>
         </div>
       )}

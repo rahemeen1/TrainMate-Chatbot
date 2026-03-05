@@ -101,7 +101,7 @@ export default function About() {
   }
 
   return (
-    <div className="flex h-screen bg-[#031C3A] text-white overflow-hidden">
+    <div className="flex min-h-screen bg-[#031C3A] text-white overflow-hidden">
       {/* SIDEBAR */}
       <div className="w-64 bg-[#021B36]/90 p-4 overflow-hidden border-r border-[#00FFFF]/20">
         <FresherSideMenu
@@ -115,16 +115,16 @@ export default function About() {
 
       {/* MAIN CONTENT */}
       <div className="flex-1 overflow-y-auto">
-        <div className="min-h-screen p-12 bg-[#031C3A]">
+        <div className="min-h-screen px-6 py-8 md:px-10 md:py-10 lg:px-12 lg:py-12 bg-[#031C3A]">
           {/* Header */}
-          <div className="mb-6">
-            <h1 className="text-4xl font-bold text-[#00FFFF] mb-3">
+          <div className="mb-8 md:mb-10">
+            <h1 className="text-3xl md:text-4xl font-bold text-[#00FFFF] mb-3">
               Training Flow
             </h1>
-            <p className="text-[#AFCBE3] text-lg mb-4">
+            <p className="text-[#AFCBE3] text-base md:text-lg mb-5">
               Follow these 7 steps to complete your training and earn your certificate
             </p>
-            <div className="bg-[#021B36]/60 border border-[#00FFFF]/30 rounded-lg p-5 mb-8">
+            <div className="bg-[#021B36]/60 border border-[#00FFFF]/30 rounded-xl p-5 md:p-6 mb-8 md:mb-10">
               <p className="text-[#AFCBE3] text-sm leading-relaxed">
                 {companyName && (
                   <>
@@ -141,25 +141,25 @@ export default function About() {
           </div>
 
           {/* Timeline Container */}
-          <div className="relative">
+          <div className="relative pl-1 md:pl-0">
             {/* Vertical Line */}
-            <div className="absolute left-8 top-0 bottom-0 w-1 bg-gradient-to-b from-[#00FFFF] via-[#00FFFF] to-[#00FFC2]"></div>
+            <div className="absolute left-7 md:left-8 top-0 bottom-0 w-1 bg-gradient-to-b from-[#00FFFF] via-[#00FFFF] to-[#00FFC2]"></div>
 
             {/* Steps */}
-            <div className="space-y-8">
+            <div className="space-y-6 md:space-y-8">
               {steps.map((step, index) => (
-                <div key={step.id} className="relative flex gap-20">
+                <div key={step.id} className="relative flex gap-6 md:gap-20">
                   {/* Dot */}
-                  <div className="absolute left-0 top-4 w-16 h-16 flex items-center justify-center">
-                    <div className="w-16 h-16 bg-[#031C3A] rounded-full border-4 border-[#00FFFF] flex items-center justify-center shadow-lg shadow-[#00FFFF]/50 z-10">
+                  <div className="absolute left-0 top-4 w-14 h-14 md:w-16 md:h-16 flex items-center justify-center">
+                    <div className="w-14 h-14 md:w-16 md:h-16 bg-[#031C3A] rounded-full border-4 border-[#00FFFF] flex items-center justify-center shadow-lg shadow-[#00FFFF]/50 z-10">
                       <span className="text-[#00FFFF] font-bold text-lg">{step.id}</span>
                     </div>
                   </div>
 
                   {/* Info Card - Full Width */}
-                  <div className="flex-1 mt-2 ml-16">
-                    <div className="bg-[#021B36]/80 border border-[#00FFFF]/40 rounded-lg p-6 pl-6 hover:border-[#00FFFF]/70 hover:shadow-lg hover:shadow-[#00FFFF]/20 transition-all duration-300 backdrop-blur-sm h-full">
-                      <h3 className="text-xl font-bold text-[#00FFFF] mb-3">
+                  <div className="flex-1 mt-1 md:mt-2 ml-16 md:ml-16">
+                    <div className="bg-[#021B36]/80 border border-[#00FFFF]/40 rounded-xl p-5 md:p-6 hover:border-[#00FFFF]/70 hover:shadow-lg hover:shadow-[#00FFFF]/20 transition-all duration-300 backdrop-blur-sm h-full">
+                      <h3 className="text-lg md:text-xl font-bold text-[#00FFFF] mb-2 md:mb-3">
                         {step.title}
                       </h3>
                       <p className="text-[#AFCBE3] text-sm leading-relaxed">
@@ -173,8 +173,8 @@ export default function About() {
           </div>
 
           {/* Footer Note */}
-          <div className="mt-16">
-            <div className="bg-[#021B36]/60 border border-[#00FFFF]/30 rounded-lg p-6 hover:border-[#00FFFF]/70 transition-all duration-300">
+          <div className="mt-10 md:mt-14 lg:mt-16 pb-4">
+            <div className="bg-[#021B36]/60 border border-[#00FFFF]/30 rounded-xl p-5 md:p-6 hover:border-[#00FFFF]/70 transition-all duration-300">
               <h3 className="text-[#00FFFF] font-bold mb-3">Key Reminder</h3>
               <p className="text-[#AFCBE3] text-sm">
                 Complete each step in order. Stay consistent with your training schedule, master each module quiz, and use the Training Assistant whenever you need clarification. Your dedication will lead to successful completion and certification.

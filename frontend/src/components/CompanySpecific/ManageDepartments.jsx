@@ -80,7 +80,20 @@ export default function ManageDepartments() {
   if (!companyId) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#031C3A] text-white">
-        Loading company...
+        <div className="flex flex-col items-center gap-4">
+          <svg
+            className="animate-spin h-8 w-8 text-[#00FFFF]"
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+          >
+            <path
+              fill="currentColor"
+              d="M12 2C6.477 2 2 6.477 2 12h2a8 8 0 0116 0h2c0-5.523-4.477-10-10-10zm0 20c5.523 0 10-4.477 10-10h-2a8 8 0 01-16 0H2c0 5.523 4.477 10 10 10z"
+            />
+          </svg>
+          <p className="text-base font-medium text-white">Loading company...</p>
+        </div>
       </div>
     );
   }
@@ -124,57 +137,68 @@ export default function ManageDepartments() {
     />
 
     {/* Main Content - RIGHT */}
-    <div className="flex-1 p-8">
+    <div className="flex-1 p-6 md:p-8">
       <div className="max-w-6xl mx-auto">
 
-        {/* Header */}
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <h1 className="text-3xl font-bold text-[#00FFFF] ">
-              Manage Departments
-            </h1>
-            <p className="text-[#AFCBE3] mt-1 ">
-              {companyName} — Departments Overview
-            </p>
+         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <h1 className="text-3xl font-bold text-[#00FFFF]">Manage Departments</h1>
+              <p className="text-[#AFCBE3] mt-2 text-sm">
+                {companyName} — Department overview and fresher distribution.
+              </p>
+            </div>
+
+            <button
+              onClick={() => navigate(-1)}
+              className="px-4 py-2 rounded-lg border border-[#00FFFF30] bg-[#031C3A]/70 hover:bg-[#00FFFF]/10 text-[#AFCBE3] font-semibold"
+            >
+              ← Back
+            </button>
+          </div>
+          <br />
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+          <div className="rounded-xl border border-[#00FFFF30] bg-[#021B36]/70 p-4">
+            <p className="text-xs uppercase tracking-wide text-[#AFCBE3]">Total Departments</p>
+            <p className="text-2xl font-bold text-[#00FFFF] mt-2">{departments.length}</p>
           </div>
 
-          <button
-            onClick={() => navigate(-1)}
-            className="px-4 py-2 bg-[#021B36] rounded-lg hover:bg-[#032A4A]"
-          >
-            ← Back
-          </button>
+          <div className="rounded-xl border border-[#00FFFF30] bg-[#021B36]/70 p-4">
+            <p className="text-xs uppercase tracking-wide text-[#AFCBE3]">Total Freshers</p>
+            <p className="text-2xl font-bold text-[#00FFFF] mt-2">
+              {departments.reduce((sum, dept) => sum + (dept.usersCount || 0), 0)}
+            </p>
+          </div>
         </div>
 
-        {/* Table */}
-        <div className="overflow-x-auto rounded-xl border border-[#00FFFF30]">
-          <table className="w-full">
+        <div className="overflow-x-auto rounded-2xl border border-[#00FFFF30] bg-[#021B36]/80">
+          <table className="w-full text-sm">
             <thead>
-              <tr className="bg-[#021B36] text-[#00FFFF]">
-                <th className="p-4 text-left">Department</th>
-                <th className="p-4 text-center">Freshers</th>
-                <th className="p-4 text-center">Action</th>
+              <tr className="bg-[#031C3A]/80 text-[#00FFFF] border-b border-[#00FFFF30]">
+                <th className="px-4 py-3 text-left font-semibold">Department</th>
+                <th className="px-4 py-3 text-center font-semibold">Freshers</th>
+                <th className="px-4 py-3 text-center font-semibold">Action</th>
               </tr>
             </thead>
 
             <tbody>
               {departments.length === 0 ? (
                 <tr>
-                  <td colSpan="3" className="p-6 text-center text-[#AFCBE3]">
-                    No departments found
+                  <td colSpan="3" className="p-8 text-center text-[#AFCBE3]">
+                    No departments found yet.
                   </td>
                 </tr>
               ) : (
                 departments.map((dept) => (
                   <tr
                     key={dept.id}
-                    className="border-t border-[#00FFFF20] hover:bg-[#00FFFF10]"
+                    className="border-t border-[#00FFFF20] hover:bg-[#00FFFF10] transition"
                   >
-                    <td className="p-4 font-medium">{(dept.name || "").toUpperCase()}</td>
-                    <td className="p-4 text-center">{dept.usersCount}</td>
-                    <td className="p-4 text-center">
+                    <td className="px-4 py-4 font-medium text-white">{(dept.name || "").toUpperCase()}</td>
+                    <td className="px-4 py-4 text-center text-[#E8F7FF]">{dept.usersCount}</td>
+                    <td className="px-4 py-4 text-center">
                       <button
-                        className="text-[#00FFFF] underline"
+                        className="px-3 py-1.5 rounded-lg border border-[#00FFFF30] text-[#00FFFF] font-semibold hover:bg-[#00FFFF]/10"
                         onClick={() =>
                           navigate(`/departments/${dept.id}`, {
                             state: {
@@ -186,7 +210,7 @@ export default function ManageDepartments() {
                           })
                         }
                       >
-                        View Details →
+                        View Details
                       </button>
                     </td>
                   </tr>
