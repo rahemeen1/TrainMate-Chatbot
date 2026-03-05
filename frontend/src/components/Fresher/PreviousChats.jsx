@@ -33,7 +33,7 @@ export default function PreviousChats() {
     if (!state || !userId || !companyId || !deptId) {
       navigate("/chatbot");
     }
-  }, [state]);
+  }, [state, userId, companyId, deptId, navigate]);
 
   /* ----------------------------------
      FETCH ACTIVE MODULE
@@ -108,7 +108,7 @@ export default function PreviousChats() {
     };
 
     fetchSessions();
-  }, [activeModuleId]);
+  }, [activeModuleId, userId, companyId, deptId]);
 
   /* ----------------------------------
      LOAD CHAT
@@ -255,7 +255,11 @@ export default function PreviousChats() {
                         : "bg-[#021B36] border-cyan-400/20 text-[#AFCBE3]"
                     }`}
                 >
-                  {msg.text}
+                  {typeof msg.text === "string" && msg.text.includes("<") ? (
+                    <div dangerouslySetInnerHTML={{ __html: msg.text }} />
+                  ) : (
+                    msg.text
+                  )}
                 </div>
               </div>
             ))}
