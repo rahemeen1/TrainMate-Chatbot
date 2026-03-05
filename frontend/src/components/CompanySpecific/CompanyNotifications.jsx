@@ -11,7 +11,6 @@ export default function CompanyNotifications() {
 
   const [loading, setLoading] = useState(true);
   const [notifications, setNotifications] = useState([]);
-  const [actionLoadingId, setActionLoadingId] = useState("");
   const [error, setError] = useState("");
 
   const loadNotifications = async () => {
@@ -38,52 +37,23 @@ export default function CompanyNotifications() {
     loadNotifications();
   }, [companyId]);
 
-  const handleReject = async (notificationId) => {
-    try {
-      setActionLoadingId(notificationId);
-      const res = await fetch(
-        `http://localhost:5000/api/company/notifications/module-lock/${companyId}/${notificationId}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "rejected" }),
-        }
-      );
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Failed to update notification");
-      await loadNotifications();
-    } catch (err) {
-      setError(err.message || "Failed to update notification");
-    } finally {
-      setActionLoadingId("");
+  const handleViewProfile = (notification) => {
+    if (!notification?.deptId || !notification?.userId) {
+      setError("Missing user details for this notification");
+      return;
     }
-  };
 
-  const handleApproveFinalRetry = async (notification) => {
-    try {
-      setActionLoadingId(notification.id);
-
-      const unlockRes = await fetch("http://localhost:5000/api/quiz/admin-unlock", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+    navigate(
+      `/user-profile/${companyId}/${notification.deptId}/${notification.userId}?notificationId=${encodeURIComponent(notification.id)}&moduleId=${encodeURIComponent(notification.moduleId || "")}`,
+      {
+        state: {
           companyId,
-          deptId: notification.deptId,
-          userId: notification.userId,
-          moduleId: notification.moduleId,
+          companyName,
           notificationId: notification.id,
-        }),
-      });
-
-      const unlockData = await unlockRes.json();
-      if (!unlockRes.ok) throw new Error(unlockData?.error || "Failed to grant final retry");
-
-      await loadNotifications();
-    } catch (err) {
-      setError(err.message || "Failed to grant final retry");
-    } finally {
-      setActionLoadingId("");
-    }
+          moduleId: notification.moduleId || "",
+        },
+      }
+    );
   };
 
   return (
@@ -91,69 +61,89 @@ export default function CompanyNotifications() {
       <CompanySidebar companyId={companyId} companyName={companyName} />
 
       <div className="flex-1 p-6 md:p-8">
-        <div className="max-w-5xl mx-auto space-y-6">
-          <div className="flex items-center justify-between">
-            <h1 className="text-3xl font-bold text-[#00FFFF]">Admin Notifications</h1>
-            <button
-              onClick={loadNotifications}
-              className="px-4 py-2 border border-[#00FFFF] text-[#00FFFF] rounded hover:bg-[#00FFFF]/10"
+        {loading ? (
+          <div className="h-full flex flex-col items-center justify-center gap-4">
+            <svg
+              className="animate-spin h-8 w-8 text-[#00FFFF]"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
             >
-              Refresh
-            </button>
+              <path
+                fill="currentColor"
+                d="M12 2C6.477 2 2 6.477 2 12h2a8 8 0 0116 0h2c0-5.523-4.477-10-10-10zm0 20c5.523 0 10-4.477 10-10h-2a8 8 0 01-16 0H2c0 5.523 4.477 10 10 10z"
+              />
+            </svg>
+            <p className="text-base font-medium text-white">Loading Notifications...</p>
           </div>
-
-          {error && (
-            <div className="p-3 rounded border border-red-400/40 bg-red-500/10 text-red-300 text-sm">
-              {error}
+        ) : (
+          <div className="max-w-6xl mx-auto space-y-6">
+            <div className="rounded-2xl border border-[#00FFFF30] bg-[#021B36]/80 shadow-lg p-6 md:p-8">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div>
+                  <h1 className="text-3xl font-bold text-[#00FFFF]">Admin Notifications</h1>
+                  <p className="text-[#AFCBE3] mt-2 text-sm">
+                    Review locked-quiz alerts and open the fresher profile to take action.
+                  </p>
+                </div>
+                <button
+                  onClick={loadNotifications}
+                  className="px-4 py-2 rounded-lg border border-[#00FFFF] text-[#00FFFF] font-semibold hover:bg-[#00FFFF]/10"
+                >
+                  Refresh
+                </button>
+              </div>
             </div>
-          )}
 
-          {loading ? (
-            <p className="text-[#AFCBE3]">Loading notifications...</p>
-          ) : notifications.length === 0 ? (
-            <div className="p-5 rounded-xl border border-[#00FFFF30] bg-[#021B36]/70 text-[#AFCBE3]">
-              No pending notifications.
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {notifications.map((n) => (
-                <div key={n.id} className="p-5 rounded-xl border border-[#00FFFF30] bg-[#021B36]/80">
-                  <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-                    <div>
-                      <h3 className="text-lg font-semibold text-[#00FFFF]">Module Lock Alert</h3>
-                      <p className="text-[#AFCBE3] text-sm mt-1">{n.message}</p>
+            {error && (
+              <div className="p-3 rounded-lg border border-red-400/40 bg-red-500/10 text-red-300 text-sm">
+                {error}
+              </div>
+            )}
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 text-sm">
-                        <p><span className="text-[#AFCBE3]">User:</span> {n.userName || "Unknown"}</p>
-                        <p><span className="text-[#AFCBE3]">Email:</span> {n.userEmail || "Unknown"}</p>
-                        <p><span className="text-[#AFCBE3]">Module:</span> {n.moduleTitle || n.moduleId}</p>
-                        <p><span className="text-[#AFCBE3]">Attempt:</span> {n.attemptNumber || "N/A"}</p>
-                        <p><span className="text-[#AFCBE3]">Score:</span> {typeof n.score === "number" ? `${n.score}%` : "N/A"}</p>
+            {notifications.length === 0 ? (
+              <div className="rounded-2xl border border-[#00FFFF30] bg-[#021B36]/70 p-6 text-[#AFCBE3]">
+                No pending notifications.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {notifications.map((n) => (
+                  <div key={n.id} className="rounded-2xl border border-[#00FFFF30] bg-[#021B36]/80 p-5 md:p-6">
+                    <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-5">
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-3">
+                          <span className="px-2 py-1 text-xs font-semibold rounded-full bg-[#00FFFF]/15 text-[#00FFFF]">
+                            Action Required
+                          </span>
+                          <h3 className="text-lg font-semibold text-[#00FFFF]">Module Lock Alert</h3>
+                        </div>
+
+                        <p className="text-[#AFCBE3] text-sm">{n.message}</p>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                          <p><span className="text-[#AFCBE3]">User:</span> {n.userName || "Unknown"}</p>
+                          <p><span className="text-[#AFCBE3]">Email:</span> {n.userEmail || "Unknown"}</p>
+                          <p><span className="text-[#AFCBE3]">Module:</span> {n.moduleTitle || n.moduleId}</p>
+                          <p><span className="text-[#AFCBE3]">Attempt:</span> {n.attemptNumber || "N/A"}</p>
+                          <p><span className="text-[#AFCBE3]">Score:</span> {typeof n.score === "number" ? `${n.score}%` : "N/A"}</p>
+                        </div>
+                      </div>
+
+                      <div className="shrink-0">
+                        <button
+                          onClick={() => handleViewProfile(n)}
+                          className="px-4 py-2 rounded-lg bg-[#00FFFF] text-[#031C3A] font-semibold hover:opacity-90"
+                        >
+                          View Profile
+                        </button>
                       </div>
                     </div>
-
-                    <div className="flex gap-2 shrink-0">
-                      <button
-                        onClick={() => handleApproveFinalRetry(n)}
-                        disabled={actionLoadingId === n.id}
-                        className="px-4 py-2 bg-[#00FFFF] text-[#031C3A] rounded font-semibold disabled:opacity-60"
-                      >
-                        {actionLoadingId === n.id ? "Processing..." : "Yes, give final retry"}
-                      </button>
-                      <button
-                        onClick={() => handleReject(n.id)}
-                        disabled={actionLoadingId === n.id}
-                        className="px-4 py-2 border border-[#00FFFF] text-[#00FFFF] rounded disabled:opacity-60"
-                      >
-                        No
-                      </button>
-                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

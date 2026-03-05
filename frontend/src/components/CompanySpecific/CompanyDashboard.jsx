@@ -126,6 +126,8 @@ export default function CompanyDashboard() {
   const [googleAuthLoading, setGoogleAuthLoading] = useState(false);
   const [calendarConnectionAttempted, setCalendarConnectionAttempted] = useState(false);
   const [showCalendarPrompt, setShowCalendarPrompt] = useState(true);
+  const [pendingNotificationCount, setPendingNotificationCount] = useState(0);
+  const [showNotificationPrompt, setShowNotificationPrompt] = useState(false);
 
   const selectedPlan = answers[0];
   const effectiveLicense = selectedPlan || companyLicense;
@@ -293,6 +295,43 @@ console.log("companyId:", companyId);
     };
     if (companyId) checkDepartments();
   }, [companyId]);
+
+  useEffect(() => {
+    if (!companyId || !hasDepartments) return;
+
+    let mounted = true;
+
+    const loadPendingNotifications = async () => {
+      try {
+        const res = await fetch(
+          `http://localhost:5000/api/company/notifications/module-lock/${companyId}?status=pending`
+        );
+        const data = await res.json();
+        if (!res.ok) return;
+
+        const count = Array.isArray(data.notifications) ? data.notifications.length : 0;
+        if (!mounted) return;
+
+        setPendingNotificationCount(count);
+
+        if (count > 0) {
+          const promptKey = `company-notification-prompt-shown-${companyId}`;
+          const alreadyShown = sessionStorage.getItem(promptKey) === "1";
+          if (!alreadyShown) {
+            setShowNotificationPrompt(true);
+            sessionStorage.setItem(promptKey, "1");
+          }
+        }
+      } catch (err) {
+      }
+    };
+
+    loadPendingNotifications();
+
+    return () => {
+      mounted = false;
+    };
+  }, [companyId, hasDepartments]);
 
   const toggleDept = (dept) => {
     const selectedPlan = answers[0];
@@ -1206,6 +1245,37 @@ const CustomXAxisTick = ({ x, y, payload }) => {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {hasDepartments && showNotificationPrompt && pendingNotificationCount > 0 && (
+          <div className="fixed right-8 bottom-28 z-50 max-w-sm bg-[#021B36] border border-[#00FFFF50] rounded-xl px-4 py-3 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[#00FFFF] font-semibold text-sm">New Admin Notifications</p>
+                <p className="text-[#AFCBE3] text-sm mt-1">
+                  You have {pendingNotificationCount} pending notification{pendingNotificationCount > 1 ? "s" : ""}.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowNotificationPrompt(false)}
+                className="text-[#AFCBE3] hover:text-[#00FFFF]"
+                aria-label="Close notification prompt"
+              >
+                ✕
+              </button>
+            </div>
+            <button
+              onClick={() => {
+                setShowNotificationPrompt(false);
+                navigate("/CompanySpecific/CompanyNotifications", {
+                  state: { companyId, companyName },
+                });
+              }}
+              className="mt-3 w-full px-3 py-2 rounded-lg bg-[#00FFFF] text-[#031C3A] font-semibold hover:opacity-90"
+            >
+              View Notifications
+            </button>
           </div>
         )}
 

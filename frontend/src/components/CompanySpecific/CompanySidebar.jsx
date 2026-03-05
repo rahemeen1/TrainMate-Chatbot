@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 const MENU_OPTIONS = [
@@ -13,6 +14,40 @@ const MENU_OPTIONS = [
 
 export default function CompanySidebar({ companyId, companyName }) {
   const navigate = useNavigate();
+  const [pendingNotifications, setPendingNotifications] = useState(0);
+
+  const resolvedCompanyId = useMemo(
+    () => companyId || localStorage.getItem("companyId") || "",
+    [companyId]
+  );
+
+  useEffect(() => {
+    if (!resolvedCompanyId) return;
+
+    let isMounted = true;
+
+    const fetchPendingNotifications = async () => {
+      try {
+        const response = await fetch(
+          `http://localhost:5000/api/company/notifications/module-lock/${resolvedCompanyId}?status=pending`
+        );
+        const data = await response.json();
+        if (!response.ok) return;
+        if (isMounted) {
+          setPendingNotifications(Array.isArray(data.notifications) ? data.notifications.length : 0);
+        }
+      } catch (err) {
+      }
+    };
+
+    fetchPendingNotifications();
+    const intervalId = setInterval(fetchPendingNotifications, 30000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+    };
+  }, [resolvedCompanyId]);
 
   const handleNavigation = (opt) => {
     if (opt.label === "Logout") {
@@ -41,11 +76,16 @@ export default function CompanySidebar({ companyId, companyName }) {
           <button
             key={opt.path}
             onClick={() => handleNavigation(opt)}
-            className={`text-left px-4 py-2 rounded-lg hover:bg-[#00FFFF]/20 transition font-medium ${
+            className={`text-left px-4 py-2 rounded-lg hover:bg-[#00FFFF]/20 transition font-medium flex items-center justify-between gap-2 ${
               opt.label === "Logout" ? "text-red-400" : "text-[#AFCBE3]"
             }`}
           >
-            {opt.label}
+            <span>{opt.label}</span>
+            {opt.label === "Notifications" && pendingNotifications > 0 && (
+              <span className="min-w-[22px] h-5 px-1.5 rounded-full bg-[#00FFFF] text-[#031C3A] text-xs font-bold flex items-center justify-center">
+                {pendingNotifications > 9 ? "9+" : pendingNotifications}
+              </span>
+            )}
           </button>
         ))}
       </div>

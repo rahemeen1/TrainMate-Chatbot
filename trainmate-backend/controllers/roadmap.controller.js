@@ -931,5 +931,370 @@ console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboa
   }
 };
 
+function splitDaysEvenly(totalDays, parts) {
+  const safeParts = Math.max(1, Math.floor(parts || 1));
+  const safeTotal = Math.max(safeParts, Math.floor(totalDays || safeParts));
+  const base = Math.floor(safeTotal / safeParts);
+  const remainder = safeTotal % safeParts;
+
+  return Array.from({ length: safeParts }, (_, index) => base + (index < remainder ? 1 : 0));
+}
+
+function buildFallbackRegeneratedModules({ moduleTitle, moduleDescription, splitCount, splitDays, weakConcepts }) {
+  const baseTitle = moduleTitle || "Module";
+  const conceptList = Array.isArray(weakConcepts) ? weakConcepts.slice(0, 8) : [];
+
+  return Array.from({ length: splitCount }, (_, index) => {
+    const phase = index + 1;
+    const conceptSlice = conceptList.slice(index * 3, index * 3 + 3);
+    return {
+      moduleTitle: `${baseTitle} - Recovery Part ${phase}`,
+      description:
+        moduleDescription ||
+        `Focused remediation module part ${phase} to strengthen quiz weak areas before progression.`,
+      estimatedDays: splitDays[index] || 1,
+      skillsCovered: conceptSlice.length ? conceptSlice : ["concept reinforcement", "applied practice", "assessment readiness"],
+    };
+  });
+}
+
+async function fetchModuleFailureInsights({ userRef, moduleId }) {
+  const moduleRef = userRef.collection("roadmap").doc(moduleId);
+  const moduleSnap = await moduleRef.get();
+
+  if (!moduleSnap.exists) {
+    throw new Error("Module not found");
+  }
+
+  const moduleData = moduleSnap.data() || {};
+
+  const attemptsSnap = await moduleRef
+    .collection("quiz")
+    .doc("current")
+    .collection("quizAttempts")
+    .orderBy("attemptNumber", "desc")
+    .limit(6)
+    .get();
+
+  const attempts = attemptsSnap.docs.map((doc) => doc.data() || {});
+  const failedAttempts = attempts.filter((attempt) => !attempt.passed).length;
+  const latestAttempt = attempts[0] || null;
+
+  const latestResultSnap = await moduleRef
+    .collection("quiz")
+    .doc("current")
+    .collection("results")
+    .doc("latest")
+    .get();
+
+  const latestResult = latestResultSnap.exists ? latestResultSnap.data() || {} : {};
+  const wrongQuestions = [];
+
+  const collectWrong = (arr, type) => {
+    if (!Array.isArray(arr)) return;
+    for (const item of arr) {
+      if (!item?.isCorrect) {
+        wrongQuestions.push({
+          type,
+          question: item.question || "",
+          correctAnswer: item.correctAnswer || "",
+        });
+      }
+    }
+  };
+
+  collectWrong(latestResult.mcq, "MCQ");
+  collectWrong(latestResult.oneLiners, "One-Liner");
+  collectWrong(latestResult.coding, "Coding");
+
+  const weakConceptSet = new Set();
+  for (const wrong of wrongQuestions) {
+    extractConceptsFromQuestion(wrong.question).forEach((concept) => weakConceptSet.add(concept));
+  }
+
+  const weakConcepts = Array.from(weakConceptSet).slice(0, 12);
+  const latestScore = Number.isFinite(latestResult.score)
+    ? latestResult.score
+    : Number.isFinite(latestAttempt?.score)
+      ? latestAttempt.score
+      : null;
+
+  return {
+    moduleRef,
+    moduleData,
+    latestScore,
+    failedAttempts,
+    totalAttempts: attempts.length,
+    weakConcepts,
+    wrongQuestions: wrongQuestions.slice(0, 12),
+  };
+}
+
+async function generateRegeneratedSubmodules({
+  targetModule,
+  weakConcepts,
+  wrongQuestions,
+  splitCount,
+  splitDays,
+  learningProfile,
+}) {
+  const prompt = `
+You are an AI curriculum recovery planner.
+
+Goal:
+- Regenerate ONLY the failed module into exactly ${splitCount} focused recovery modules.
+- Keep sequence pedagogically progressive.
+- Each module must target weak areas from failed quiz questions.
+- Total modules must be ${splitCount} (no more, no less).
+- Keep estimatedDays close to this distribution: ${JSON.stringify(splitDays)}
+
+Failed Module:
+${JSON.stringify({
+  moduleTitle: targetModule.moduleTitle,
+  description: targetModule.description,
+  skillsCovered: targetModule.skillsCovered || [],
+  estimatedDays: targetModule.estimatedDays || 1,
+})}
+
+Weak Concepts:
+${JSON.stringify(weakConcepts || [])}
+
+Wrong Questions (sample):
+${JSON.stringify((wrongQuestions || []).slice(0, 8))}
+
+Learning Profile Context:
+${JSON.stringify({
+  summary: learningProfile?.summary || "",
+  avgScore: learningProfile?.avgScore ?? null,
+  strugglingAreas: learningProfile?.strugglingAreas || [],
+}, null, 2)}
+
+Return JSON only as array with this schema:
+[
+  {
+    "moduleTitle": "string",
+    "description": "string",
+    "estimatedDays": number,
+    "skillsCovered": ["skill1", "skill2", "skill3"]
+  }
+]
+
+Constraints:
+- Exactly ${splitCount} items
+- estimatedDays positive integers
+- Focus on weakness remediation + practical application
+- Do not include markdown or extra text
+`;
+
+  try {
+    const llmResponse = await generateRoadmapModel(prompt);
+    const llmText = llmResponse?.response?.text()?.trim() || "";
+    const parsed = JSON.parse(llmText.replace(/```json|```/g, "").trim());
+    const normalized = normalizeRoadmapModules(parsed);
+
+    if (normalized.length !== splitCount) {
+      throw new Error("Regenerated module count mismatch");
+    }
+
+    const adjusted = normalized.map((module, index) => ({
+      ...module,
+      estimatedDays: splitDays[index] || module.estimatedDays || 1,
+    }));
+
+    return adjusted;
+  } catch (err) {
+    console.warn("Regenerated submodule AI generation failed, using fallback:", err.message);
+    return buildFallbackRegeneratedModules({
+      moduleTitle: targetModule.moduleTitle,
+      moduleDescription: targetModule.description,
+      splitCount,
+      splitDays,
+      weakConcepts,
+    });
+  }
+}
+
+export const regenerateRoadmapModule = async (req, res) => {
+  try {
+    const { companyId, deptId, userId, moduleId, notificationId } = req.body || {};
+
+    if (!companyId || !deptId || !userId || !moduleId) {
+      return res.status(400).json({ error: "Missing required IDs" });
+    }
+
+    const userRef = db
+      .collection("freshers")
+      .doc(companyId)
+      .collection("departments")
+      .doc(deptId)
+      .collection("users")
+      .doc(userId);
+
+    const userSnap = await userRef.get();
+    if (!userSnap.exists) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const roadmapSnap = await userRef.collection("roadmap").orderBy("order").get();
+    if (roadmapSnap.empty) {
+      return res.status(404).json({ error: "Roadmap not found" });
+    }
+
+    const roadmapModules = roadmapSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    const targetIndex = roadmapModules.findIndex((module) => module.id === moduleId);
+
+    if (targetIndex === -1) {
+      return res.status(404).json({ error: "Target module not found in roadmap" });
+    }
+
+    const targetModule = roadmapModules[targetIndex];
+    const targetOrder = targetModule.order || targetIndex + 1;
+
+    if (targetModule.completed && targetModule.quizPassed) {
+      return res.status(400).json({ error: "Cannot regenerate a completed module" });
+    }
+
+    const rawStartDate = targetModule.startedAt || targetModule.FirstTimeCreatedAt || targetModule.createdAt || null;
+    const moduleStartDate = rawStartDate?.toDate ? rawStartDate.toDate() : rawStartDate ? new Date(rawStartDate) : null;
+    const estimatedDays = Math.max(1, Number(targetModule.estimatedDays) || 1);
+
+    let daysLeft = estimatedDays;
+    if (moduleStartDate && !Number.isNaN(moduleStartDate.getTime())) {
+      const elapsedMs = Date.now() - moduleStartDate.getTime();
+      const elapsedDays = Math.max(0, Math.floor(elapsedMs / (1000 * 60 * 60 * 24)));
+      daysLeft = Math.max(1, estimatedDays - elapsedDays);
+    }
+
+    const [moduleInsights, learningProfile] = await Promise.all([
+      fetchModuleFailureInsights({ userRef, moduleId }),
+      buildLearningProfile({ userRef, moduleId }),
+    ]);
+
+    const weakConceptCount = moduleInsights.weakConcepts.length;
+    const lowScore = Number.isFinite(moduleInsights.latestScore) && moduleInsights.latestScore < 55;
+    const severeAttempts = moduleInsights.failedAttempts >= 3;
+
+    const splitCount = lowScore || severeAttempts || weakConceptCount >= 4 ? 3 : 2;
+    const cappedSplitCount = Math.min(3, Math.max(2, splitCount));
+
+    const originalDays = Math.max(1, Number(targetModule.estimatedDays) || 1);
+    const adaptiveExtraDays = lowScore && severeAttempts ? 2 : lowScore || severeAttempts ? 1 : 0;
+    const baseDaysForRegeneration = Math.max(daysLeft, Math.ceil(originalDays * 0.6));
+    const regeneratedTotalDays = Math.max(cappedSplitCount, baseDaysForRegeneration + adaptiveExtraDays);
+    const splitDays = splitDaysEvenly(regeneratedTotalDays, cappedSplitCount);
+
+    const regeneratedModules = await generateRegeneratedSubmodules({
+      targetModule,
+      weakConcepts: moduleInsights.weakConcepts,
+      wrongQuestions: moduleInsights.wrongQuestions,
+      splitCount: cappedSplitCount,
+      splitDays,
+      learningProfile,
+    });
+
+    const orderShift = cappedSplitCount - 1;
+    const now = new Date();
+
+    const targetDocRef = userRef.collection("roadmap").doc(moduleId);
+    await db.recursiveDelete(targetDocRef);
+
+    const newModuleRefs = [];
+    for (let index = 0; index < regeneratedModules.length; index += 1) {
+      const regenerated = regeneratedModules[index];
+      const newRef = userRef.collection("roadmap").doc();
+      newModuleRefs.push(newRef);
+
+      await newRef.set({
+        ...regenerated,
+        order: targetOrder + index,
+        completed: false,
+        quizPassed: false,
+        quizAttempts: 0,
+        status: index === 0 ? "in-progress" : "pending",
+        progress: 0,
+        quizLocked: false,
+        moduleLocked: false,
+        requiresAdminContact: false,
+        createdAt: now,
+        FirstTimeCreatedAt: now,
+        startedAt: index === 0 ? now : null,
+        regeneratedFromModuleId: moduleId,
+        regeneratedBy: "admin",
+        regenerationIndex: index + 1,
+        regenerationTotalParts: regeneratedModules.length,
+      });
+    }
+
+    const modulesAfterTarget = roadmapModules.filter((module) => (module.order || 0) > targetOrder);
+    for (const module of modulesAfterTarget) {
+      const updateData = { order: (module.order || 0) + orderShift };
+
+      if (!module.completed) {
+        updateData.status = "pending";
+        updateData.startedAt = null;
+        updateData.quizLocked = false;
+        updateData.moduleLocked = false;
+        updateData.requiresAdminContact = false;
+      }
+
+      await userRef.collection("roadmap").doc(module.id).set(updateData, { merge: true });
+    }
+
+    await userRef.set(
+      {
+        trainingLocked: false,
+        trainingLockedAt: null,
+        trainingLockedReason: null,
+        requiresAdminContact: false,
+        roadmapRegenerated: true,
+        roadmapRegeneratedAt: now,
+        weaknessAnalysis: {
+          sourceModuleId: moduleId,
+          sourceModuleTitle: targetModule.moduleTitle || "",
+          latestScore: moduleInsights.latestScore,
+          failedAttempts: moduleInsights.failedAttempts,
+          weakConcepts: moduleInsights.weakConcepts,
+          wrongQuestions: moduleInsights.wrongQuestions,
+          regeneratedParts: regeneratedModules.length,
+          originalEstimatedDays: originalDays,
+          daysLeftAtRegeneration: daysLeft,
+          regeneratedDays: regeneratedTotalDays,
+          generatedAt: now,
+        },
+      },
+      { merge: true }
+    );
+
+    if (notificationId) {
+      await db
+        .collection("companies")
+        .doc(companyId)
+        .collection("adminNotifications")
+        .doc(notificationId)
+        .set(
+          {
+            status: "approved",
+            adminAction: "roadmap_regenerated",
+            resolvedAt: now,
+          },
+          { merge: true }
+        );
+    }
+
+    return res.json({
+      success: true,
+      message: "Module regenerated successfully",
+      splitCount: regeneratedModules.length,
+      regeneratedTotalDays,
+      newModuleIds: newModuleRefs.map((ref) => ref.id),
+    });
+  } catch (error) {
+    console.error("🔥 Roadmap regeneration failed:", error);
+    return res.status(500).json({
+      error: error.message || "Roadmap regeneration failed",
+    });
+  }
+};
+
 
 

@@ -1,11 +1,12 @@
 //UserProfile.jsx
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useLocation, useParams } from "react-router-dom";
 import { doc, getDoc, collection, getDocs } from "firebase/firestore";
 import { db } from "../../firebase"; 
 import CompanySidebar from "./CompanySidebar"; 
 export default function UserProfile() {
   const { companyId, deptId, userId } = useParams();
+  const location = useLocation();
   const [user, setUser] = useState(null);
   const [company, setCompany] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -14,9 +15,12 @@ export default function UserProfile() {
   const [expandedSkills, setExpandedSkills] = useState({});
   const [actionLoading, setActionLoading] = useState({});
   const [actionStatus, setActionStatus] = useState({});
-  const [attemptsToGrant, setAttemptsToGrant] = useState({});
   const [expandedActions, setExpandedActions] = useState({});
   const [selectedAction, setSelectedAction] = useState({});
+
+  const searchParams = new URLSearchParams(location.search);
+  const notificationIdFromQuery = searchParams.get("notificationId") || "";
+  const moduleIdFromQuery = searchParams.get("moduleId") || "";
   useEffect(() => {
     const fetchUser = async () => {
       try {
@@ -119,17 +123,43 @@ export default function UserProfile() {
     setActionLoading(prev => ({ ...prev, [moduleId]: isLoading }));
   };
 
+  const parseApiResponse = async (response, fallbackMessage) => {
+    const contentType = response.headers.get("content-type") || "";
+
+    if (contentType.includes("application/json")) {
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error || fallbackMessage);
+      return data;
+    }
+
+    const rawText = await response.text();
+    if (!response.ok) {
+      throw new Error(rawText || fallbackMessage);
+    }
+
+    throw new Error("Server returned invalid response format. Please verify backend is running on port 5000.");
+  };
+
   const handleRegenerate = async (moduleId) => {
     try {
       setActionLoadingForModule(moduleId, true);
       setStatus(moduleId, "Regenerating roadmap...");
+
+      const shouldResolveNotification =
+        notificationIdFromQuery && (!moduleIdFromQuery || moduleIdFromQuery === moduleId);
+
       const res = await fetch("http://localhost:5000/api/roadmap/regenerate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ companyId, deptId, userId, moduleId })
+        body: JSON.stringify({
+          companyId,
+          deptId,
+          userId,
+          moduleId,
+          notificationId: shouldResolveNotification ? notificationIdFromQuery : undefined,
+        })
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Regeneration failed");
+      const data = await parseApiResponse(res, "Regeneration failed");
       
       // Find module title
       const module = roadmapModules.find(m => m.id === moduleId);
@@ -165,16 +195,24 @@ export default function UserProfile() {
 
   const handleAdminUnlock = async (moduleId) => {
     try {
-      const attempts = Math.max(1, Number(attemptsToGrant[moduleId] || 1));
       setActionLoadingForModule(moduleId, true);
       setStatus(moduleId, "Unlocking module...");
+
+      const shouldResolveNotification =
+        notificationIdFromQuery && (!moduleIdFromQuery || moduleIdFromQuery === moduleId);
+
       const res = await fetch("http://localhost:5000/api/quiz/admin-unlock", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ companyId, deptId, userId, moduleId, attemptsToGrant: attempts })
+        body: JSON.stringify({
+          companyId,
+          deptId,
+          userId,
+          moduleId,
+          notificationId: shouldResolveNotification ? notificationIdFromQuery : undefined,
+        })
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Unlock failed");
+      const data = await parseApiResponse(res, "Unlock failed");
       
       // Find module title
       const module = roadmapModules.find(m => m.id === moduleId);
@@ -190,7 +228,7 @@ export default function UserProfile() {
               userEmail: user.email,
               userName: user.displayName || user.name || "User",
               moduleTitle,
-              attemptsGranted: attempts,
+              attemptsGranted: data.attemptsGranted || 1,
               companyName: user.companyName || "Company",
               companyEmail: company?.email || "admin@company.com"
             })
@@ -403,7 +441,7 @@ if (!user) {
                             <button
                               onClick={() => {
                                 setSelectedAction(prev => ({ ...prev, [m.id]: "unlock" }));
-                                alert("Selected: Unlock module and grant attempts");
+                                alert("Selected: Give final retry (unlock)");
                               }}
                               className={`px-3 py-2 text-xs font-semibold rounded-lg border ${
                                 selectedAction[m.id] === "unlock"
@@ -411,7 +449,7 @@ if (!user) {
                                   : "border-[#00FFFF30] text-[#AFCBE3]"
                               }`}
                             >
-                              Unlock + Grant Attempts
+                              Give Final Retry
                             </button>
                           </div>
 
@@ -426,24 +464,13 @@ if (!user) {
                           )}
 
                           {selectedAction[m.id] === "unlock" && (
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="number"
-                                min="1"
-                                max="5"
-                                value={attemptsToGrant[m.id] || 1}
-                                onChange={(e) => setAttemptsToGrant(prev => ({ ...prev, [m.id]: e.target.value }))}
-                                className="w-16 px-2 py-2 text-xs rounded-lg bg-[#031C3A] border border-[#00FFFF30] text-white"
-                                title="Attempts to grant"
-                              />
-                              <button
-                                onClick={() => handleAdminUnlock(m.id)}
-                                disabled={actionLoading[m.id]}
-                                className="px-3 py-2 text-xs font-semibold rounded-lg bg-[#00FFFF] text-[#031C3A] hover:opacity-90 disabled:opacity-50"
-                              >
-                                Confirm Unlock
-                              </button>
-                            </div>
+                            <button
+                              onClick={() => handleAdminUnlock(m.id)}
+                              disabled={actionLoading[m.id]}
+                              className="px-3 py-2 text-xs font-semibold rounded-lg bg-[#00FFFF] text-[#031C3A] hover:opacity-90 disabled:opacity-50"
+                            >
+                              Confirm Final Retry
+                            </button>
                           )}
                         </div>
                       )}
