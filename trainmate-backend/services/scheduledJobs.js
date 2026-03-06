@@ -38,6 +38,7 @@ async function sendQuizUnlockNotifications({
   companyName,
   moduleId,
   activeModule,
+  maxQuizAttempts = 3,
 }) {
   console.log(`\n🔓 Sending quiz unlock notifications for ${userName} - ${moduleTitle}`);
   
@@ -76,6 +77,7 @@ async function sendQuizUnlockNotifications({
           moduleTitle,
           companyName,
           unlockDate,
+          maxQuizAttempts,
           reminderTime,
           timeZone,
           attendeeEmail: userEmail,
@@ -222,6 +224,7 @@ export function scheduleDailyModuleReminders() {
                     companyName,
                     moduleId,
                     activeModule,
+                    maxQuizAttempts: userData?.quizPolicy?.maxQuizAttempts || 3,
                   });
                 } catch (unlockErr) {
                   console.error(`❌ Failed to send quiz unlock notification: ${unlockErr.message}`);

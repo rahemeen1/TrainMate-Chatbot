@@ -1575,9 +1575,13 @@ export const submitQuiz = async (req, res) => {
 
 								await createQuizUnlockReminder({
 									calendarId,
+									companyId,
+									deptId,
+									userId,
 									moduleTitle: nextModule.moduleTitle,
 									companyName,
 									unlockDate,
+									maxQuizAttempts: userData?.quizPolicy?.maxQuizAttempts || MAX_QUIZ_ATTEMPTS,
 									reminderTime,
 									timeZone,
 									attendeeEmail: userEmail,

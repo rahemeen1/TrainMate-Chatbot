@@ -225,6 +225,7 @@ export async function createQuizUnlockReminder({
   moduleTitle,
   companyName,
   unlockDate,
+  maxQuizAttempts = 3,
   reminderTime,
   timeZone = DEFAULT_TIMEZONE,
   attendeeEmail,
@@ -248,7 +249,7 @@ export async function createQuizUnlockReminder({
 
   const event = {
     summary: `✅ Quiz Unlocked: ${moduleTitle}`,
-    description: `🎉 Great news! Your quiz has been unlocked.\n\n📝 Module: ${moduleTitle}\n🏢 Company: ${companyName}\n\n⏰ Action Required: Attempt your quiz within the given timeframe to progress to the next module.\n\n🔗 Log in to TrainMate now to take your quiz!\n\n---\nTrainMate - Your AI-Powered Corporate Training Platform`,
+    description: `🎉 Great news! Your quiz has been unlocked.\n\n📝 Module: ${moduleTitle}\n🏢 Company: ${companyName}\n\n📌 Quiz Attempts Policy:\n- Maximum attempts: ${maxQuizAttempts}\n\n⏰ Action Required: Attempt your quiz within the given timeframe to progress to the next module.\n\n🔗 Log in to TrainMate now to take your quiz!\n\n---\nTrainMate - Your AI-Powered Corporate Training Platform`,
     start: { dateTime: startDateTime.toISOString(), timeZone },
     end: { dateTime: endDateTime.toISOString(), timeZone },
     reminders: { useDefault: false, overrides: getReminderOverrides() },
@@ -327,6 +328,58 @@ export async function createRoadmapGeneratedEvent({
     userId,
     userEmail: attendeeEmail,
     trainingTopic,
+    usingFallback: isUsingFallback,
+  });
+}
+
+export async function createFresherWelcomeEvent({
+  companyId,
+  deptId,
+  userId,
+  userName,
+  companyName,
+  deptName,
+  trainingTopic,
+  maxQuizAttempts = 3,
+  quizUnlockPercent = 50,
+  agenticMessage,
+  messageTone,
+  createdAt,
+  reminderTime,
+  timeZone = DEFAULT_TIMEZONE,
+  attendeeEmail,
+}) {
+  const { client: userAuth, isUsingFallback } = await getUserOAuthClient(companyId, deptId, userId);
+  const calendar = getCalendarClient(userAuth);
+  const calendarId = "primary";
+
+  const startDateTime = buildDateTime(createdAt || new Date(), reminderTime);
+  const endDateTime = new Date(startDateTime.getTime() + 30 * 60 * 1000);
+
+  const event = {
+    summary: `👋 Welcome to TrainMate, ${userName || "Fresher"}`,
+    description: `Welcome to your training journey!\n\n🏢 Company: ${companyName}\n🏬 Department: ${deptName || "N/A"}\n📚 Training Focus: ${trainingTopic || "General"}\n\n📝 Quiz Policy:\n- Total attempts per module quiz: ${maxQuizAttempts}\n- Quiz unlocks after ${quizUnlockPercent}% module completion time\n\n${agenticMessage ? `🤖 AI Note (${messageTone || "supportive"}): ${agenticMessage}\n\n` : ""}🔔 Keep Google Calendar notifications ON to avoid missing module reminders and quiz unlock alerts.\n\n---\nTrainMate - AI-Powered Corporate Training Platform`,
+    start: { dateTime: startDateTime.toISOString(), timeZone },
+    end: { dateTime: endDateTime.toISOString(), timeZone },
+    reminders: { useDefault: false, overrides: getReminderOverrides() },
+    colorId: "2",
+  };
+
+  if (attendeeEmail) {
+    event.attendees = [{ email: attendeeEmail }];
+  }
+
+  await calendar.events.insert({
+    calendarId,
+    requestBody: event,
+    sendUpdates: isUsingFallback ? "externalOnly" : "none",
+  });
+
+  console.log("✅ Fresher welcome event added to user's calendar", {
+    userId,
+    userEmail: attendeeEmail,
+    companyName,
+    deptName,
     usingFallback: isUsingFallback,
   });
 }
