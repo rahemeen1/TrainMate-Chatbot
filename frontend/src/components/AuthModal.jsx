@@ -30,6 +30,43 @@ export default function AuthModal({ isOpen, mode: initialMode, onClose }) {
     }
   }, [isOpen, initialMode]);
 
+  // Clear form on page refresh or navigation
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      resetForm();
+    };
+
+    const handlePopState = () => {
+      resetForm();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        resetForm();
+      }
+    };
+
+    const handleEscapeKey = (e) => {
+      if (e.key === 'Escape' && isOpen) {
+        handleClose();
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('popstate', handlePopState);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener('keydown', handleEscapeKey);
+
+    // Cleanup on unmount
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('popstate', handlePopState);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.removeEventListener('keydown', handleEscapeKey);
+      resetForm();
+    };
+  }, [isOpen]);
+
   const resetForm = () => {
     setMode(initialMode);
     setUserType(null);
@@ -122,7 +159,7 @@ export default function AuthModal({ isOpen, mode: initialMode, onClose }) {
               <p className="text-[#AFCBE3] text-sm text-center mb-2">
                 Are you an Admin or a Fresher?
               </p>
-              <div className="flex justify-center gap-5 flex-wrap">
+              <div className="flex justify-center items-center gap-5 flex-wrap w-full">
                 <SelectCard type="admin" icon={Briefcase} label="Admin" />
                 <SelectCard type="fresher" icon={User} label="Fresher" />
               </div>
@@ -134,7 +171,7 @@ export default function AuthModal({ isOpen, mode: initialMode, onClose }) {
               <div>
                 <label className="block text-sm font-medium text-[#AFCBE3] mb-1.5">
                   {userType === "admin"
-                    ? "Username / Company ID"
+                    ? "Email"
                     : "Email ID"}
                 </label>
                 <div className="relative">

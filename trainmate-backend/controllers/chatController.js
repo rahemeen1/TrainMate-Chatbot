@@ -696,7 +696,7 @@ Contact your company admin for next steps.
     let companyDescription = "";
     onboardingSnap.forEach((d) => {
       const answers = d.data().answers;
-      if (answers && answers["3"]) companyDescription = answers["3"];
+      if (answers && answers["4"]) companyDescription = answers["4"]; // Company description is in answers["4"]
     });
 
     // Store companyDescription in chat metadata or session for LLM use
@@ -833,9 +833,9 @@ export const chatController = async (req, res) => {
         const companyDoc = companySnap.docs[0].data();
         const answers = companyDoc.answers || {};
         
-        const duration = answers['1'] || answers[1] || "Not specified";
-        const teamSize = answers['2'] || answers[2] || "Not specified";
-        const description = answers['3'] || answers[3] || "No description available";
+        const duration = answers['2'] || answers[2] || "Not specified"; // Training duration
+        const teamSize = answers['3'] || answers[3] || "Not specified"; // Team size
+        const description = answers['4'] || answers[4] || "No description available"; // Company description
         
         companyInfo = `
 COMPANY INFORMATION:
@@ -1263,7 +1263,7 @@ export const getMissedDatesController = async (req, res) => {
 
       if (!onboardingSnap.empty) {
         const data = onboardingSnap.docs[0].data();
-        trainingDuration = data?.answers?.["1"] || null;
+        trainingDuration = data?.answers?.["2"] || null; // answers["2"] contains training duration
       }
     }
 
@@ -1272,7 +1272,7 @@ export const getMissedDatesController = async (req, res) => {
                              allModules.reduce((sum, module) => sum + (module.estimatedDays || 0), 0) ||
                              90; // fallback to 90 days (3 months)
 
-    console.log("📊 Training duration:", trainingDuration, "→", totalExpectedDays, "days");
+    console.log("📊 Training duration:", trainingDuration || "not set", "→", totalExpectedDays, "days");
 
     // Calculate total active days across ALL modules
     let totalActiveDays = 0;

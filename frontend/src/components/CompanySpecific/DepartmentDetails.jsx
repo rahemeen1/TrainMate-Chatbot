@@ -33,6 +33,7 @@ const [companyLicense, setCompanyLicense] = useState("License Pro");
 const [totalCompanyFreshers, setTotalCompanyFreshers] = useState(0);
 const [quotaStatus, setQuotaStatus] = useState(null);
 const [quotaLoading, setQuotaLoading] = useState(false);
+const isActionInProgress = uploadingDoc || addingUser;
 
 
   const { state } = useLocation();
@@ -154,6 +155,8 @@ const [quotaLoading, setQuotaLoading] = useState(false);
 
   // Add User
   const handleAddUser = async () => {
+    if (isActionInProgress) return;
+
     if (isLimitReached) {
       if (quotaStatus) {
         alert(quotaStatus.message || "Cannot add more users. Plan limit reached.");
@@ -198,6 +201,8 @@ const [quotaLoading, setQuotaLoading] = useState(false);
   }
   };
 const handleAddDoc = async () => {
+  if (isActionInProgress) return;
+
   if (!docFile) {
     alert("Please select a document");
     return;
@@ -264,7 +269,12 @@ const closeAddUserModal = () => {
               </div>
               <button
                 onClick={() => navigate(-1)}
-                className="px-4 py-2 rounded-lg border border-[#00FFFF30] bg-[#031C3A]/70 hover:bg-[#00FFFF]/10 text-[#AFCBE3] font-semibold"
+                disabled={isActionInProgress}
+                className={`px-4 py-2 rounded-lg border border-[#00FFFF30] font-semibold transition ${
+                  isActionInProgress
+                    ? "bg-gray-600 text-gray-300 cursor-not-allowed"
+                    : "bg-[#031C3A]/70 hover:bg-[#00FFFF]/10 text-[#AFCBE3]"
+                }`}
               >
                 ← Back
               </button>
@@ -284,15 +294,16 @@ const closeAddUserModal = () => {
       type="file"
       ref={fileInputRef} // attach ref here
       className="text-sm flex-1 bg-[#031C3A]/80 border border-[#00FFFF30] rounded-lg p-2"
+          disabled={isActionInProgress}
       onChange={(e) => setDocFile(e.target.files[0])}
     />
 
            <button
   onClick={handleAddDoc}
-  disabled={uploadingDoc}
+  disabled={isActionInProgress}
   className={`px-4 py-2 rounded-lg font-semibold transition
     ${
-      uploadingDoc
+      isActionInProgress
         ? "bg-gray-500 text-white cursor-not-allowed"
         : "bg-[#00FFFF] text-[#031C3A] hover:opacity-90"
     }
@@ -345,7 +356,14 @@ const closeAddUserModal = () => {
                 href={doc.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition"
+                onClick={(e) => {
+                  if (isActionInProgress) e.preventDefault();
+                }}
+                className={`px-3 py-1 text-white rounded transition ${
+                  isActionInProgress
+                    ? "bg-green-700 cursor-not-allowed pointer-events-none opacity-60"
+                    : "bg-green-600 hover:bg-green-700"
+                }`}
               >
                 View
               </a>
@@ -371,11 +389,11 @@ const closeAddUserModal = () => {
     }
   }}
    className={`px-3 py-1 rounded flex items-center gap-1 transition text-sm font-semibold ${
-     deletingDocId === doc.id
+     deletingDocId === doc.id || isActionInProgress
        ? "bg-red-700 text-white cursor-not-allowed animate-pulse"
        : "bg-red-600 text-white hover:bg-red-700"
    }`}
-   disabled={deletingDocId === doc.id}
+   disabled={deletingDocId === doc.id || isActionInProgress}
 >
   {deletingDocId === doc.id ? (
     <>
@@ -413,9 +431,9 @@ const closeAddUserModal = () => {
             </div>
             <button
               onClick={() => setShowAddUserModal(true)}
-              disabled={isLimitReached || quotaLoading}
+              disabled={isLimitReached || quotaLoading || isActionInProgress}
               className={`px-4 py-2 rounded-lg font-semibold ${
-                isLimitReached || quotaLoading
+                isLimitReached || quotaLoading || isActionInProgress
                   ? "bg-gray-500 text-white cursor-not-allowed"
                   : "bg-[#00FFFF] text-[#031C3A] hover:opacity-90"
               }`}
@@ -562,9 +580,9 @@ const closeAddUserModal = () => {
             <div className="mt-4 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
              <button 
                onClick={closeAddUserModal}
-               disabled={addingUser}
+               disabled={isActionInProgress}
                className={`px-4 py-2 rounded font-semibold transition ${
-                 addingUser 
+                 isActionInProgress 
                    ? "bg-gray-600 text-gray-400 cursor-not-allowed" 
                    : "bg-gray-700 text-white hover:bg-gray-600"
                }`}
@@ -572,26 +590,27 @@ const closeAddUserModal = () => {
                Cancel
              </button>
 
-              <button
-  onClick={handleAddUser}
-  disabled={addingUser || !newUser.name.trim() || !newUser.email.trim() || !newUser.phone.trim() || !newUser.trainingOn.trim()}
-  className={`px-4 py-2 rounded font-semibold transition
-    ${
-      addingUser || !newUser.name.trim() || !newUser.email.trim() || !newUser.phone.trim() || !newUser.trainingOn.trim()
-        ? "bg-gray-500 text-white cursor-not-allowed"
-        : "bg-[#00FFFF] text-[#031C3A]"
-    }
-  `}
->
-              {addingUser ? "Adding user..." : "Add"}
-</button>
-
+              <div className="flex flex-col items-end gap-2">
+                <button
+                  onClick={handleAddUser}
+                  disabled={isActionInProgress || !newUser.name.trim() || !newUser.email.trim() || !newUser.phone.trim() || !newUser.trainingOn.trim()}
+                  className={`px-4 py-2 rounded font-semibold transition
+                    ${
+                      isActionInProgress || !newUser.name.trim() || !newUser.email.trim() || !newUser.phone.trim() || !newUser.trainingOn.trim()
+                        ? "bg-gray-500 text-white cursor-not-allowed"
+                        : "bg-[#00FFFF] text-[#031C3A]"
+                    }
+                  `}
+                >
+                  {addingUser ? "Adding user..." : "Add"}
+                </button>
+                {addingUser && (
+                  <p className="text-sm text-[#00FFFF] animate-pulse">
+                    Creating user account, please wait...
+                  </p>
+                )}
+              </div>
             </div>
-            {addingUser && (
-  <p className="text-sm text-[#00FFFF] mt-3 animate-pulse">
-    Creating user account, please wait...
-  </p>
-)}
           </div>
         </div>
       )}

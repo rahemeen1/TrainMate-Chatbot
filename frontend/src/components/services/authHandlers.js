@@ -50,13 +50,19 @@ export const handleLogin = async ({
       }
 
       const companySnap = await getDoc(doc(db, "companies", companyId));
-      const companyName = companySnap.exists()
-        ? companySnap.data().name
-        : fresherData.companyName || "";
-      const companyStatus = companySnap.exists() ? companySnap.data().status : null;
+      
+      // Check if company exists in database
+      if (!companySnap.exists()) {
+        return { error: "Company not found in database. Contact admin." };
+      }
 
-      if (companyStatus && companyStatus !== "active") {
-        return { error: "Your company is suspended. Contact admin." };
+      const companyData = companySnap.data();
+      const companyName = companyData.name || fresherData.companyName || "";
+      const companyStatus = companyData.status;
+
+      // Check if company has active status
+      if (companyStatus !== "active") {
+        return { error: "Your company is suspended or inactive. Contact admin." };
       }
 
       console.log("➡ Navigating to dashboard");

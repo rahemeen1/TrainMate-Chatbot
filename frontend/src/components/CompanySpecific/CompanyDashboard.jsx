@@ -17,6 +17,7 @@ import {
 import { db } from "../../firebase";
 import { useNavigate, useLocation } from "react-router-dom";
 import { doc, setDoc } from "firebase/firestore";
+import { CreditCard, Wallet } from "lucide-react";
 import CompanySidebar from "../../components/CompanySpecific/CompanySidebar";
 import CompanyFresherChatbot from "../../components/CompanySpecific/CompanyFresherChatbot";
 
@@ -70,7 +71,7 @@ const MAX_DEPARTMENTS_PRO = 5;
 
 const BATCH_SIZE_OPTIONS = ["10-15 freshers", "20-40 freshers"];
 
-const PAYMENT_METHODS = ["Credit Card", "Debit Card", "Bank Transfer"];
+const PAYMENT_METHODS = ["Credit Card", "Debit Card"];
 
 const PAYMENT_PROVIDER = "internal-demo";
 const PAYMENT_STATUS = "success";
@@ -1091,6 +1092,33 @@ const CustomXAxisTick = ({ x, y, payload }) => {
         </>
       );
     })()}
+  </div>
+) : QUESTIONS[step - 1].type === "single-select" &&
+  QUESTIONS[step - 1].text === "Payment method for licensing" ? (
+  <div className="w-full flex justify-center">
+    <div className="flex justify-center items-center gap-5 flex-wrap w-full max-w-xl">
+      {QUESTIONS[step - 1].options.map((opt) => (
+        (() => {
+          const PaymentIcon = opt === "Credit Card" ? CreditCard : Wallet;
+          return (
+        <div
+          key={opt}
+          onClick={() => setAnswers((prev) => ({ ...prev, [step - 1]: opt }))}
+          className={`cursor-pointer flex flex-col items-center justify-center w-[45%] sm:w-[200px] h-[130px]
+            rounded-xl border transition-all duration-300
+            ${
+              answers[step - 1] === opt
+                ? "border-[#00FFFF] bg-[#032A4A]/70 scale-105"
+                : "border-[#00FFFF30] bg-[#021B36]/70"
+            }`}
+        >
+          <PaymentIcon size={30} className="mb-3 text-[#00FFFF]" />
+          <p className="font-semibold text-[#AFCBE3]">{opt}</p>
+        </div>
+          );
+        })()
+      ))}
+    </div>
   </div>
 ) : (
   <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
