@@ -200,21 +200,25 @@ export async function createDailyModuleReminder({
     colorId: "9",
   };
 
-  if (attendeeEmail) {
-    event.attendees = [{ email: attendeeEmail }];
+  if (attendeeEmail || isUsingFallback) {
+    event.attendees = [{ email: attendeeEmail || null }].filter(a => a.email);
   }
 
-  await calendar.events.insert({
+  const insertOptions = {
     calendarId,
     requestBody: event,
-    // Send email invitation if using company admin's fallback tokens
-    sendUpdates: isUsingFallback ? "externalOnly" : "none",
-  });
+    // ALWAYS send updates when using fallback - triggers Google to send invitation email
+    sendUpdates: isUsingFallback ? "all" : "none",
+  };
+
+  await calendar.events.insert(insertOptions);
 
   console.log("✅ Daily reminder added to calendar", {
     userId,
     userEmail: attendeeEmail,
     moduleTitle,
+    sendUpdates: insertOptions.sendUpdates,
+    attendeesCount: event.attendees?.length || 0,
   });
 }
 
@@ -256,21 +260,25 @@ export async function createQuizUnlockReminder({
     colorId: "11",
   };
 
-  if (attendeeEmail) {
-    event.attendees = [{ email: attendeeEmail }];
+  if (attendeeEmail || isUsingFallback) {
+    event.attendees = [{ email: attendeeEmail || null }].filter(a => a.email);
   }
 
-  await calendar.events.insert({
+  const insertOptions = {
     calendarId,
     requestBody: event,
-    // Send email invitation if using company admin's fallback tokens
-    sendUpdates: isUsingFallback ? "externalOnly" : "none",
-  });
+    // ALWAYS send updates when using fallback - triggers Google to send invitation email
+    sendUpdates: isUsingFallback ? "all" : "none",
+  };
+
+  await calendar.events.insert(insertOptions);
 
   console.log("✅ Quiz unlock added to user's calendar", {
     userId,
     userEmail: attendeeEmail,
     moduleTitle,
+    sendUpdates: insertOptions.sendUpdates,
+    attendeesCount: event.attendees?.length || 0,
   });
 }
 
@@ -313,22 +321,26 @@ export async function createRoadmapGeneratedEvent({
     colorId: "10",
   };
 
-  if (attendeeEmail) {
-    event.attendees = [{ email: attendeeEmail }];
+  if (attendeeEmail || isUsingFallback) {
+    event.attendees = [{ email: attendeeEmail || null }].filter(a => a.email);
   }
 
-  await calendar.events.insert({
+  const insertOptions = {
     calendarId,
     requestBody: event,
-    // Send email invitation if using company admin's fallback tokens
-    sendUpdates: isUsingFallback ? "externalOnly" : "none",
-  });
+    // ALWAYS send updates when using fallback - triggers Google to send invitation email
+    sendUpdates: isUsingFallback ? "all" : "none",
+  };
+
+  await calendar.events.insert(insertOptions);
 
   console.log("✅ Roadmap event added to user's calendar", {
     userId,
     userEmail: attendeeEmail,
     trainingTopic,
     usingFallback: isUsingFallback,
+    sendUpdates: insertOptions.sendUpdates,
+    attendeesCount: event.attendees?.length || 0,
   });
 }
 
@@ -351,8 +363,11 @@ export async function createFresherWelcomeEvent({
 }) {
   const { client: userAuth, isUsingFallback } = await getUserOAuthClient(companyId, deptId, userId);
   const calendar = getCalendarClient(userAuth);
-  const calendarId = "primary";
-
+  
+  // When using fallback (admin tokens), we MUST add user as attendee to send invitation
+  // When using user's own tokens, add as attendee if provided
+  let calendarId = "primary";
+  
   const startDateTime = buildDateTime(createdAt || new Date(), reminderTime);
   const endDateTime = new Date(startDateTime.getTime() + 30 * 60 * 1000);
 
@@ -365,15 +380,20 @@ export async function createFresherWelcomeEvent({
     colorId: "2",
   };
 
-  if (attendeeEmail) {
-    event.attendees = [{ email: attendeeEmail }];
+  // Always add attendee email when using fallback tokens to trigger invitation
+  // This ensures Google sends an invitation email to the user
+  if (attendeeEmail || isUsingFallback) {
+    event.attendees = [{ email: attendeeEmail || null }].filter(a => a.email);
   }
 
-  await calendar.events.insert({
+  const insertOptions = {
     calendarId,
     requestBody: event,
-    sendUpdates: isUsingFallback ? "externalOnly" : "none",
-  });
+    // ALWAYS send updates when using fallback - triggers Google to send invitation email
+    sendUpdates: isUsingFallback ? "all" : "none",
+  };
+
+  await calendar.events.insert(insertOptions);
 
   console.log("✅ Fresher welcome event added to user's calendar", {
     userId,
@@ -381,5 +401,7 @@ export async function createFresherWelcomeEvent({
     companyName,
     deptName,
     usingFallback: isUsingFallback,
+    sendUpdates: insertOptions.sendUpdates,
+    attendeesCount: event.attendees?.length || 0,
   });
 }

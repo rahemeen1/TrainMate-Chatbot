@@ -65,13 +65,12 @@ export const deleteUser = async (req, res) => {
         const companyRef = db.collection("companies").doc(companyId);
         const companyDoc = await companyRef.get();
         
-        if (companyDoc.exists()) {
-          const currentDeletedCount = companyDoc.data().deletedUsersCount || 0;
+        if (companyDoc.exists) {
           await companyRef.update({
-            deletedUsersCount: currentDeletedCount + 1,
-            lastUserDeletedAt: new Date()
+            deletedUsersCount: admin.firestore.FieldValue.increment(1),
+            lastUserDeletedAt: admin.firestore.FieldValue.serverTimestamp(),
           });
-          console.log(`✅ Updated deletedUsersCount for company ${companyId}: ${currentDeletedCount + 1}`);
+          console.log(`✅ Updated deletedUsersCount for company ${companyId}`);
         }
       } catch (trackingErr) {
         console.error("⚠️ Failed to track deleted users count:", trackingErr);
