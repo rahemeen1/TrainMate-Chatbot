@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { db } from "../../firebase";
 import { doc, getDoc, collection, getDocs, updateDoc, query, orderBy, limit } from "firebase/firestore";
 import CompanySidebar from "../../components/CompanySpecific/CompanySidebar";
+import CompanyPageLoader from "../../components/CompanySpecific/CompanyPageLoader";
 
 const LICENSE_PLAN_OPTIONS = ["License Basic", "License Pro"];
 
@@ -158,11 +159,7 @@ export default function CompanyDetails() {
     return (
       <div className="flex min-h-screen bg-[#031C3A] text-white">
         <CompanySidebar companyId={companyId} companyName={companyName} />
-        <div className="flex-1 p-8 md:p-10">
-          <div className="max-w-6xl mx-auto rounded-2xl border border-[#00FFFF22] bg-[#021B36]/60 backdrop-blur-sm p-8 flex items-center justify-center min-h-[300px] text-[#AFCBE3]">
-            Loading company details...
-          </div>
-        </div>
+        <CompanyPageLoader message="Loading company details..." />
       </div>
     );
   }
@@ -175,7 +172,7 @@ export default function CompanyDetails() {
           <div className="rounded-2xl border border-[#00FFFF30] bg-[#021B36]/80 shadow-lg px-6 py-5 md:px-8 md:py-6">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
-                <h1 className="text-3xl font-bold text-[#00FFFF]">Company Dashboard</h1>
+                <h1 className="text-3xl font-bold text-[#00FFFF]">Company Details</h1>
                 <p className="text-[#AFCBE3] mt-1">Manage company profile and onboarding configuration</p>
               </div>
               <div className="flex flex-wrap gap-3">
@@ -192,7 +189,7 @@ export default function CompanyDetails() {
           </div>
 
           <div className="rounded-2xl border border-[#00FFFF22] bg-[#021B36]/70 p-5 md:p-6">
-            <h2 className="text-xl font-semibold text-[#00FFFF] mb-4">Company Details</h2>
+           
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-5">
               {["name", "phone", "address"].map(field => (
                 <div key={field} className="p-4 rounded-xl bg-[#031C3A]/70 border border-[#00FFFF30]">

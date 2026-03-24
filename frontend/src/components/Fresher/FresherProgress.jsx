@@ -238,17 +238,32 @@ if (!userData) {
 
 
   return (
-    <div className="flex min-h-screen bg-[#031C3A] text-white">
+    <div className="relative flex min-h-screen bg-[#031C3A] text-white overflow-hidden">
+      <div className="pointer-events-none absolute -top-24 -left-24 w-72 h-72 rounded-full bg-[#00FFFF]/10 blur-3xl" />
+      <div className="pointer-events-none absolute top-1/3 -right-20 w-72 h-72 rounded-full bg-[#00FFC2]/10 blur-3xl" />
       <div className="w-64 bg-[#021B36]/90 p-4">
         <FresherSideMenu userId={userId} companyId={companyId} deptId={deptId} companyName={companyName} roadmapGenerated={true} />
       </div>
 
-      <div className="flex-1 p-10">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-[#00FFFF]">{userData.name}'s Progress</h1>
-          <p className="text-[#AFCBE3] mt-1">
-            Department: {userData.deptName} | Level: {userData.onboarding?.level} | Expertise: {userData.onboarding?.expertise}
-          </p>
+      <div className="flex-1 p-10 relative z-10">
+        <div className="mb-6 backdrop-blur-xl bg-[#021B36]/50 border border-[#00FFFF25] rounded-2xl p-6 shadow-[0_15px_50px_rgba(0,255,255,0.08)]">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+            <div>
+              <p className="text-xs uppercase tracking-[0.2em] text-[#AFCBE3] mb-2">Performance Dashboard</p>
+              <h1 className="text-3xl font-bold text-[#00FFFF]">{userData.name}'s Progress</h1>
+              <p className="text-[#AFCBE3] mt-1">
+                Department: {userData.deptName} | Level: {userData.onboarding?.level} | Expertise: {userData.onboarding?.expertise}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${userData?.certificateUnlocked ? "bg-green-500/10 text-green-300 border-green-400/30" : "bg-amber-500/10 text-amber-300 border-amber-400/30"}`}>
+                Certificate: {userData?.certificateUnlocked ? "Unlocked" : "Locked"}
+              </span>
+              <span className="px-3 py-1 rounded-full text-xs font-semibold border bg-[#00FFFF10] text-[#00FFFF] border-[#00FFFF30]">
+                Final Quiz: {userData?.finalAssessment?.status || "locked"}
+              </span>
+            </div>
+          </div>
         </div>
 
         {/* Overall Progress */}
@@ -304,6 +319,14 @@ if (!userData) {
           const passRate = quizzesGenerated
             ? Math.round((quizzesPassed / quizzesGenerated) * 100)
             : 0;
+
+          const finalAssessment = userData.finalAssessment || {};
+          const finalAttemptsUsed = Number(finalAssessment.attemptsUsed) || 0;
+          const finalMaxAttempts = Number(finalAssessment.maxAttempts) || 2;
+          const finalAttemptsLeft = Math.max(finalMaxAttempts - finalAttemptsUsed, 0);
+          const finalPassThreshold = Number(finalAssessment.passThreshold) || 70;
+          const finalStatus = finalAssessment.status || "locked";
+          const finalLastScore = finalAssessment.lastScore ?? userData.certificateFinalQuizScore ?? null;
 
           const totalModules = roadmapModulesDetailed.length;
           const completedModules = roadmapModulesDetailed.filter(
@@ -400,6 +423,33 @@ if (!userData) {
                         <p className="text-lg font-semibold text-[#00FFFF] mt-1">
                           {quizzesPassed} / {quizzesFailed}
                         </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 p-3 rounded-lg bg-[#031C3A]/70 border border-[#00FFFF25]">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Final Quiz Attempts</p>
+                        <span className="text-xs px-2 py-1 rounded-full bg-[#00FFFF15] text-[#00FFFF] border border-[#00FFFF25] capitalize">
+                          {finalStatus}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        <div className="p-2 rounded bg-[#031C3A] border border-[#00FFFF18]">
+                          <p className="text-[10px] uppercase tracking-wide text-[#AFCBE3]">Used</p>
+                          <p className="text-sm font-semibold text-[#00FFFF] mt-1">{finalAttemptsUsed}</p>
+                        </div>
+                        <div className="p-2 rounded bg-[#031C3A] border border-[#00FFFF18]">
+                          <p className="text-[10px] uppercase tracking-wide text-[#AFCBE3]">Left</p>
+                          <p className="text-sm font-semibold text-[#00FFFF] mt-1">{finalAttemptsLeft}</p>
+                        </div>
+                        <div className="p-2 rounded bg-[#031C3A] border border-[#00FFFF18]">
+                          <p className="text-[10px] uppercase tracking-wide text-[#AFCBE3]">Threshold</p>
+                          <p className="text-sm font-semibold text-[#00FFFF] mt-1">{finalPassThreshold}%</p>
+                        </div>
+                        <div className="p-2 rounded bg-[#031C3A] border border-[#00FFFF18]">
+                          <p className="text-[10px] uppercase tracking-wide text-[#AFCBE3]">Last Score</p>
+                          <p className="text-sm font-semibold text-[#00FFFF] mt-1">{finalLastScore ?? "-"}</p>
+                        </div>
                       </div>
                     </div>
                   </div>

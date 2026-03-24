@@ -8,7 +8,7 @@ import { getTotalCompanies } from "../controllers/company-specific/totalcompanie
 import { deleteUser } from "../controllers/company-specific/deleteuserController.js";
 import { sendUserCredentials } from "../controllers/company-specific/sendCredentialsController.js";
 import { initializeFresherNotifications } from "../controllers/company-specific/initializeFresherNotificationsController.js";
-import { getModuleLockNotifications, resolveModuleLockNotification } from "../controllers/company-specific/moduleLockNotificationsController.js";
+import { getModuleLockNotifications, resolveModuleLockNotification, getCompanyAdminNotifications } from "../controllers/company-specific/moduleLockNotificationsController.js";
 import { updateDepartmentSettings, getDepartmentSettings } from "../controllers/company-specific/updateDepartmentSettings.js";
 import { checkCompanyUserQuota } from "../controllers/company-specific/userQuotaController.js";
 
@@ -26,6 +26,7 @@ router.post("/company/users/credentials-email", sendUserCredentials);
 router.post("/company/users/initialize-notifications", initializeFresherNotifications);
 router.get("/company/notifications/module-lock/:companyId", getModuleLockNotifications);
 router.patch("/company/notifications/module-lock/:companyId/:notificationId", resolveModuleLockNotification);
+router.get("/company/notifications/:companyId", getCompanyAdminNotifications);
 
 // User quota check
 router.get("/company/:companyId/user-quota", checkCompanyUserQuota);

@@ -21,6 +21,11 @@ export default function CompanySidebar({ companyId, companyName }) {
     [companyId]
   );
 
+  const resolvedCompanyName = useMemo(
+    () => companyName || localStorage.getItem("companyName") || "Company",
+    [companyName]
+  );
+
   useEffect(() => {
     if (!resolvedCompanyId) return;
 
@@ -68,6 +73,9 @@ export default function CompanySidebar({ companyId, companyName }) {
           <span className="text-[#00FFFF] font-extrabold text-xl">TM</span>
         </div>
         <h1 className="text-[#00FFFF] font-bold text-xl mt-1">TrainMate</h1>
+        <p className="text-[11px] text-[#8A97A8] mt-0.5 truncate px-2" title={resolvedCompanyName}>
+          {resolvedCompanyName}
+        </p>
       </div>
 
       {/* Menu */}

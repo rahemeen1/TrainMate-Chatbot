@@ -5,6 +5,7 @@ import { db } from "../../firebase";
 import TrainingLockedScreen from "./TrainingLockedScreen";
 
 const TAB_AWAY_THRESHOLD_MS = 100;
+const QUIZ_TIME_LIMIT_SECONDS = 15 * 60;
 
 export default function ModuleQuiz() {
 	const { companyId, deptId, userId, moduleId } = useParams();
@@ -17,7 +18,7 @@ export default function ModuleQuiz() {
 	const [error, setError] = useState("");
 	const [quiz, setQuiz] = useState(null);
 	const [userData, setUserData] = useState(null);
-	const [timeLeft, setTimeLeft] = useState(600);
+	const [timeLeft, setTimeLeft] = useState(QUIZ_TIME_LIMIT_SECONDS);
 	const [timerRunning, setTimerRunning] = useState(false);
 	const [autoSubmitted, setAutoSubmitted] = useState(false);
 	const [mcqAnswers, setMcqAnswers] = useState({});
@@ -114,7 +115,7 @@ export default function ModuleQuiz() {
 		setQuiz(null);
 		setMcqAnswers({});
 		setOneLinerAnswers({});
-		setTimeLeft(600);
+		setTimeLeft(QUIZ_TIME_LIMIT_SECONDS);
 		setTimerRunning(false);
 		setAutoSubmitted(false);
 		setTabSwitchAttempts(0);
@@ -367,6 +368,8 @@ export default function ModuleQuiz() {
 		return `${mins}:${secs.toString().padStart(2, "0")}`;
 	};
 
+	const isFinalThirtySeconds = timerRunning && timeLeft > 0 && timeLeft <= 30;
+
 	const goToRoadmap = () => {
 		if (companyName) {
 			navigate(`/roadmap/${companyId}/${deptId}/${userId}/${companyName}`);
@@ -410,6 +413,11 @@ export default function ModuleQuiz() {
 
 	return (
 		<div className="min-h-screen bg-[#031C3A] text-white p-8">
+			{isFinalThirtySeconds && (
+				<div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-red-500/20 border border-red-400 text-red-200 px-6 py-3 rounded-lg shadow-lg font-semibold animate-pulse">
+					⚠️ Quiz auto-submits in {timeLeft} second{timeLeft !== 1 ? "s" : ""}
+				</div>
+			)}
 			{/* Initial Tab Switching Warning Modal */}
 			{showInitialWarning && (
 				<div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 animate-fade-in">

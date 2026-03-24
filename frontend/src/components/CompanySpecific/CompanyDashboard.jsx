@@ -1,5 +1,5 @@
 //CompanyDashboard.jsx
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { collection, getDocs, addDoc, serverTimestamp, query, orderBy, limit, getDoc } from "firebase/firestore";
 import {
   BarChart,
@@ -19,6 +19,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { doc, setDoc } from "firebase/firestore";
 import { CreditCard, Wallet } from "lucide-react";
 import CompanySidebar from "../../components/CompanySpecific/CompanySidebar";
+import CompanyPageLoader from "../../components/CompanySpecific/CompanyPageLoader";
 import CompanyFresherChatbot from "../../components/CompanySpecific/CompanyFresherChatbot";
 
 
@@ -93,6 +94,38 @@ const QUESTIONS = [
   { text: "Payment method for licensing", type: "single-select", options: PAYMENT_METHODS },
   { text: "Card Details", description: "Enter your card information to complete payment setup", type: "card-details" },
 ];
+
+function AnimatedCounter({ value, duration = 900 }) {
+  const [displayValue, setDisplayValue] = useState(0);
+
+  useEffect(() => {
+    const target = Number.isFinite(Number(value)) ? Number(value) : 0;
+
+    if (target <= 0) {
+      setDisplayValue(0);
+      return;
+    }
+
+    let rafId;
+    const start = performance.now();
+
+    const tick = (now) => {
+      const progress = Math.min((now - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setDisplayValue(Math.round(target * eased));
+
+      if (progress < 1) {
+        rafId = requestAnimationFrame(tick);
+      }
+    };
+
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [value, duration]);
+
+  return <>{displayValue}</>;
+}
+
 export default function CompanyDashboard() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -129,12 +162,73 @@ export default function CompanyDashboard() {
   const [showCalendarPrompt, setShowCalendarPrompt] = useState(true);
   const [pendingNotificationCount, setPendingNotificationCount] = useState(0);
   const [showNotificationPrompt, setShowNotificationPrompt] = useState(false);
+  const preloadedAnalyticsKeyRef = useRef("");
 
   const selectedPlan = answers[0];
   const effectiveLicense = selectedPlan || companyLicense;
   const isBasicLicense = effectiveLicense === "License Basic";
   const currentPlanConfig = PLAN_OPTIONS.find((plan) => plan.value === effectiveLicense);
   const currentPlanLabel = currentPlanConfig?.title || "Pro";
+
+  const getDepartmentsKey = (departments) => [...departments].sort().join("|");
+
+  const fetchAnalyticsForDepartments = async (departments, options = {}) => {
+    const { rememberAsPreloaded = false } = options;
+
+    if (!companyId) return;
+
+    if (!departments.length) {
+      setTotalUsers(0);
+      setActiveUsers(0);
+      setChartData([]);
+      setPieData([]);
+      if (rememberAsPreloaded) preloadedAnalyticsKeyRef.current = "";
+      return;
+    }
+
+    const deptSnapshots = await Promise.all(
+      departments.map(async (dept) => {
+        const usersRef = collection(
+          db,
+          "freshers",
+          companyId,
+          "departments",
+          dept,
+          "users"
+        );
+
+        const snap = await getDocs(usersRef);
+        let activeCount = 0;
+
+        snap.forEach((userDoc) => {
+          if (userDoc.data().status === "active") activeCount++;
+        });
+
+        return {
+          department: dept,
+          totalCount: snap.size,
+          activeCount,
+        };
+      })
+    );
+
+    const total = deptSnapshots.reduce((sum, item) => sum + item.totalCount, 0);
+    const active = deptSnapshots.reduce((sum, item) => sum + item.activeCount, 0);
+
+    const chart = deptSnapshots.map((item) => ({
+      department: item.department,
+      users: item.totalCount,
+    }));
+
+    setTotalUsers(total);
+    setActiveUsers(active);
+    setChartData(chart);
+    setPieData(chart.map((c) => ({ name: c.department, value: c.users })));
+
+    if (rememberAsPreloaded) {
+      preloadedAnalyticsKeyRef.current = getDepartmentsKey(departments);
+    }
+  };
 
   // Handle returning from Google OAuth
   useEffect(() => {
@@ -284,9 +378,11 @@ console.log("companyId:", companyId);
         if (!snapshot.empty) {
           const existing = snapshot.docs.map(doc => doc.data().name);
           setSelectedDepts(existing);
+          await fetchAnalyticsForDepartments(existing, { rememberAsPreloaded: true });
           setHasDepartments(true); // skip onboarding
         } else {
           setHasDepartments(false); // first login, show onboarding
+          await fetchAnalyticsForDepartments([], { rememberAsPreloaded: true });
         }
       } catch (err) {
         console.error("Error checking departments:", err);
@@ -305,7 +401,7 @@ console.log("companyId:", companyId);
     const loadPendingNotifications = async () => {
       try {
         const res = await fetch(
-          `http://localhost:5000/api/company/notifications/module-lock/${companyId}?status=pending`
+          `http://localhost:5000/api/company/notifications/${companyId}?status=pending&types=module_lock,training_completion`
         );
         const data = await res.json();
         if (!res.ok) return;
@@ -456,80 +552,32 @@ console.log("companyId:", companyId);
   };
   const handlePrevStep = () => setStep(prev => (prev > 1 ? prev - 1 : prev));
 
-  // Fetch total users
-useEffect(() => {
-  const fetchUserCounts = async () => {
-    if (!companyId) return;
-
-    try {
-      let total = 0;
-      let active = 0;
-
-      const departments = selectedDepts.length
-        ? selectedDepts
-        : ["IT", "HR", "Finance", "Marketing"];
-
-      for (const dept of departments) {
-        const usersRef = collection(
-          db,
-          "freshers",
-          companyId,
-          "departments",
-          dept,
-          "users"
-        );
-
-        const snap = await getDocs(usersRef);
-
-        total += snap.size;
-
-        snap.forEach(doc => {
-          if (doc.data().status === "active") active++;
-        });
-      }
-
-      setTotalUsers(total);
-      setActiveUsers(active);
-    } catch (err) {
-      console.error("User count error:", err);
-    }
-  };
-
-  if (hasDepartments) fetchUserCounts();
-}, [companyId, hasDepartments, selectedDepts]);
-
-  // Build chart data for departments
+  // Refresh analytics when selected departments change (skip one duplicate call after preload).
   useEffect(() => {
-    const fetchChart = async () => {
+    const fetchAnalytics = async () => {
       if (!companyId || !hasDepartments) return;
 
+      const depts = selectedDepts.length ? selectedDepts : [];
+
+      if (!depts.length) {
+        await fetchAnalyticsForDepartments([]);
+        return;
+      }
+
+      const key = getDepartmentsKey(depts);
+      if (preloadedAnalyticsKeyRef.current && preloadedAnalyticsKeyRef.current === key) {
+        preloadedAnalyticsKeyRef.current = "";
+        return;
+      }
+
       try {
-        const depts = selectedDepts.length ? selectedDepts : [];
-        const chart = [];
-
-        for (const dept of depts) {
-          const usersRef = collection(
-            db,
-            "freshers",
-            companyId,
-            "departments",
-            dept,
-            "users"
-          );
-          const snap = await getDocs(usersRef);
-          chart.push({ department: dept, users: snap.size });
-        }
-
-        setChartData(chart);
-        // also build pie data
-        const pie = chart.map((c) => ({ name: c.department, value: c.users }));
-        setPieData(pie);
+        await fetchAnalyticsForDepartments(depts);
       } catch (err) {
-        console.error("Error building chart data:", err);
+        console.error("Error building analytics:", err);
       }
     };
 
-    fetchChart();
+    fetchAnalytics();
   }, [companyId, hasDepartments, selectedDepts]);
 
   const formatDepartmentLabel = (label) => {
@@ -761,50 +809,85 @@ const CustomXAxisTick = ({ x, y, payload }) => {
 
  if (loading) {
    return (
-     <div className="flex min-h-screen bg-[#031C3A] text-white">
+     <div className="company-page-shell flex min-h-screen">
        {/* Sidebar stays as it is */}
        <CompanySidebar companyId={companyId}/>
- 
-       {/* Main content loading area */}
-       <div className="flex-1 flex flex-col items-center justify-center gap-4 p-10">
-         {/* Rotating hourglass */}
-         <svg
-           className="animate-spin h-8 w-8 text-[#00FFFF]"
-           xmlns="http://www.w3.org/2000/svg"
-           fill="none"
-           viewBox="0 0 24 24"
-         >
-           <path
-             fill="currentColor"
-             d="M12 2C6.477 2 2 6.477 2 12h2a8 8 0 0116 0h2c0-5.523-4.477-10-10-10zm0 20c5.523 0 10-4.477 10-10h-2a8 8 0 01-16 0H2c0 5.523 4.477 10 10 10z"
-           />
-         </svg>
- 
-         <p className="text-base font-medium text-white">
-           Loading Company Dashboard...
-         </p>
-       </div>
+
+        <CompanyPageLoader message="Loading Company Dashboard..." />
      </div>
    );
  }
   const progressPercent = (step / QUESTIONS.length) * 100;
 
   return (
-    <div className="flex min-h-screen bg-[#031C3A] text-white">
+    <div className="company-page-shell flex min-h-screen">
       {/* Sidebar */}
       <CompanySidebar companyId={companyId} companyName={companyName} />
 
       {/* Main Content */}
-      <div className="flex-1 p-4 sm:p-6 lg:p-8">
-        <div className="max-w-6xl mx-auto">
-          <div className="mb-8 pt-2 sm:pt-3 px-1 sm:px-2">
+      <div className="company-main-content flex-1 sm:p-6 lg:p-8">
+        <style>{`
+          @keyframes dashFadeUp {
+            0% { opacity: 0; transform: translateY(14px); }
+            100% { opacity: 1; transform: translateY(0); }
+          }
+
+          @keyframes dashGlowDrift {
+            0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.35; }
+            50% { transform: translate3d(8px, -10px, 0) scale(1.08); opacity: 0.55; }
+          }
+
+          .dash-enter {
+            animation: dashFadeUp 520ms ease-out both;
+          }
+
+          .dash-delay-1 { animation-delay: 80ms; }
+          .dash-delay-2 { animation-delay: 150ms; }
+          .dash-delay-3 { animation-delay: 220ms; }
+
+          .dash-kpi-card {
+            position: relative;
+            overflow: hidden;
+            backdrop-filter: blur(4px);
+            transition: transform 240ms ease, border-color 240ms ease, box-shadow 240ms ease;
+          }
+
+          .dash-kpi-card::after {
+            content: "";
+            position: absolute;
+            inset: -1px;
+            background: linear-gradient(120deg, rgba(0,255,255,0.0), rgba(0,255,255,0.10), rgba(0,123,255,0.0));
+            opacity: 0;
+            transition: opacity 240ms ease;
+            pointer-events: none;
+          }
+
+          .dash-kpi-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(0, 255, 255, 0.5);
+            box-shadow: 0 14px 28px rgba(0, 255, 255, 0.14);
+          }
+
+          .dash-kpi-card:hover::after {
+            opacity: 1;
+          }
+
+          .dash-hero-orb {
+            animation: dashGlowDrift 5s ease-in-out infinite;
+          }
+        `}</style>
+
+        <div className="company-container">
+          <div className="company-card dash-enter mb-8 p-6 md:p-8 relative overflow-hidden border-[#00FFFF40] bg-[radial-gradient(circle_at_12%_20%,rgba(0,255,255,0.16),transparent_34%),radial-gradient(circle_at_88%_14%,rgba(0,123,255,0.24),transparent_38%),rgba(2,27,54,0.88)]">
+            <div className="dash-hero-orb absolute -top-10 -right-6 w-40 h-40 rounded-full bg-[#00FFFF1A] blur-2xl pointer-events-none" />
+            <div className="dash-hero-orb absolute -bottom-14 left-10 w-44 h-44 rounded-full bg-[#007BFF26] blur-3xl pointer-events-none" />
             <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6">
               <div className="space-y-2">
                 <p className="text-xs tracking-[0.18em] uppercase text-[#8EB6D3]">Company Workspace</p>
-                <h1 className="text-2xl sm:text-3xl font-bold text-[#E8F7FF]">
-                  Welcome, {companyName}
+                <h1 className="company-title text-2xl sm:text-4xl text-[#E8F7FF] tracking-tight">
+                  Welcome, <span className="text-[#00FFFF]">{companyName}</span>
                 </h1>
-                <p className="text-sm text-[#AFCBE3] pt-1">
+                <p className="company-subtitle pt-1">
                   {hasDepartments
                     ? "Track fresher progress, department activity, and training completion from one dashboard."
                     : "Complete onboarding to configure your training setup and unlock your dashboard insights."}
@@ -1176,10 +1259,10 @@ const CustomXAxisTick = ({ x, y, payload }) => {
 
         {/* Dashboard + Chart */}
         {hasDepartments && (
-          <div className="max-w-6xl mx-auto space-y-6 mt-8">
+          <div className="company-container space-y-6 mt-8">
             {/* Google Calendar Connection Prompt - Only show if not connected */}
             {showCalendarPrompt && !calendarConnectionAttempted && (
-              <div className="bg-gradient-to-r from-[#00FFFF]/20 to-[#007BFF]/20 border border-[#00FFFF] rounded-xl p-6 relative">
+              <div className="company-card dash-enter dash-delay-1 bg-gradient-to-r from-[#00FFFF]/20 to-[#007BFF]/20 border-[#00FFFF] p-6 relative">
                 <button
                   onClick={() => setShowCalendarPrompt(false)}
                   className="absolute top-4 right-4 text-white/70 hover:text-white transition-colors"
@@ -1208,38 +1291,38 @@ const CustomXAxisTick = ({ x, y, payload }) => {
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
-              <div className="bg-[#031C3A]/70 border border-[#00FFFF30] rounded-xl p-4 sm:p-5">
-                <h3 className="text-sm text-[#9FC2DA]">Current Plan</h3>
-                <p className="text-2xl font-bold text-[#E8F7FF] mt-1">{currentPlanLabel}</p>
+              <div className="company-kpi-card dash-kpi-card dash-enter dash-delay-1">
+                <h3 className="company-kpi-label">Current Plan</h3>
+                <p className="company-kpi-value text-[#E8F7FF]">{currentPlanLabel}</p>
                 <p className="text-xs text-[#7FA3BF] mt-1">{currentPlanConfig?.capacity || "Plan details available"}</p>
               </div>
-              <div className="bg-[#031C3A]/70 border border-[#00FFFF30] rounded-xl p-4 sm:p-5">
-                <h3 className="text-sm text-[#9FC2DA]">Total Departments</h3>
-                <p className="text-2xl font-bold text-[#E8F7FF] mt-1">{selectedDepts.length}</p>
+              <div className="company-kpi-card dash-kpi-card dash-enter dash-delay-1">
+                <h3 className="company-kpi-label">Total Departments</h3>
+                <p className="company-kpi-value text-[#E8F7FF]"><AnimatedCounter value={selectedDepts.length} /></p>
               </div>
-              <div className="bg-[#031C3A]/70 border border-[#00FFFF30] rounded-xl p-4 sm:p-5">
-                <h3 className="text-sm text-[#9FC2DA]">Total Users</h3>
-                <p className="text-2xl font-bold text-[#E8F7FF] mt-1">{totalUsers}</p>
+              <div className="company-kpi-card dash-kpi-card dash-enter dash-delay-2">
+                <h3 className="company-kpi-label">Total Users</h3>
+                <p className="company-kpi-value text-[#E8F7FF]"><AnimatedCounter value={totalUsers} /></p>
               </div>
-              <div className="bg-[#031C3A]/70 border border-[#00FFFF30] rounded-xl p-4 sm:p-5">
-                <h3 className="text-sm text-[#9FC2DA]">Active Users</h3>
-                <p className="text-2xl font-bold text-[#E8F7FF] mt-1">{activeUsers}</p>
+              <div className="company-kpi-card dash-kpi-card dash-enter dash-delay-2">
+                <h3 className="company-kpi-label">Active Users</h3>
+                <p className="company-kpi-value text-[#E8F7FF]"><AnimatedCounter value={activeUsers} /></p>
               </div>
-              <div className="bg-[#031C3A]/70 border border-[#00FFFF30] rounded-xl p-4 sm:p-5">
-                <h3 className="text-sm text-[#9FC2DA]">Onboarding Completion</h3>
-                <p className="text-2xl font-bold text-[#E8F7FF] mt-1">
-                  {completedFreshers} / {totalUsers}
+              <div className="company-kpi-card dash-kpi-card dash-enter dash-delay-3">
+                <h3 className="company-kpi-label">Onboarding Completion</h3>
+                <p className="company-kpi-value text-[#E8F7FF]">
+                  <AnimatedCounter value={completedFreshers} /> / <AnimatedCounter value={totalUsers} />
                 </p>
               </div>
 
             </div>
 
             {chartData && chartData.length > 0 && (
-              <div className="max-w-5xl mx-auto mt-6 bg-[#021B36]/70 border border-[#00FFFF30] rounded-xl p-6">
+              <div className="company-card dash-enter dash-delay-3 max-w-5xl mx-auto mt-6 p-6 border-[#00FFFF3A] bg-[linear-gradient(180deg,rgba(2,27,54,0.92),rgba(3,28,58,0.85))]">
                 <h2 className="text-lg font-semibold text-[#00FFFF] mb-4">Department Analytics</h2>
                 <p className="text-[#AFCBE3] mb-4">View user distribution and activity across departments</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="h-[360px] p-4 rounded-lg border-2 border-[#00FFFF40] bg-[#021B36]/60">
+                  <div className="h-[360px] p-4 rounded-xl border border-[#00FFFF40] bg-[#021B36]/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(13, 88, 200, 0.13)" />
@@ -1258,7 +1341,7 @@ const CustomXAxisTick = ({ x, y, payload }) => {
                     </ResponsiveContainer>
                   </div>
 
-                  <div className="h-[360px] p-4 rounded-lg border-2 border-[#00FFFF40] bg-[#021B36]/60">
+                  <div className="h-[360px] p-4 rounded-xl border border-[#00FFFF40] bg-[#021B36]/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label={{ fill: '#AFCBE3' }}>

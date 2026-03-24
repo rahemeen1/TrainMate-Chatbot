@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react"; 
 import { useLocation, useNavigate } from "react-router-dom";
 import CompanySidebar from "./CompanySidebar";
+import CompanyPageLoader from "./CompanyPageLoader";
 import { collection, getDocs, query, orderBy, limit } from "firebase/firestore";
 import { db } from "../../firebase";
 
@@ -234,55 +235,39 @@ const closeAddUserModal = () => {
 };
 
   if (!companyId || !deptId) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#031C3A] text-white">
-        <div className="flex flex-col items-center gap-4">
-          <svg
-            className="animate-spin h-8 w-8 text-[#00FFFF]"
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-          >
-            <path
-              fill="currentColor"
-              d="M12 2C6.477 2 2 6.477 2 12h2a8 8 0 0116 0h2c0-5.523-4.477-10-10-10zm0 20c5.523 0 10-4.477 10-10h-2a8 8 0 01-16 0H2c0 5.523 4.477 10 10 10z"
-            />
-          </svg>
-          <p className="text-base font-medium">Loading department...</p>
-        </div>
-      </div>
-    );
+    return <CompanyPageLoader layout="page" message="Loading department..." />;
   }
 
   return (
-    <div className="flex min-h-screen bg-[#031C3A] text-white">
+    <div className="company-page-shell flex min-h-screen">
       <CompanySidebar companyId={companyId} companyName={companyName} />
 
-      <div className="flex-1 p-6 md:p-8">
-        <div className="max-w-6xl mx-auto">
-           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="company-main-content flex-1 md:p-8">
+        <div className="company-container">
+           <div className="company-card p-6 md:p-8 mb-6">
+             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
-                <h1 className="text-3xl font-bold text-[#00FFFF]">{(deptName || "").toUpperCase()} Department</h1>
-                <p className="text-[#AFCBE3] mt-2 text-sm">
+                <h1 className="company-title">{(deptName || "").toUpperCase()} Department</h1>
+                <p className="company-subtitle">
                   Manage documents and freshers for this department.
                 </p>
               </div>
               <button
                 onClick={() => navigate(-1)}
                 disabled={isActionInProgress}
-                className={`px-4 py-2 rounded-lg border border-[#00FFFF30] font-semibold transition ${
+                className={`company-outline-btn ${
                   isActionInProgress
                     ? "bg-gray-600 text-gray-300 cursor-not-allowed"
-                    : "bg-[#031C3A]/70 hover:bg-[#00FFFF]/10 text-[#AFCBE3]"
+                    : ""
                 }`}
               >
                 ← Back
               </button>
             </div>
-         <br />
+          </div>
 
         {/* DOCUMENTS */}
-        <div className="mb-8 rounded-2xl border border-[#00FFFF22] bg-[#021B36]/70 p-5 md:p-6">
+        <div className="company-card mb-8 p-5 md:p-6">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-semibold text-[#00FFFF]">
               {(deptName || "").toUpperCase()} Documents ({docs.length})
@@ -328,10 +313,10 @@ const closeAddUserModal = () => {
               Loading documents...
             </div>
           ) : (
-          <div className="mb-2 overflow-x-auto rounded-xl border border-[#00FFFF30] bg-[#021B36]/80">
+              <div className="company-table-wrap mb-2 overflow-x-auto">
 
   <table className="w-full text-sm">
-    <thead className="bg-[#031C3A]/80 text-[#00FFFF] border-b border-[#00FFFF30]">
+            <thead className="company-table-head-row">
       <tr>
         <th className="p-3 text-left font-semibold">Document</th>
         <th className="p-3 text-center font-semibold">Actions</th>
@@ -347,7 +332,7 @@ const closeAddUserModal = () => {
       )}
 
       {docs.map((doc) => (
-        <tr key={doc.id} className="border-t border-[#00FFFF20] hover:bg-[#00FFFF10] transition">
+        <tr key={doc.id} className="company-table-row">
           <td className="p-3">{doc.name}</td>
           <td className="p-3 text-center">
             <div className="flex justify-center items-center gap-2">
@@ -415,7 +400,7 @@ const closeAddUserModal = () => {
         </div>
 
         {/* USERS */}
-        <div className="mb-8 rounded-2xl border border-[#00FFFF22] bg-[#021B36]/70 p-5 md:p-6">
+        <div className="company-card mb-8 p-5 md:p-6">
           <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-3 mb-3">
             <div>
               <h2 className="text-xl font-semibold text-[#00FFFF]">Users ({users.length})</h2>
@@ -467,9 +452,9 @@ const closeAddUserModal = () => {
               Loading users...
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-[#00FFFF30] bg-[#021B36]/80">
+            <div className="company-table-wrap overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-[#031C3A]/80 text-[#00FFFF] border-b border-[#00FFFF30]">
+              <thead className="company-table-head-row">
   <tr>
     <th className="p-3 text-center font-semibold">Name</th>
     <th className="p-3 text-center font-semibold">Email</th>
@@ -481,7 +466,7 @@ const closeAddUserModal = () => {
 
               <tbody>
       {users.map((u) => (
-    <tr key={u.id} className="border-t border-[#00FFFF20] hover:bg-[#00FFFF10] transition">
+    <tr key={u.id} className="company-table-row">
       <td className="p-3">{(u.name || "").toUpperCase()}</td>
 
       <td className="p-3 text-center">

@@ -64,13 +64,22 @@ export default function ManageUser() {
         const pathSegments = u.ref.path.split("/");
         const deptFromPath = pathSegments[3] || "Unknown";
         const deptName = data.deptName || data.deptId || deptFromPath;
+        const finalQuizScoreRaw = Number(data.certificateFinalQuizScore);
+        const finalQuizScore = Number.isFinite(finalQuizScoreRaw)
+          ? Math.round(finalQuizScoreRaw)
+          : null;
+        const trainingCompleted = !!data.certificateUnlocked;
 
         deptSet.add(deptName);
         usersArr.push({
           id: u.id,
           deptName,
           status: data.status || "active",
-          trainingStatus: data.trainingStatus || "ongoing",
+          trainingStatus: trainingCompleted
+            ? "completed"
+            : data.trainingStatus || "ongoing",
+          trainingCompleted,
+          finalQuizScore,
           ...data,
         });
       });
@@ -188,23 +197,61 @@ export default function ManageUser() {
   const isDeletingAnyUser = deletingUserId !== null;
 
   return (
-    <div className="flex min-h-screen bg-[#031C3A] text-white">
+    <div className="company-page-shell flex min-h-screen">
   {/* Sidebar (fixed width, no shrink) */}
   <div className="flex-shrink-0">
       <CompanySidebar companyId={companyId} companyName={companyName} />
       </div>
-      <div className="flex-1 min-w-0 p-8">
-        <div>
-          <h1 className="text-3xl font-bold text-[#00FFFF]">
-            Manage Users <span className="text-3xl font-bold text-[#00FFFF]">({displayedCount})</span>
-          </h1>
-          <p className="text-[#AFCBE3] mt-1">
-            {companyName} — Manage and view your company users here.
-          </p>
+      <div className="company-main-content flex-1 min-w-0 md:p-8">
+        <div className="company-container">
+          <div className="company-card p-6 md:p-8 mb-6">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div>
+                <h1 className="company-title">Manage Users</h1>
+                <p className="company-subtitle mt-1">
+                  {companyName} - Manage and view your company users here.
+                </p>
+              </div>
+
+              <button
+                onClick={() => navigate(-1)}
+                disabled={isDeletingAnyUser}
+                className={`company-outline-btn ${
+                  isDeletingAnyUser ? "opacity-60 cursor-not-allowed" : ""
+                }`}
+              >
+                ← Back
+              </button>
+            </div>
+          </div>
+
+          <div className="company-card p-6 md:p-8">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+            <h2 className="text-xl font-semibold text-[#00FFFF]">
+              Users ({displayedCount})
+            </h2>
+
+            <div className="flex items-center gap-3">
+              <label className="text-[#AFCBE3] font-semibold text-sm">Filter by Department:</label>
+              <select
+                value={filterDept}
+                onChange={(e) => setFilterDept(e.target.value)}
+                disabled={isDeletingAnyUser}
+                className="px-4 py-2 bg-[#021B36] border border-[#00FFFF]/50 text-[#00FFFF] rounded font-semibold hover:border-[#00FFFF] transition"
+              >
+                <option value="all">All Departments</option>
+                {departmentsList.map((dept) => (
+                  <option key={dept} value={dept}>
+                    {dept}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
 
           {/* Quota Status */}
           {quotaStatus && (
-            <div className="mt-4 p-4 bg-[#021B36] border border-[#00FFFF]/30 rounded-lg">
+            <div className="mb-4 p-4 bg-[#021B36] border border-[#00FFFF]/30 rounded-lg">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-[#00FFFF] font-semibold">{quotaStatus.plan} Plan</p>
@@ -231,7 +278,6 @@ export default function ManageUser() {
               </div>
             </div>
           )}
-          <br />
 
           {deleteSuccessMsg && (
             <div className="mb-4 p-3 bg-green-500/20 border border-green-500/50 rounded text-green-400">
@@ -239,47 +285,44 @@ export default function ManageUser() {
             </div>
           )}
 
-          {/* Filter */}
-          <div className="mb-6 flex items-center gap-3">
-            <label className="text-[#AFCBE3] font-semibold">Filter by Department:</label>
-            <select
-              value={filterDept}
-              onChange={(e) => setFilterDept(e.target.value)}
-              disabled={isDeletingAnyUser}
-              className="px-4 py-2 bg-[#021B36] border border-[#00FFFF]/50 text-[#00FFFF] rounded font-semibold hover:border-[#00FFFF] transition"
-            >
-              <option value="all">All Departments</option>
-              {departmentsList.map((dept) => (
-                <option key={dept} value={dept}>
-                  {dept}
-                </option>
-              ))}
-            </select>
-          </div>
-
           {loading ? (
-            <div className="p-8 text-center text-[#AFCBE3]">Loading users...</div>
+            <div className="company-table-wrap p-8 text-center text-[#AFCBE3]">
+              <div className="flex items-center justify-center gap-3">
+                <svg
+                  className="animate-spin h-6 w-6 text-[#00FFFF]"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    fill="currentColor"
+                    d="M12 2C6.477 2 2 6.477 2 12h2a8 8 0 0116 0h2c0-5.523-4.477-10-10-10zm0 20c5.523 0 10-4.477 10-10h-2a8 8 0 01-16 0H2c0 5.523 4.477 10 10 10z"
+                  />
+                </svg>
+                <span>Loading users...</span>
+              </div>
+            </div>
           ) : users.length === 0 ? (
-            <div className="p-8 text-center text-[#AFCBE3] bg-red-900/20 border border-red-500/30 rounded">
+            <div className="company-table-wrap p-8 text-center text-[#AFCBE3] bg-red-900/20 border border-red-500/30 rounded">
               <p className="text-red-400 font-semibold">No users found for this company.</p>
             </div>
           ) : sortedUsers.length === 0 ? (
-            <div className="p-8 text-center text-[#AFCBE3]">
+            <div className="company-table-wrap p-8 text-center text-[#AFCBE3]">
               No users found for department: <strong>{filterDept}</strong>
             </div>
           ) : (
-            <div className="overflow-x-auto max-w-full">
+            <div className="company-table-wrap overflow-x-auto max-w-full">
             <table className="w-full text-sm border-collapse
-                 min-w-[900px]
+                 min-w-[1040px]
                  lg:min-w-0">
                 <thead>
-                  <tr className="bg-cyan-400/20 uppercase text-cyan-300">
+              <tr className="company-table-head-row uppercase text-cyan-300">
                     <th className="py-3 px-3 lg:px-4 text-center">#</th>
                     <th className="py-3 px-3 lg:px-4 text-center">Name</th>
                     <th className="py-3 px-3 lg:px-4 text-center">Phone</th>
-                    <th className="py-3 px-3 lg:px-4 text-center">Department</th>
                     <th className="py-3 px-3 lg:px-4 text-center">Status</th>
-                    <th className="py-3 px-3 lg:px-4 text-center">Training</th>
+                    <th className="py-3 px-3 lg:px-4 text-center">Training Completion</th>
                     <th className="py-3 px-3 lg:px-4 text-center">Progress</th>
                     <th className="py-3 px-3 lg:px-4 text-center">Actions</th>
                   </tr>
@@ -289,19 +332,14 @@ export default function ManageUser() {
                   {sortedUsers.map((u, i) => (
                     <tr
                       key={u.id}
-                      className={`border-b border-cyan-400/10 hover:bg-cyan-400/10 ${
-                        u.status === "active" ? "bg-green-900/20" : ""
+                      className={`company-table-row ${
+                        i % 2 === 0 ? "bg-[#041D39]/20" : ""
                       }`}
                     >
                       <td className="py-2 px-3 lg:px-4 text-center whitespace-nowrap">{i + 1}</td>
                       <td className="py-2 px-3 lg:px-4 text-center whitespace-nowrap">{u.name}</td>
                       <td className="py-2 px-3 lg:px-4 text-center whitespace-nowrap">{u.phone || "—"}</td>
-                      <td className="py-2 px-3 lg:px-4 text-center whitespace-nowrap">
-                        <span className="px-3 py-1 rounded-full bg-cyan-400/20">
-                          {u.deptName}
-                        </span>
-                      </td>
-
+                     
                       <td className="py-2 px-3 lg:px-4 text-center whitespace-nowrap">
                         <span
                           className={`px-3 py-1 rounded-full text-xs font-semibold ${
@@ -317,14 +355,16 @@ export default function ManageUser() {
                       <td className="py-2 px-3 lg:px-4 text-center whitespace-nowrap">
                         <span
                           className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                            u.trainingStatus === "completed"
-                              ? "bg-blue-500/20 text-blue-400"
+                            u.trainingCompleted
+                              ? "bg-emerald-500/20 text-emerald-400"
                               : "bg-yellow-500/20 text-yellow-400"
                           }`}
                         >
-                          {u.trainingStatus}
+                          {u.trainingCompleted ? "Completed" : "In Progress"}
                         </span>
                       </td>
+
+                      
 
                       <td className="py-2 px-3 lg:px-4 text-center whitespace-nowrap">
                         <button
@@ -398,6 +438,7 @@ export default function ManageUser() {
               </table>
             </div>
           )}
+          </div>
         </div>
       </div>
 
