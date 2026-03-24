@@ -578,7 +578,6 @@ export const generateUserRoadmap = async (req, res) => {
       trainingTime,
       trainingOn: trainingOnFromClient,
       expertiseScore,
-      expertiseLevel,
     } = req.body;
 
     console.log("👤 Fetching user from Firestore...");
@@ -658,14 +657,14 @@ let trainingDurationFromOnboarding = null;
 
 if (!onboardingSnap.empty) {
   const data = onboardingSnap.docs[0].data();
-  trainingDurationFromOnboarding = data?.answers?.["1"] || null; 
+  trainingDurationFromOnboarding = data?.answers?.["2"] || data?.answers?.[2] || data?.answers?.["1"] || null;
 }
 
 console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboarding);
 
     const trainingOn = trainingOnFromClient || user.trainingOn || "General";
     const expertise = expertiseScore ?? user.expertise ?? 1;
-    const level = user.trainingLevel || expertiseLevel || "Beginner";
+    const level = user.trainingLevel || "Beginner";
     const finalTrainingDuration =
       trainingDurationFromOnboarding || user.trainingDurationFromOnboarding || trainingTime || null;
 
@@ -932,20 +931,196 @@ console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboa
   }
 };
 
-/**
- * Regenerate roadmap after failed quiz attempts
- * Calculates days already spent and generates new roadmap with remaining time
- */
-export const regenerateRoadmapAfterFailure = async (req, res) => {
+function splitDaysEvenly(totalDays, parts) {
+  const safeParts = Math.max(1, Math.floor(parts || 1));
+  const safeTotal = Math.max(safeParts, Math.floor(totalDays || safeParts));
+  const base = Math.floor(safeTotal / safeParts);
+  const remainder = safeTotal % safeParts;
+
+  return Array.from({ length: safeParts }, (_, index) => base + (index < remainder ? 1 : 0));
+}
+
+function buildFallbackRegeneratedModules({ moduleTitle, moduleDescription, splitCount, splitDays, weakConcepts }) {
+  const baseTitle = moduleTitle || "Module";
+  const conceptList = Array.isArray(weakConcepts) ? weakConcepts.slice(0, 8) : [];
+
+  return Array.from({ length: splitCount }, (_, index) => {
+    const phase = index + 1;
+    const conceptSlice = conceptList.slice(index * 3, index * 3 + 3);
+    return {
+      moduleTitle: `${baseTitle} - Recovery Part ${phase}`,
+      description:
+        moduleDescription ||
+        `Focused remediation module part ${phase} to strengthen quiz weak areas before progression.`,
+      estimatedDays: splitDays[index] || 1,
+      skillsCovered: conceptSlice.length ? conceptSlice : ["concept reinforcement", "applied practice", "assessment readiness"],
+    };
+  });
+}
+
+async function fetchModuleFailureInsights({ userRef, moduleId }) {
+  const moduleRef = userRef.collection("roadmap").doc(moduleId);
+  const moduleSnap = await moduleRef.get();
+
+  if (!moduleSnap.exists) {
+    throw new Error("Module not found");
+  }
+
+  const moduleData = moduleSnap.data() || {};
+
+  const attemptsSnap = await moduleRef
+    .collection("quiz")
+    .doc("current")
+    .collection("quizAttempts")
+    .orderBy("attemptNumber", "desc")
+    .limit(6)
+    .get();
+
+  const attempts = attemptsSnap.docs.map((doc) => doc.data() || {});
+  const failedAttempts = attempts.filter((attempt) => !attempt.passed).length;
+  const latestAttempt = attempts[0] || null;
+
+  const latestResultSnap = await moduleRef
+    .collection("quiz")
+    .doc("current")
+    .collection("results")
+    .doc("latest")
+    .get();
+
+  const latestResult = latestResultSnap.exists ? latestResultSnap.data() || {} : {};
+  const wrongQuestions = [];
+
+  const collectWrong = (arr, type) => {
+    if (!Array.isArray(arr)) return;
+    for (const item of arr) {
+      if (!item?.isCorrect) {
+        wrongQuestions.push({
+          type,
+          question: item.question || "",
+          correctAnswer: item.correctAnswer || "",
+        });
+      }
+    }
+  };
+
+  collectWrong(latestResult.mcq, "MCQ");
+  collectWrong(latestResult.oneLiners, "One-Liner");
+  collectWrong(latestResult.coding, "Coding");
+
+  const weakConceptSet = new Set();
+  for (const wrong of wrongQuestions) {
+    extractConceptsFromQuestion(wrong.question).forEach((concept) => weakConceptSet.add(concept));
+  }
+
+  const weakConcepts = Array.from(weakConceptSet).slice(0, 12);
+  const latestScore = Number.isFinite(latestResult.score)
+    ? latestResult.score
+    : Number.isFinite(latestAttempt?.score)
+      ? latestAttempt.score
+      : null;
+
+  return {
+    moduleRef,
+    moduleData,
+    latestScore,
+    failedAttempts,
+    totalAttempts: attempts.length,
+    weakConcepts,
+    wrongQuestions: wrongQuestions.slice(0, 12),
+  };
+}
+
+async function generateRegeneratedSubmodules({
+  targetModule,
+  weakConcepts,
+  wrongQuestions,
+  splitCount,
+  splitDays,
+  learningProfile,
+}) {
+  const prompt = `
+You are an AI curriculum recovery planner.
+
+Goal:
+- Regenerate ONLY the failed module into exactly ${splitCount} focused recovery modules.
+- Keep sequence pedagogically progressive.
+- Each module must target weak areas from failed quiz questions.
+- Total modules must be ${splitCount} (no more, no less).
+- Keep estimatedDays close to this distribution: ${JSON.stringify(splitDays)}
+
+Failed Module:
+${JSON.stringify({
+  moduleTitle: targetModule.moduleTitle,
+  description: targetModule.description,
+  skillsCovered: targetModule.skillsCovered || [],
+  estimatedDays: targetModule.estimatedDays || 1,
+})}
+
+Weak Concepts:
+${JSON.stringify(weakConcepts || [])}
+
+Wrong Questions (sample):
+${JSON.stringify((wrongQuestions || []).slice(0, 8))}
+
+Learning Profile Context:
+${JSON.stringify({
+  summary: learningProfile?.summary || "",
+  avgScore: learningProfile?.avgScore ?? null,
+  strugglingAreas: learningProfile?.strugglingAreas || [],
+}, null, 2)}
+
+Return JSON only as array with this schema:
+[
+  {
+    "moduleTitle": "string",
+    "description": "string",
+    "estimatedDays": number,
+    "skillsCovered": ["skill1", "skill2", "skill3"]
+  }
+]
+
+Constraints:
+- Exactly ${splitCount} items
+- estimatedDays positive integers
+- Focus on weakness remediation + practical application
+- Do not include markdown or extra text
+`;
+
   try {
-    const { companyId, deptId, userId, moduleId } = req.body;
+    const llmResponse = await generateRoadmapModel(prompt);
+    const llmText = llmResponse?.response?.text()?.trim() || "";
+    const parsed = JSON.parse(llmText.replace(/```json|```/g, "").trim());
+    const normalized = normalizeRoadmapModules(parsed);
+
+    if (normalized.length !== splitCount) {
+      throw new Error("Regenerated module count mismatch");
+    }
+
+    const adjusted = normalized.map((module, index) => ({
+      ...module,
+      estimatedDays: splitDays[index] || module.estimatedDays || 1,
+    }));
+
+    return adjusted;
+  } catch (err) {
+    console.warn("Regenerated submodule AI generation failed, using fallback:", err.message);
+    return buildFallbackRegeneratedModules({
+      moduleTitle: targetModule.moduleTitle,
+      moduleDescription: targetModule.description,
+      splitCount,
+      splitDays,
+      weakConcepts,
+    });
+  }
+}
+
+export const regenerateRoadmapModule = async (req, res) => {
+  try {
+    const { companyId, deptId, userId, moduleId, notificationId } = req.body || {};
 
     if (!companyId || !deptId || !userId || !moduleId) {
       return res.status(400).json({ error: "Missing required IDs" });
     }
-
-    console.log("🔄 === ROADMAP REGENERATION START ===");
-    console.log(`CompanyId: ${companyId}, DeptId: ${deptId}, UserId: ${userId}, FailedModuleId: ${moduleId}`);
 
     const userRef = db
       .collection("freshers")
@@ -960,337 +1135,166 @@ export const regenerateRoadmapAfterFailure = async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    const user = userSnap.data();
-    console.log("✅ User fetched:", user.name);
-
-    // Get failed module
-    const failedModuleRef = userRef.collection("roadmap").doc(moduleId);
-    const failedModuleSnap = await failedModuleRef.get();
-    
-    if (!failedModuleSnap.exists) {
-      return res.status(404).json({ error: "Module not found" });
-    }
-    
-    const failedModuleData = failedModuleSnap.data();
-    console.log(`📚 Failed module: ${failedModuleData.moduleTitle}`);
-
-    // Get original training duration
-    const onboardingRef = db
-      .collection("companies")
-      .doc(companyId)
-      .collection("onboardingAnswers");
-
-    const onboardingSnap = await onboardingRef
-      .orderBy("createdAt", "desc")
-      .limit(1)
-      .get();
-
-    let originalTrainingDuration = 90; // Default 90 days
-    if (!onboardingSnap.empty) {
-      const onboardingData = onboardingSnap.docs[0].data();
-      originalTrainingDuration = parseInt(onboardingData?.answers?.["1"]) || 90;
-    }
-    console.log(`⏱️ Original training duration: ${originalTrainingDuration} days`);
-
-    // Calculate days already spent
-    const roadmapSnap = await userRef.collection("roadmap")
-      .orderBy("createdAt", "asc")
-      .limit(1)
-      .get();
-
-    let daysSpent = 0;
-    if (!roadmapSnap.empty) {
-      const firstModule = roadmapSnap.docs[0];
-      const firstModuleData = firstModule.data();
-      
-      if (firstModuleData.createdAt) {
-        const startDate = firstModuleData.createdAt.toDate
-          ? firstModuleData.createdAt.toDate()
-          : new Date(firstModuleData.createdAt);
-        const today = new Date();
-        daysSpent = Math.floor((today - startDate) / (1000 * 60 * 60 * 24));
-      }
-    }
-    
-    const remainingDays = Math.max(7, originalTrainingDuration - daysSpent); // Minimum 7 days
-    console.log(`📅 Days spent: ${daysSpent}, Remaining days: ${remainingDays}`);
-
-    // Get all modules to find completed ones
-    const allModulesSnap = await userRef.collection("roadmap").get();
-    const completedModules = [];
-    const incompletModules = [];
-    
-    allModulesSnap.forEach((doc) => {
-      const moduleData = doc.data();
-      if (moduleData.completed) {
-        completedModules.push({ id: doc.id, ...moduleData });
-      } else {
-        incompletModules.push(doc.id);
-      }
-    });
-    
-    console.log(`✅ Completed modules: ${completedModules.length}`);
-    console.log(`❌ Incomplete modules: ${incompletModules.length}`);
-
-    // Build comprehensive learning profile with quiz weakness analysis
-    const learningProfile = await buildLearningProfile({ userRef, moduleId });
-    const masteredTopics = learningProfile.masteredTopics || [];
-    const strugglingAreas = learningProfile.strugglingAreas || [];
-    const wrongQuestions = learningProfile.wrongQuestions || [];
-    const weakConcepts = learningProfile.weakConcepts || [];
-    
-    console.log(`🧩 Mastered topics: ${masteredTopics.length}`);
-    console.log(`⚠️ Struggling areas: ${strugglingAreas.length}`);
-    console.log(`❌ Wrong questions analyzed: ${wrongQuestions.length}`);
-    console.log(`🎯 Weak concepts identified: ${weakConcepts.map(w => `${w.concept}(${w.frequency})`).join(", ")}`);
-
-    // Get CV text
-    if (!user.cvUrl) {
-      return res.status(400).json({ error: "CV URL not found. Cannot regenerate roadmap." });
+    const roadmapSnap = await userRef.collection("roadmap").orderBy("order").get();
+    if (roadmapSnap.empty) {
+      return res.status(404).json({ error: "Roadmap not found" });
     }
 
-    console.log("📄 Parsing CV...");
-    const cvParseResult = await parseCvFromUrl(user.cvUrl);
-    const cvText = cvParseResult?.rawText || "";
-    
-    if (!cvText) {
-      throw new Error("CV text extraction failed");
+    const roadmapModules = roadmapSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    const targetIndex = roadmapModules.findIndex((module) => module.id === moduleId);
+
+    if (targetIndex === -1) {
+      return res.status(404).json({ error: "Target module not found in roadmap" });
     }
 
-    // Fetch company context - both general and weakness-specific
-    console.log("🔎 Fetching company training materials...");
-    const basePineconeContext = await retrieveDeptDocsFromPinecone({
-      queryText: cvText,
-      companyId,
-      deptName: deptId,
-    });
+    const targetModule = roadmapModules[targetIndex];
+    const targetOrder = targetModule.order || targetIndex + 1;
 
-    // ENHANCED: Fetch company docs specifically about weak concepts
-    console.log("🎯 Fetching company docs for weak concepts...");
-    const weakConceptQueries = weakConcepts.slice(0, 5).map(w => w.concept);
-    const weaknessSpecificDocs = [];
-    
-    for (const concept of weakConceptQueries) {
-      try {
-        const docs = await retrieveDeptDocsFromPinecone({
-          queryText: `${concept} ${user.trainingOn} implementation best practices examples`,
-          companyId,
-          deptName: deptId,
-        });
-        weaknessSpecificDocs.push(...docs);
-        console.log(`  ✓ Fetched ${docs.length} docs for "${concept}"`);
-      } catch (err) {
-        console.warn(`  ✗ Failed to fetch docs for "${concept}":`, err.message);
-      }
+    if (targetModule.completed && targetModule.quizPassed) {
+      return res.status(400).json({ error: "Cannot regenerate a completed module" });
     }
 
-    const baseDocsText = Array.isArray(basePineconeContext)
-      ? basePineconeContext.map((c) => c.text || "").join("\n")
-      : "";
-    
-    const weaknessDocsText = weaknessSpecificDocs
-      .map((c) => c.text || "").join("\n");
+    const rawStartDate = targetModule.startedAt || targetModule.FirstTimeCreatedAt || targetModule.createdAt || null;
+    const moduleStartDate = rawStartDate?.toDate ? rawStartDate.toDate() : rawStartDate ? new Date(rawStartDate) : null;
+    const estimatedDays = Math.max(1, Number(targetModule.estimatedDays) || 1);
 
-    const baseCompanySkills = extractSkillsFromText(baseDocsText);
-    const weaknessCompanySkills = extractSkillsFromText(weaknessDocsText);
-    const cvSkills = extractSkillsFromText(cvText);
-    
-    // Calculate skill gap: company skills MINUS (CV skills + mastered topics)
-    const allMasteredSkills = [...new Set([...cvSkills, ...masteredTopics])];
-    const allCompanySkills = [...new Set([...baseCompanySkills, ...weaknessCompanySkills])];
-    const skillGap = allCompanySkills.filter((skill) => !allMasteredSkills.includes(skill));
-    
-    // Identify company skills related to weak concepts (for prioritization, not exclusivity)
-    const weaknessRelatedGap = skillGap.filter(skill => 
-      weakConcepts.some(w => 
-        skill.toLowerCase().includes(w.concept.toLowerCase()) ||
-        w.concept.toLowerCase().includes(skill.toLowerCase())
-      )
-    );
-    
-    // Get remaining company skills (not related to weaknesses)
-    const otherCompanySkills = skillGap.filter(s => !weaknessRelatedGap.includes(s));
-    
-    console.log(`⚡ Total skill gap: ${skillGap.length} skills`);
-    console.log(`🎯 Weakness-related skills: ${weaknessRelatedGap.length} - ${weaknessRelatedGap.slice(0, 5).join(", ")}`);
-    console.log(`📚 Other company skills: ${otherCompanySkills.length} - ${otherCompanySkills.slice(0, 5).join(", ")}`);
-    console.log(`🔀 Strategy: Mix of ${Math.round(weaknessRelatedGap.length / skillGap.length * 100)}% weakness-related and ${Math.round(otherCompanySkills.length / skillGap.length * 100)}% general company skills`);
+    let daysLeft = estimatedDays;
+    if (moduleStartDate && !Number.isNaN(moduleStartDate.getTime())) {
+      const elapsedMs = Date.now() - moduleStartDate.getTime();
+      const elapsedDays = Math.max(0, Math.floor(elapsedMs / (1000 * 60 * 60 * 24)));
+      daysLeft = Math.max(1, estimatedDays - elapsedDays);
+    }
 
-    // Generate agentic plan with BALANCED focus: weak areas + company requirements
-    const weaknessContext = `
-QUIZ WEAKNESS ANALYSIS:
-${weakConcepts.map(w => `- ${w.concept} (failed ${w.frequency} times)`).join("\n")}
-
-WRONG QUESTIONS PATTERNS:
-${wrongQuestions.slice(0, 10).map(q => `- [${q.type}] ${q.question.substring(0, 80)}...`).join("\n")}
-
-STRUGGLING AREAS: ${strugglingAreas.join(", ")}
-AVERAGE QUIZ SCORE: ${learningProfile.avgScore}%
-
-WEAKNESS-RELATED COMPANY SKILLS: ${weaknessRelatedGap.slice(0, 8).join(", ")}
-OTHER COMPANY REQUIREMENTS: ${otherCompanySkills.slice(0, 8).join(", ")}`;
-
-    const plan = await generateRoadmapPlan({
-      trainingOn: user.trainingOn || "General",
-      cvText,
-      skillGap: skillGap, // Use ALL skills, not prioritized
-      learningProfile: {
-        ...learningProfile,
-        regenerationContext: `Regenerating roadmap after ${MAX_QUIZ_ATTEMPTS} failed quiz attempts. Create a BALANCED roadmap that addresses user weaknesses AND covers remaining company requirements. ${weaknessContext}`,
-        weakConcepts: weakConcepts.map(w => w.concept),
-        weaknessRelatedSkills: weaknessRelatedGap,
-        otherCompanySkills: otherCompanySkills,
-        balancedApproach: true,
-      },
-    });
-
-    console.log(`🧭 Regeneration plan created with ${plan.queries.length} queries targeting weak areas`);
-
-    // Fetch additional planned docs
-    const plannedDocs = await fetchPlannedDocs({
-      queries: plan.queries,
-      companyId,
-      deptName: deptId,
-    });
-
-    // Merge ALL docs: base + weakness-specific + planned
-    const mergedDocs = mergeDocs([
-      ...(basePineconeContext || []), 
-      ...weaknessSpecificDocs,
-      ...plannedDocs
+    const [moduleInsights, learningProfile] = await Promise.all([
+      fetchModuleFailureInsights({ userRef, moduleId }),
+      buildLearningProfile({ userRef, moduleId }),
     ]);
-    
-    console.log(`📄 Total context docs: ${mergedDocs.length} (${basePineconeContext.length} base + ${weaknessSpecificDocs.length} weakness-specific + ${plannedDocs.length} planned)`);
-    
-    const companyDocsText = truncateText(
-      mergedDocs.map((c) => c.text || "").join("\n"),
-      MAX_CONTEXT_CHARS
+
+    const weakConceptCount = moduleInsights.weakConcepts.length;
+    const lowScore = Number.isFinite(moduleInsights.latestScore) && moduleInsights.latestScore < 55;
+    const severeAttempts = moduleInsights.failedAttempts >= 3;
+
+    const splitCount = lowScore || severeAttempts || weakConceptCount >= 4 ? 3 : 2;
+    const cappedSplitCount = Math.min(3, Math.max(2, splitCount));
+
+    const originalDays = Math.max(1, Number(targetModule.estimatedDays) || 1);
+    const adaptiveExtraDays = lowScore && severeAttempts ? 2 : lowScore || severeAttempts ? 1 : 0;
+    const baseDaysForRegeneration = Math.max(daysLeft, Math.ceil(originalDays * 0.6));
+    const regeneratedTotalDays = Math.max(cappedSplitCount, baseDaysForRegeneration + adaptiveExtraDays);
+    const splitDays = splitDaysEvenly(regeneratedTotalDays, cappedSplitCount);
+
+    const regeneratedModules = await generateRegeneratedSubmodules({
+      targetModule,
+      weakConcepts: moduleInsights.weakConcepts,
+      wrongQuestions: moduleInsights.wrongQuestions,
+      splitCount: cappedSplitCount,
+      splitDays,
+      learningProfile,
+    });
+
+    const orderShift = cappedSplitCount - 1;
+    const now = new Date();
+
+    const targetDocRef = userRef.collection("roadmap").doc(moduleId);
+    await db.recursiveDelete(targetDocRef);
+
+    const newModuleRefs = [];
+    for (let index = 0; index < regeneratedModules.length; index += 1) {
+      const regenerated = regeneratedModules[index];
+      const newRef = userRef.collection("roadmap").doc();
+      newModuleRefs.push(newRef);
+
+      await newRef.set({
+        ...regenerated,
+        order: targetOrder + index,
+        completed: false,
+        quizPassed: false,
+        quizAttempts: 0,
+        status: index === 0 ? "in-progress" : "pending",
+        progress: 0,
+        quizLocked: false,
+        moduleLocked: false,
+        requiresAdminContact: false,
+        createdAt: now,
+        FirstTimeCreatedAt: now,
+        startedAt: index === 0 ? now : null,
+        regeneratedFromModuleId: moduleId,
+        regeneratedBy: "admin",
+        regenerationIndex: index + 1,
+        regenerationTotalParts: regeneratedModules.length,
+      });
+    }
+
+    const modulesAfterTarget = roadmapModules.filter((module) => (module.order || 0) > targetOrder);
+    for (const module of modulesAfterTarget) {
+      const updateData = { order: (module.order || 0) + orderShift };
+
+      if (!module.completed) {
+        updateData.status = "pending";
+        updateData.startedAt = null;
+        updateData.quizLocked = false;
+        updateData.moduleLocked = false;
+        updateData.requiresAdminContact = false;
+      }
+
+      await userRef.collection("roadmap").doc(module.id).set(updateData, { merge: true });
+    }
+
+    await userRef.set(
+      {
+        trainingLocked: false,
+        trainingLockedAt: null,
+        trainingLockedReason: null,
+        requiresAdminContact: false,
+        roadmapRegenerated: true,
+        roadmapRegeneratedAt: now,
+        weaknessAnalysis: {
+          sourceModuleId: moduleId,
+          sourceModuleTitle: targetModule.moduleTitle || "",
+          latestScore: moduleInsights.latestScore,
+          failedAttempts: moduleInsights.failedAttempts,
+          weakConcepts: moduleInsights.weakConcepts,
+          wrongQuestions: moduleInsights.wrongQuestions,
+          regeneratedParts: regeneratedModules.length,
+          originalEstimatedDays: originalDays,
+          daysLeftAtRegeneration: daysLeft,
+          regeneratedDays: regeneratedTotalDays,
+          generatedAt: now,
+        },
+      },
+      { merge: true }
     );
 
-    const companyContext = `COMPANY DOCUMENTS (Including weakness-specific materials):\n${companyDocsText || "No company documents available."}\n\nCOMPANY SKILLS TO FOCUS ON: ${weaknessRelatedGap.slice(0, 15).join(", ")}`;
-
-    // Generate new roadmap with BALANCED approach: weak areas + company requirements
-    console.log("🤖 Generating new roadmap via agentic loop...");
-    const { modules: roadmapModules, critique } = await generateRoadmapAgentic({
-      cvText,
-      pineconeContext: mergedDocs,
-      companyContext,
-      expertise: user.expertise || 1,
-      trainingOn: user.trainingOn || "General",
-      level: user.trainingLevel || "Beginner",
-      trainingDuration: remainingDays,
-      skillGap: skillGap, // All skills, not prioritized
-      learningProfile: {
-        ...learningProfile,
-        structuredCv: cvParseResult?.structured || null,
-        weakConcepts: weakConcepts.map(w => w.concept),
-        weaknessRelatedSkills: weaknessRelatedGap,
-        otherCompanySkills: otherCompanySkills,
-        balancedApproach: true,
-      },
-      planFocusAreas: [...(weakConcepts.slice(0, 3).map(w => w.concept)), ...plan.focusAreas], // Mix weak concepts + plan areas
-    });
-
-    if (!Array.isArray(roadmapModules) || roadmapModules.length === 0) {
-      throw new Error("❌ LLM did not return roadmap modules");
-    }
-
-    console.log(`✅ New roadmap generated: ${roadmapModules.length} modules`);
-
-    // CHANGED: Update existing modules' durations instead of creating new modules
-    console.log(`🔄 Adjusting module durations based on remaining time (${remainingDays} days)...`);
-    
-    // Calculate average days per remaining module
-    const totalRemainingModules = incompletModules.length;
-    const avgDaysPerModule = Math.ceil(remainingDays / totalRemainingModules);
-    
-    console.log(`📊 Distributing ${remainingDays} days across ${totalRemainingModules} remaining modules (~${avgDaysPerModule} days each)`);
-
-    // Update each incomplete module's estimated days
-    const updatePromises = incompletModules.map(async (moduleId, idx) => {
-      const updatedEstimatedDays = avgDaysPerModule;
-      await userRef.collection("roadmap").doc(moduleId).update({
-        estimatedDays: updatedEstimatedDays,
-        regenerated: true,
-        regenerationReason: `Module duration adjusted after ${MAX_QUIZ_ATTEMPTS} quiz failures`,
-        lastUpdatedAt: new Date(),
-      });
-      console.log(`  ✅ Module ${moduleId}: updated to ${updatedEstimatedDays} days`);
-    });
-
-    await Promise.all(updatePromises);
-    console.log(`✅ All module durations updated`);
-
-    // Store weakness analysis and regeneration info for chatbot
-    const weaknessAnalysis = {
-      concepts: weakConcepts.slice(0, 5).map(w => ({
-        concept: w.concept,
-        frequency: w.frequency,
-      })),
-      strugglingAreas: strugglingAreas.slice(0, 5),
-      avgQuizScore: learningProfile.avgScore,
-      wrongQuestionsCount: learningProfile.wrongQuestions.length,
-      strongAreas: learningProfile.masteredTopics.slice(0, 5),
-      generatedAt: new Date(),
-    };
-
-    // SKIP: Delete and recreate - instead just update metadata
-    console.log(`📝 Storing weakness analysis for chatbot...`);
-
-    // Store comprehensive regeneration metadata with weakness analysis
-    try {
-      await userRef.set({
-        roadmapRegenerated: true,
-        lastRegenerationDate: new Date(),
-        regenerationCount: (user.regenerationCount || 0) + 1,
-        roadmapAgentic: {
-          planQueries: plan.queries,
-          planFocusAreas: plan.focusAreas,
-          critiqueScore: critique?.score || null,
-          critiquePass: critique?.pass || false,
-          learningProfile: {
-            summary: learningProfile.summary,
-            strugglingAreas: learningProfile.strugglingAreas,
-            masteredTopics: learningProfile.masteredTopics,
-            avgScore: learningProfile.avgScore,
-            weakConcepts: learningProfile.weakConcepts,
-            wrongQuestionsCount: learningProfile.wrongQuestions.length,
-            totalQuizAttempts: learningProfile.totalAttempts,
+    if (notificationId) {
+      await db
+        .collection("companies")
+        .doc(companyId)
+        .collection("adminNotifications")
+        .doc(notificationId)
+        .set(
+          {
+            status: "approved",
+            adminAction: "roadmap_regenerated",
+            resolvedAt: now,
           },
-          regeneratedAfterFailure: true,
-          remainingDays,
-          originalDays: originalTrainingDuration,
-          daysSpent,
-          modulesAdjustedInstead: true, // MARKER: Modules were adjusted, not regenerated
-        },
-        // Store weakness summary for chatbot welcome
-        weaknessAnalysis: weaknessAnalysis,
-      }, { merge: true });
-    } catch (err) {
-      console.warn("⚠️ Failed to store regeneration metadata:", err.message);
+          { merge: true }
+        );
     }
-
-    console.log("🎉 Roadmap regeneration complete!");
-    console.log(`=== ROADMAP REGENERATION END ===\n`);
 
     return res.json({
       success: true,
-      message: `Roadmap adjusted successfully! ${totalRemainingModules} modules updated with optimized durations (${avgDaysPerModule} days each) based on your remaining time.`,
-      adjustedModules: totalRemainingModules,
-      avgDaysPerModule,
-      remainingDays,
-      daysSpent,
-      completedModules: completedModules.length,
-      weaknessAnalysis: weaknessAnalysis,
-      focusAreas: strugglingAreas.slice(0, 5),
+      message: "Module regenerated successfully",
+      splitCount: regeneratedModules.length,
+      regeneratedTotalDays,
+      newModuleIds: newModuleRefs.map((ref) => ref.id),
     });
-
   } catch (error) {
-    console.error("🔥 Roadmap regeneration failed:");
-    console.error(error);
+    console.error("🔥 Roadmap regeneration failed:", error);
     return res.status(500).json({
       error: error.message || "Roadmap regeneration failed",
     });
   }
 };
+
+
 

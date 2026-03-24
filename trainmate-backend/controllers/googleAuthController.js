@@ -1,7 +1,6 @@
 // trainmate-backend/controllers/googleAuthController.js
 import { google } from "googleapis";
 import { db } from "../config/firebase.js";
-import { doc, updateDoc } from "firebase/firestore";
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
@@ -84,17 +83,15 @@ export const googleOAuthCallback = async (req, res) => {
       return res.status(400).json({ error: "Invalid fresher hierarchy" });
     }
 
-    const fresherRef = doc(
-      db,
-      "freshers",
-      companyId,
-      "departments",
-      deptId,
-      "users",
-      userId
-    );
+    const fresherRef = db
+      .collection("freshers")
+      .doc(companyId)
+      .collection("departments")
+      .doc(deptId)
+      .collection("users")
+      .doc(userId);
 
-    await updateDoc(fresherRef, {
+    await fresherRef.update({
       googleOAuth: {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token || null,
@@ -228,8 +225,8 @@ export const companyGoogleOAuthCallback = async (req, res) => {
     console.log("Google account email:", googleEmail);
 
     // Store OAuth tokens in company document
-    const companyRef = doc(db, "companies", companyId);
-    await updateDoc(companyRef, {
+    const companyRef = db.collection("companies").doc(companyId);
+    await companyRef.update({
       googleOAuth: {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token || null,

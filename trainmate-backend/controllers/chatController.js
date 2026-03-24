@@ -202,7 +202,7 @@ function getModuleStartDateByOrder(sortedModules, moduleId, roadmapGeneratedAt) 
 /* ================= MODULE EXPIRATION & AUTO-UNLOCK (ALL MODULES) ================= */
 /**
  * Comprehensive check: Scan ALL modules in order
- * - Mark any expired modules as completed
+ * - Mark any expired modules as expired
  * - Unlock the next non-completed module
  * - Returns which modules were expired + which is now active
  */
@@ -217,39 +217,60 @@ async function checkAndUnlockModulesComprehensive(companyId, deptId, userId, roa
 
     const expiredModuleIds = [];
     let nextActiveModule = null;
+    let hasInProgressModule = false;
 
     // Scan through all modules in order
     for (const module of allModules) {
-      // Skip if already completed
-      if (module.data.status === "completed") {
-        console.log(`✅ Module ${module.data.order}: Already completed`);
-        continue;
-      }
-
       // Check if this module is expired
       const moduleStartDate = getModuleStartDateByOrder(allModules, module.id, roadmapGeneratedAt);
       const progress = calculateTrainingProgress(module.data, moduleStartDate);
       const isExpired = progress.remainingDays <= 0;
+      const appearsCompleted = module.data.status === "completed" || !!module.data.completed;
+      const hasQuizCompletionEvidence = !!(
+        module.data.quizPassed ||
+        module.data.lastQuizSubmitted ||
+        module.data.completedAt
+      );
 
-      if (isExpired && !module.data.completed) {
-        console.log(`⏰ Module ${module.data.order} EXPIRED - Marking as completed`);
+      // Backfill/repair path: if legacy data marked module as completed without quiz/chat evidence,
+      // treat it as expired once its deadline has passed.
+      let hasChatSession = false;
+      if (isExpired && appearsCompleted && !hasQuizCompletionEvidence) {
+        const chatSnap = await roadmapRef.doc(module.id).collection("chatSessions").limit(1).get();
+        hasChatSession = !chatSnap.empty;
+      }
+
+      if (!isExpired && appearsCompleted) {
+        console.log(`✅ Module ${module.data.order}: Already completed`);
+        continue;
+      }
+
+      const shouldForceExpire = isExpired && !hasQuizCompletionEvidence && !hasChatSession;
+
+      if (shouldForceExpire && (module.data.status !== "expired" || module.data.completed)) {
+        console.log(`⏰ Module ${module.data.order} EXPIRED - Marking as expired`);
         expiredModuleIds.push(module.id);
 
-        // Mark as completed
+        // Mark as expired without auto-completing the module
         await roadmapRef.doc(module.id).update({
-          completed: true,
-          status: "completed",
-          completedAt: new Date()
+          status: "expired",
+          completed: false,
+          moduleLocked: true,
+          expiredAt: new Date()
         });
-      } else if (!isExpired && !nextActiveModule) {
+      } else if (!isExpired && module.data.status === "in-progress" && !hasInProgressModule && !appearsCompleted) {
+        hasInProgressModule = true;
+        nextActiveModule = module;
+        console.log(`🎯 Active module remains: ${module.data.order} (${module.data.moduleTitle})`);
+      } else if (!isExpired && !nextActiveModule && !appearsCompleted) {
         // Found first non-expired, non-completed module
         nextActiveModule = module;
         console.log(`🎯 Next active module: ${module.data.order} (${module.data.moduleTitle})`);
       }
     }
 
-    // If we found expired modules, update the next one to in-progress
-    if (expiredModuleIds.length > 0 && nextActiveModule) {
+    // Ensure there is one active module after expiration updates
+    if (nextActiveModule && nextActiveModule.data.status !== "in-progress" && (expiredModuleIds.length > 0 || !hasInProgressModule)) {
       await roadmapRef.doc(nextActiveModule.id).update({
         status: "in-progress",
         startedAt: new Date()
@@ -610,7 +631,7 @@ export const initChat = async (req, res) => {
       .map((doc) => ({ id: doc.id, data: doc.data() }))
       .sort((a, b) => (a.data.order || 0) - (b.data.order || 0));
 
-    // 🔄 COMPREHENSIVE CHECK: Scan ALL modules, mark expired ones as completed, unlock next
+    // 🔄 COMPREHENSIVE CHECK: Scan ALL modules, mark expired ones as expired, unlock next
     const comprehensiveCheck = await checkAndUnlockModulesComprehensive(
       companyId,
       deptId,
@@ -654,11 +675,11 @@ Contact your company admin for next steps.
 
       const expiredList = expiredTitles.length > 0
         ? `Expired modules: ${expiredTitles.join(", ")}.`
-        : "Expired modules were marked as completed.";
+        : "Expired modules were marked as expired.";
 
       expiredModuleInfo = `<div style="background-color: #FF550020; border-left: 4px solid #FF5555; padding: 12px; margin-bottom: 16px; border-radius: 4px;">
 <div style="color: #FF5555; font-weight: 600; margin-bottom: 6px;">Module Expiration Notice</div>
-<div style="color: #E0EAF5; font-size: 14px;">${comprehensiveCheck.expiredCount} training module${comprehensiveCheck.expiredCount !== 1 ? "s" : ""} expired and marked as completed. ${expiredList} Now active: "${finalModuleData.moduleTitle}".</div>
+<div style="color: #E0EAF5; font-size: 14px;">${comprehensiveCheck.expiredCount} training module${comprehensiveCheck.expiredCount !== 1 ? "s" : ""} expired. ${expiredList} Now active: "${finalModuleData.moduleTitle}".</div>
 </div>`;
     }
 
@@ -696,7 +717,7 @@ Contact your company admin for next steps.
     let companyDescription = "";
     onboardingSnap.forEach((d) => {
       const answers = d.data().answers;
-      if (answers && answers["3"]) companyDescription = answers["3"];
+      if (answers && answers["4"]) companyDescription = answers["4"]; // Company description is in answers["4"]
     });
 
     // Store companyDescription in chat metadata or session for LLM use
@@ -833,9 +854,9 @@ export const chatController = async (req, res) => {
         const companyDoc = companySnap.docs[0].data();
         const answers = companyDoc.answers || {};
         
-        const duration = answers['1'] || answers[1] || "Not specified";
-        const teamSize = answers['2'] || answers[2] || "Not specified";
-        const description = answers['3'] || answers[3] || "No description available";
+        const duration = answers['2'] || answers[2] || "Not specified"; // Training duration
+        const teamSize = answers['3'] || answers[3] || "Not specified"; // Team size
+        const description = answers['4'] || answers[4] || "No description available"; // Company description
         
         companyInfo = `
 COMPANY INFORMATION:
@@ -861,7 +882,7 @@ About: ${description}
       return res.json({ reply: "Your roadmap does not exist." });
     }
 
-    // 🔄 COMPREHENSIVE CHECK: Scan ALL modules, mark expired ones as completed, unlock next
+    // 🔄 COMPREHENSIVE CHECK: Scan ALL modules, mark expired ones as expired, unlock next
     const comprehensiveCheck = await checkAndUnlockModulesComprehensive(
       companyId,
       deptId,
@@ -927,7 +948,7 @@ About: ${description}
 Here's how it works:
 - Modules are automatically unlocked once their estimated time expires
 - Your progress is tracked automatically as you complete each module
-- Expired modules are marked as complete, and the next module becomes available
+- Expired modules are marked as expired, and the next module becomes available
 
 For questions about your specific module timeline or if you believe something is incorrect, please contact your company admin for further details. They can review your progress and provide personalized guidance.
 
@@ -1263,7 +1284,7 @@ export const getMissedDatesController = async (req, res) => {
 
       if (!onboardingSnap.empty) {
         const data = onboardingSnap.docs[0].data();
-        trainingDuration = data?.answers?.["1"] || null;
+        trainingDuration = data?.answers?.["2"] || null; // answers["2"] contains training duration
       }
     }
 
@@ -1272,7 +1293,7 @@ export const getMissedDatesController = async (req, res) => {
                              allModules.reduce((sum, module) => sum + (module.estimatedDays || 0), 0) ||
                              90; // fallback to 90 days (3 months)
 
-    console.log("📊 Training duration:", trainingDuration, "→", totalExpectedDays, "days");
+    console.log("📊 Training duration:", trainingDuration || "not set", "→", totalExpectedDays, "days");
 
     // Calculate total active days across ALL modules
     let totalActiveDays = 0;
@@ -1324,7 +1345,7 @@ export const getMissedDatesController = async (req, res) => {
       }
     }
 
-    // 🔄 COMPREHENSIVE CHECK: Scan ALL modules, mark expired ones as completed, unlock next
+    // 🔄 COMPREHENSIVE CHECK: Scan ALL modules, mark expired ones as expired, unlock next
     const comprehensiveCheck = await checkAndUnlockModulesComprehensive(
       companyId,
       deptId,

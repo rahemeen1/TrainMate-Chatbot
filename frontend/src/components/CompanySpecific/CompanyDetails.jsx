@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { db } from "../../firebase";
 import { doc, getDoc, collection, getDocs, updateDoc, query, orderBy, limit } from "firebase/firestore";
 import CompanySidebar from "../../components/CompanySpecific/CompanySidebar";
+import CompanyPageLoader from "../../components/CompanySpecific/CompanyPageLoader";
 
 const LICENSE_PLAN_OPTIONS = ["License Basic", "License Pro"];
 
@@ -31,7 +32,9 @@ export default function CompanyDetails() {
 
   const [loading, setLoading] = useState(true);
   const [companyDetails, setCompanyDetails] = useState({});
-  const [onboardingAnswers, setOnboardingAnswers] = useState({ 1: "", 2: "", 3: "" });
+  const [onboardingAnswers, setOnboardingAnswers] = useState({ 0: "", 2: "", 3: "", 4: "", 5: "" });
+  const [batchSize, setBatchSize] = useState("");
+  const [selectedDepts, setSelectedDepts] = useState([]);
   const [saving, setSaving] = useState(false);
   const [initialLicense, setInitialLicense] = useState("License Basic");
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
@@ -54,15 +57,25 @@ export default function CompanyDetails() {
         const snap = await getDocs(q);
         if (!snap.empty) {
           const latestDoc = snap.docs[0];
+          const data = latestDoc.data();
           setOnboardingDocId(latestDoc.id);
-          const answers = latestDoc.data().answers || {};
+          const answers = data.answers || {};
           setOnboardingAnswers({
-            1: answers[1] || "",
+            0: answers[0] || "",
             2: answers[2] || "",
-            3: answers[3] || ""
+            3: answers[3] || "",
+            4: answers[4] || "",
+            5: answers[5] || ""
           });
-          setInitialLicense(answers[2] || "License Basic");
+          setBatchSize(answers[3] || "");
+          setInitialLicense(answers[0] || "License Basic");
         }
+
+        // 3️⃣ Fetch selected departments
+        const deptsRef = collection(db, "companies", companyId, "departments");
+        const deptsSnap = await getDocs(deptsRef);
+        const deptNames = deptsSnap.docs.map(doc => doc.data().name || doc.id);
+        setSelectedDepts(deptNames);
       } catch (err) {
         console.error("Error fetching data:", err);
       } finally {
@@ -74,9 +87,9 @@ export default function CompanyDetails() {
   }, [companyId]);
 
   const handleChange = (field, value) => {
-    if (field === 1) return; // Training Duration read-only
+    if (field === 2 || field === 3) return; // Training Duration and Batch Size read-only
 
-    if (field === 2 && value === "License Pro" && onboardingAnswers[2] !== "License Pro") {
+    if (field === 0 && value === "License Pro" && onboardingAnswers[0] !== "License Pro") {
       setShowUpgradeModal(true);
       return;
     }
@@ -99,7 +112,7 @@ export default function CompanyDetails() {
   const saveChanges = async () => {
   setSaving(true); // Change button text
   try {
-    if (initialLicense !== "License Pro" && onboardingAnswers[2] === "License Pro") {
+    if (initialLicense !== "License Pro" && onboardingAnswers[0] === "License Pro") {
       navigate("/company-license-payment", {
         state: {
           companyId,
@@ -127,10 +140,10 @@ export default function CompanyDetails() {
       name: companyDetails.name,
       phone: companyDetails.phone,
       address: companyDetails.address,
-      licensePlan: onboardingAnswers[2] || "License Basic"
+      licensePlan: onboardingAnswers[0] || "License Basic"
     });
 
-    setInitialLicense(onboardingAnswers[2] || "License Basic");
+    setInitialLicense(onboardingAnswers[0] || "License Basic");
 
     alert("Changes saved successfully!");
   } catch (err) {
@@ -146,11 +159,7 @@ export default function CompanyDetails() {
     return (
       <div className="flex min-h-screen bg-[#031C3A] text-white">
         <CompanySidebar companyId={companyId} companyName={companyName} />
-        <div className="flex-1 p-8 md:p-10">
-          <div className="max-w-6xl mx-auto rounded-2xl border border-[#00FFFF22] bg-[#021B36]/60 backdrop-blur-sm p-8 flex items-center justify-center min-h-[300px] text-[#AFCBE3]">
-            Loading company details...
-          </div>
-        </div>
+        <CompanyPageLoader message="Loading company details..." />
       </div>
     );
   }
@@ -163,7 +172,7 @@ export default function CompanyDetails() {
           <div className="rounded-2xl border border-[#00FFFF30] bg-[#021B36]/80 shadow-lg px-6 py-5 md:px-8 md:py-6">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
-                <h1 className="text-3xl font-bold text-[#00FFFF]">Company Dashboard</h1>
+                <h1 className="text-3xl font-bold text-[#00FFFF]">Company Details</h1>
                 <p className="text-[#AFCBE3] mt-1">Manage company profile and onboarding configuration</p>
               </div>
               <div className="flex flex-wrap gap-3">
@@ -180,7 +189,7 @@ export default function CompanyDetails() {
           </div>
 
           <div className="rounded-2xl border border-[#00FFFF22] bg-[#021B36]/70 p-5 md:p-6">
-            <h2 className="text-xl font-semibold text-[#00FFFF] mb-4">Company Details</h2>
+           
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-5">
               {["name", "phone", "address"].map(field => (
                 <div key={field} className="p-4 rounded-xl bg-[#031C3A]/70 border border-[#00FFFF30]">
@@ -201,28 +210,17 @@ export default function CompanyDetails() {
           <div className="rounded-2xl border border-[#00FFFF22] bg-[#021B36]/70 p-5 md:p-6 space-y-5">
             <h2 className="text-xl font-semibold text-[#00FFFF]">Onboarding Details</h2>
 
-            {/* Row 1: Training Duration and License */}
+            {/* Row 1: License Plan and Training Duration */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
-              <div className="p-4 rounded-xl bg-[#031C3A]/70 border border-[#00FFFF30]">
-                <label className="text-[#AFCBE3] font-semibold mb-2 block">Training Duration</label>
-                <input
-                  type="text"
-                  value={onboardingAnswers[1]}
-                  disabled
-                  className="w-full p-2 rounded border border-[#00FFFF30] bg-[#021B36]/60 text-white"
-                />
-                <p className="text-sm text-[#AFCBE3] mt-1">Cannot be changed</p>
-              </div>
-
               <div className="p-4 rounded-xl bg-[#031C3A]/70 border border-[#00FFFF30] flex flex-col justify-start">
                 <label className="text-[#AFCBE3] font-semibold mb-3 block">Current Plan</label>
                 <div className="space-y-2">
-                  <span className={`px-3 py-1.5 rounded-lg text-sm font-semibold border text-center block ${
-                    onboardingAnswers[2] === "License Pro"
-                      ? "bg-[#00FFFF]/20 text-[#00FFFF] border-[#00FFFF66]"
-                      : "bg-[#7FA3BF]/20 text-[#D8ECFF] border-[#AFCBE355]"
+                  <span className={`px-3 py-1.5 rounded-lg text-sm font-semibold border border-[#00FFFF] text-center block ${
+                    onboardingAnswers[0] === "License Pro"
+                      ? "bg-[#00FFFF]/20 text-[#00FFFF]"
+                      : "bg-[#7FA3BF]/20 text-[#D8ECFF]"
                   }`}>
-                    {(onboardingAnswers[2] || "License Basic").replace("License ", "")} License
+                    {(onboardingAnswers[0] || "License Basic").replace("License ", "")} License
                   </span>
                   <p className="text-xs text-[#AFCBE3] italic">
                     Valid till {new Date(new Date().setMonth(new Date().getMonth() + 1)).toLocaleDateString("en-GB", {
@@ -231,19 +229,75 @@ export default function CompanyDetails() {
                       year: "numeric",
                     })}
                   </p>
+                  <p className="text-xs text-[#00FFFF]/80 mt-2">
+                    You can update license after current subscription expires.
+                  </p>
                 </div>
+              </div>
+
+              <div className="p-4 rounded-xl bg-[#031C3A]/70 border border-[#00FFFF30]">
+                <label className="text-[#AFCBE3] font-semibold mb-2 block">Training Duration</label>
+                <input
+                  type="text"
+                  value={onboardingAnswers[2]}
+                  disabled
+                  className="w-full p-2 rounded border border-[#00FFFF30] bg-[#021B36]/60 text-white"
+                />
+                <p className="text-sm text-[#AFCBE3] mt-1">Cannot be changed</p>
               </div>
             </div>
 
-            {/* Row 2: Company Description */}
+            {/* Row 2: Departments and Batch Size */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
+              <div className="p-4 rounded-xl bg-[#031C3A]/70 border border-[#00FFFF30]">
+                <label className="text-[#AFCBE3] font-semibold mb-2 block">Selected Departments</label>
+                <div className="flex flex-wrap gap-2 p-2 rounded border border-[#00FFFF30] bg-[#021B36]/60 min-h-[40px]">
+                  {selectedDepts.length > 0 ? (
+                    selectedDepts.map(dept => (
+                      <span key={dept} className="px-2 py-1 rounded bg-[#00FFFF]/20 text-[#00FFFF] text-sm">
+                        {dept}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-[#AFCBE3] text-sm">No departments selected</span>
+                  )}
+                </div>
+                <p className="text-sm text-[#AFCBE3] mt-1">Cannot be changed</p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-[#031C3A]/70 border border-[#00FFFF30]">
+                <label className="text-[#AFCBE3] font-semibold mb-2 block">Batch Size</label>
+                <input
+                  type="text"
+                  value={batchSize}
+                  disabled
+                  className="w-full p-2 rounded border border-[#00FFFF30] bg-[#021B36]/60 text-white"
+                />
+                <p className="text-sm text-[#AFCBE3] mt-1">Auto-selected based on plan</p>
+              </div>
+            </div>
+
+            {/* Row 3: Company Description */}
             <div className="p-4 rounded-xl bg-[#031C3A]/70 border border-[#00FFFF30]">
               <label className="text-[#AFCBE3] font-semibold mb-2 block">Company Description</label>
               <textarea
                 rows={6}
-                value={onboardingAnswers[3]}
-                onChange={e => handleChange(3, e.target.value)}
+                value={onboardingAnswers[4]}
+                onChange={e => handleChange(4, e.target.value)}
                 className="w-full p-2 rounded border border-[#00FFFF30] resize-none bg-[#021B36]/60 text-white focus:outline-none"
               />
+            </div>
+
+            {/* Row 4: Payment Method */}
+            <div className="p-4 rounded-xl bg-[#031C3A]/70 border border-[#00FFFF30]">
+              <label className="text-[#AFCBE3] font-semibold mb-2 block">Payment Method</label>
+              <input
+                type="text"
+                value={onboardingAnswers[5]}
+                disabled
+                className="w-full p-2 rounded border border-[#00FFFF30] bg-[#021B36]/60 text-white"
+              />
+              <p className="text-sm text-[#AFCBE3] mt-1">Cannot be changed</p>
             </div>
           </div>
 

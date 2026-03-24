@@ -200,21 +200,25 @@ export async function createDailyModuleReminder({
     colorId: "9",
   };
 
-  if (attendeeEmail) {
-    event.attendees = [{ email: attendeeEmail }];
+  if (attendeeEmail || isUsingFallback) {
+    event.attendees = [{ email: attendeeEmail || null }].filter(a => a.email);
   }
 
-  await calendar.events.insert({
+  const insertOptions = {
     calendarId,
     requestBody: event,
-    // Send email invitation if using company admin's fallback tokens
-    sendUpdates: isUsingFallback ? "externalOnly" : "none",
-  });
+    // ALWAYS send updates when using fallback - triggers Google to send invitation email
+    sendUpdates: isUsingFallback ? "all" : "none",
+  };
+
+  await calendar.events.insert(insertOptions);
 
   console.log("✅ Daily reminder added to calendar", {
     userId,
     userEmail: attendeeEmail,
     moduleTitle,
+    sendUpdates: insertOptions.sendUpdates,
+    attendeesCount: event.attendees?.length || 0,
   });
 }
 
@@ -225,6 +229,7 @@ export async function createQuizUnlockReminder({
   moduleTitle,
   companyName,
   unlockDate,
+  maxQuizAttempts = 3,
   reminderTime,
   timeZone = DEFAULT_TIMEZONE,
   attendeeEmail,
@@ -248,28 +253,32 @@ export async function createQuizUnlockReminder({
 
   const event = {
     summary: `✅ Quiz Unlocked: ${moduleTitle}`,
-    description: `🎉 Great news! Your quiz has been unlocked.\n\n📝 Module: ${moduleTitle}\n🏢 Company: ${companyName}\n\n⏰ Action Required: Attempt your quiz within the given timeframe to progress to the next module.\n\n🔗 Log in to TrainMate now to take your quiz!\n\n---\nTrainMate - Your AI-Powered Corporate Training Platform`,
+    description: `🎉 Great news! Your quiz has been unlocked.\n\n📝 Module: ${moduleTitle}\n🏢 Company: ${companyName}\n\n📌 Quiz Attempts Policy:\n- Maximum attempts: ${maxQuizAttempts}\n\n⏰ Action Required: Attempt your quiz within the given timeframe to progress to the next module.\n\n🔗 Log in to TrainMate now to take your quiz!\n\n---\nTrainMate - Your AI-Powered Corporate Training Platform`,
     start: { dateTime: startDateTime.toISOString(), timeZone },
     end: { dateTime: endDateTime.toISOString(), timeZone },
     reminders: { useDefault: false, overrides: getReminderOverrides() },
     colorId: "11",
   };
 
-  if (attendeeEmail) {
-    event.attendees = [{ email: attendeeEmail }];
+  if (attendeeEmail || isUsingFallback) {
+    event.attendees = [{ email: attendeeEmail || null }].filter(a => a.email);
   }
 
-  await calendar.events.insert({
+  const insertOptions = {
     calendarId,
     requestBody: event,
-    // Send email invitation if using company admin's fallback tokens
-    sendUpdates: isUsingFallback ? "externalOnly" : "none",
-  });
+    // ALWAYS send updates when using fallback - triggers Google to send invitation email
+    sendUpdates: isUsingFallback ? "all" : "none",
+  };
+
+  await calendar.events.insert(insertOptions);
 
   console.log("✅ Quiz unlock added to user's calendar", {
     userId,
     userEmail: attendeeEmail,
     moduleTitle,
+    sendUpdates: insertOptions.sendUpdates,
+    attendeesCount: event.attendees?.length || 0,
   });
 }
 
@@ -312,21 +321,87 @@ export async function createRoadmapGeneratedEvent({
     colorId: "10",
   };
 
-  if (attendeeEmail) {
-    event.attendees = [{ email: attendeeEmail }];
+  if (attendeeEmail || isUsingFallback) {
+    event.attendees = [{ email: attendeeEmail || null }].filter(a => a.email);
   }
 
-  await calendar.events.insert({
+  const insertOptions = {
     calendarId,
     requestBody: event,
-    // Send email invitation if using company admin's fallback tokens
-    sendUpdates: isUsingFallback ? "externalOnly" : "none",
-  });
+    // ALWAYS send updates when using fallback - triggers Google to send invitation email
+    sendUpdates: isUsingFallback ? "all" : "none",
+  };
+
+  await calendar.events.insert(insertOptions);
 
   console.log("✅ Roadmap event added to user's calendar", {
     userId,
     userEmail: attendeeEmail,
     trainingTopic,
     usingFallback: isUsingFallback,
+    sendUpdates: insertOptions.sendUpdates,
+    attendeesCount: event.attendees?.length || 0,
+  });
+}
+
+export async function createFresherWelcomeEvent({
+  companyId,
+  deptId,
+  userId,
+  userName,
+  companyName,
+  deptName,
+  trainingTopic,
+  maxQuizAttempts = 3,
+  quizUnlockPercent = 50,
+  agenticMessage,
+  messageTone,
+  createdAt,
+  reminderTime,
+  timeZone = DEFAULT_TIMEZONE,
+  attendeeEmail,
+}) {
+  const { client: userAuth, isUsingFallback } = await getUserOAuthClient(companyId, deptId, userId);
+  const calendar = getCalendarClient(userAuth);
+  
+  // When using fallback (admin tokens), we MUST add user as attendee to send invitation
+  // When using user's own tokens, add as attendee if provided
+  let calendarId = "primary";
+  
+  const startDateTime = buildDateTime(createdAt || new Date(), reminderTime);
+  const endDateTime = new Date(startDateTime.getTime() + 30 * 60 * 1000);
+
+  const event = {
+    summary: `👋 Welcome to TrainMate, ${userName || "Fresher"}`,
+    description: `Welcome to your training journey!\n\n🏢 Company: ${companyName}\n🏬 Department: ${deptName || "N/A"}\n📚 Training Focus: ${trainingTopic || "General"}\n\n📝 Quiz Policy:\n- Total attempts per module quiz: ${maxQuizAttempts}\n- Quiz unlocks after ${quizUnlockPercent}% module completion time\n\n${agenticMessage ? `🤖 AI Note (${messageTone || "supportive"}): ${agenticMessage}\n\n` : ""}🔔 Keep Google Calendar notifications ON to avoid missing module reminders and quiz unlock alerts.\n\n---\nTrainMate - AI-Powered Corporate Training Platform`,
+    start: { dateTime: startDateTime.toISOString(), timeZone },
+    end: { dateTime: endDateTime.toISOString(), timeZone },
+    reminders: { useDefault: false, overrides: getReminderOverrides() },
+    colorId: "2",
+  };
+
+  // Always add attendee email when using fallback tokens to trigger invitation
+  // This ensures Google sends an invitation email to the user
+  if (attendeeEmail || isUsingFallback) {
+    event.attendees = [{ email: attendeeEmail || null }].filter(a => a.email);
+  }
+
+  const insertOptions = {
+    calendarId,
+    requestBody: event,
+    // ALWAYS send updates when using fallback - triggers Google to send invitation email
+    sendUpdates: isUsingFallback ? "all" : "none",
+  };
+
+  await calendar.events.insert(insertOptions);
+
+  console.log("✅ Fresher welcome event added to user's calendar", {
+    userId,
+    userEmail: attendeeEmail,
+    companyName,
+    deptName,
+    usingFallback: isUsingFallback,
+    sendUpdates: insertOptions.sendUpdates,
+    attendeesCount: event.attendees?.length || 0,
   });
 }

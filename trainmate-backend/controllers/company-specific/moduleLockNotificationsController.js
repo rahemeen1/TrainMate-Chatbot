@@ -154,6 +154,53 @@ export const getModuleLockNotifications = async (req, res) => {
   }
 };
 
+export const getCompanyAdminNotifications = async (req, res) => {
+  try {
+    const { companyId } = req.params;
+    const status = String(req.query.status || "pending").toLowerCase();
+    const requestedTypes = String(req.query.types || "module_lock,training_completion")
+      .split(",")
+      .map((t) => t.trim().toLowerCase())
+      .filter(Boolean);
+
+    if (!companyId) {
+      return res.status(400).json({ error: "companyId is required" });
+    }
+
+    const allowedTypes = new Set(["module_lock", "training_completion"]);
+    const types = requestedTypes.filter((t) => allowedTypes.has(t));
+    const effectiveTypes = types.length ? types : ["module_lock", "training_completion"];
+
+    if ((status === "pending" || status === "all") && effectiveTypes.includes("module_lock")) {
+      await ensurePendingNotificationsForLockedUsers(companyId);
+    }
+
+    const notificationsRef = db
+      .collection("companies")
+      .doc(companyId)
+      .collection("adminNotifications");
+
+    const snap = await notificationsRef.get();
+    const notifications = snap.docs
+      .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+      .filter((n) => effectiveTypes.includes(String(n.type || "").toLowerCase()))
+      .filter((n) => {
+        if (status === "all") return true;
+        return String(n.status || "").toLowerCase() === status;
+      })
+      .sort((a, b) => {
+        const aTime = a.createdAt?.toMillis?.() || 0;
+        const bTime = b.createdAt?.toMillis?.() || 0;
+        return bTime - aTime;
+      });
+
+    return res.json({ success: true, notifications });
+  } catch (err) {
+    console.error("Error fetching company admin notifications:", err);
+    return res.status(500).json({ error: "Failed to fetch notifications", details: err.message });
+  }
+};
+
 export const resolveModuleLockNotification = async (req, res) => {
   try {
     const { companyId, notificationId } = req.params;

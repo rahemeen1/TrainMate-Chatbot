@@ -8,6 +8,7 @@ import {
   orderBy,
 } from "firebase/firestore";
 import CompanySidebar from "./CompanySidebar";
+import CompanyPageLoader from "./CompanyPageLoader";
 
 export default function ProgressDetails() {
   const { companyId, deptName: encodedDeptName, userId } = useParams();
@@ -72,11 +73,7 @@ export default function ProgressDetails() {
   }, [companyId, deptName, userId]);
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-[#031C3A] flex items-center justify-center text-teal-400">
-        Loading roadmap progress...
-      </div>
-    );
+    return <CompanyPageLoader layout="page" message="Loading roadmap progress..." />;
   }
 
   const roadmapCreatedDate = modules[0]?.createdAt

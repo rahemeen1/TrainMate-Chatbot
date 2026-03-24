@@ -185,42 +185,70 @@ export async function generateUserCredentialsPDF({
       doc.on("end", () => resolve(Buffer.concat(buffers)));
       doc.on("error", reject);
 
+      // Background
+      doc.save();
+      doc.rect(0, 0, doc.page.width, doc.page.height).fill("#031C3A");
+      doc.restore();
+
+      // Header
       doc
-        .fontSize(26)
-        .fillColor("#031C3A")
-        .text("TrainMate", { align: "center" });
+        .fontSize(28)
+        .fillColor("#00FFFF")
+        .text("TrainMate", { align: "center", y: 60 });
 
       doc
         .fontSize(14)
-        .fillColor("#00FFFF")
-        .text("Your Login Credentials", { align: "center" });
+        .fillColor("#E8F7FF")
+        .text("Your Login Credentials", { align: "center", y: 100 });
 
-      doc.moveDown(2);
+      // Credentials section background
+      const boxX = 60;
+      const boxY = 160;
+      const boxWidth = 475;
+      const boxHeight = 200;
 
-      doc.fontSize(12).fillColor("#333");
-      doc.text(`Name: ${userName}`);
-      doc.text(`Email: ${userEmail}`);
-      doc.text(`User ID: ${userId}`);
-      doc.text(`Company: ${companyName}`);
-      doc.moveDown(1);
-      doc.text(`Password: ${password}`);
+      doc.save();
+      doc.roundedRect(boxX, boxY, boxWidth, boxHeight, 8).fill("#0B2A4A");
+      doc.restore();
 
-      doc.moveDown(2);
+      // Credentials content with proper positioning
+      let yPosition = boxY + 25;
+      const leftMargin = boxX + 25;
+
+      doc.fontSize(12).fillColor("#FFFFFF");
+      doc.text(`Name: ${userName}`, leftMargin, yPosition);
+      yPosition += 25;
+      
+      doc.text(`Email: ${userEmail}`, leftMargin, yPosition);
+      yPosition += 25;
+      
+      doc.text(`User ID: ${userId}`, leftMargin, yPosition);
+      yPosition += 25;
+      
+      doc.text(`Company: ${companyName}`, leftMargin, yPosition);
+      yPosition += 30;
+
+      doc.fillColor("#7FFFD4").text(`Password: ${password}`, leftMargin, yPosition);
+
+      // Instructions below the box
       doc
         .fontSize(11)
-        .fillColor("#555")
+        .fillColor("#E8F7FF")
         .text(
           "Use your google account and password to login to TrainMate system to start your learning.",
+          60,
+          boxY + boxHeight + 40,
           {
             align: "left",
+            width: 475
           }
         );
 
-      doc.moveDown(3);
+      // Footer
       doc
         .fontSize(10)
-        .fillColor("#999")
-        .text("© 2026 TrainMate. All rights reserved.", { align: "center" });
+        .fillColor("#9FC2DA")
+        .text("© 2026 TrainMate. All rights reserved.", 60, 700, { align: "center", width: 475 });
 
       doc.end();
     } catch (error) {

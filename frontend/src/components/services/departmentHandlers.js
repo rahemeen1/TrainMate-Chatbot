@@ -254,6 +254,19 @@ export const addFresherUser = async ({
         onboardingCompleted: false,
       },
 
+      notificationPreferences: {
+        emailEnabled: true,
+        calendarEnabled: true,
+        dailyRemindersEnabled: true,
+        quizNotificationsEnabled: true,
+        preferredReminderTime: "15:00",
+      },
+
+      quizPolicy: {
+        maxQuizAttempts: 3,
+        quizUnlockPercent: 50,
+      },
+
       createdAt: serverTimestamp(),
     }
   );
@@ -283,6 +296,28 @@ export const addFresherUser = async ({
     throw new Error(
       "User created, but credentials email failed. Please retry email sending."
     );
+  }
+
+  try {
+    const notificationResponse = await fetch(
+      "http://localhost:5000/api/company/users/initialize-notifications",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId,
+          deptId,
+          userId,
+        }),
+      }
+    );
+
+    if (!notificationResponse.ok) {
+      const errText = await notificationResponse.text();
+      console.warn("⚠️ Fresher notification initialization failed:", errText);
+    }
+  } catch (err) {
+    console.warn("⚠️ Fresher notification initialization request failed:", err?.message || err);
   }
 
   return {

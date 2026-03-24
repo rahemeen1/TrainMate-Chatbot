@@ -25,6 +25,69 @@ function shouldUnlockQuiz(moduleStartDate, estimatedDays) {
   return now >= unlockTime && unlockTime >= oneDayAgo;
 }
 
+function toDateSafe(value) {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  if (value?.toDate) return value.toDate();
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function getModuleStartDate(moduleData) {
+  return (
+    toDateSafe(moduleData.startedAt) ||
+    toDateSafe(moduleData.startDate) ||
+    toDateSafe(moduleData.FirstTimeCreatedAt) ||
+    toDateSafe(moduleData.createdAt)
+  );
+}
+
+function isModuleDeadlineExceeded(moduleData, now = new Date()) {
+  const startDate = getModuleStartDate(moduleData);
+  if (!startDate) return false;
+  const totalDays = Number(moduleData.estimatedDays) || 1;
+  const deadline = new Date(startDate.getTime() + totalDays * 24 * 60 * 60 * 1000);
+  return now >= deadline;
+}
+
+async function enforceExpiredStatusForUser(roadmapRef, now = new Date()) {
+  const roadmapSnap = await roadmapRef.get();
+  if (roadmapSnap.empty) return;
+
+  for (const moduleDoc of roadmapSnap.docs) {
+    const moduleData = moduleDoc.data();
+    if (!isModuleDeadlineExceeded(moduleData, now)) continue;
+
+    const hasQuizCompletionEvidence = !!(
+      moduleData.quizPassed ||
+      moduleData.lastQuizSubmitted ||
+      moduleData.completedAt
+    );
+    if (hasQuizCompletionEvidence) continue;
+
+    let hasChatSession = false;
+    if (moduleData.completed || moduleData.status === "completed") {
+      const chatSnap = await roadmapRef.doc(moduleDoc.id).collection("chatSessions").limit(1).get();
+      hasChatSession = !chatSnap.empty;
+    }
+
+    if (hasChatSession && (moduleData.completed || moduleData.status === "completed")) {
+      continue;
+    }
+
+    const needsUpdate = moduleData.status !== "expired" || !!moduleData.completed || !moduleData.moduleLocked;
+    if (!needsUpdate) continue;
+
+    await roadmapRef.doc(moduleDoc.id).update({
+      status: "expired",
+      completed: false,
+      moduleLocked: true,
+      expiredAt: now,
+    });
+    console.log(`⏰ Module expired (scheduler): ${moduleData.moduleTitle || moduleDoc.id}`);
+  }
+}
+
 /**
  * Send quiz unlock notifications (email and calendar)
  */
@@ -38,6 +101,7 @@ async function sendQuizUnlockNotifications({
   companyName,
   moduleId,
   activeModule,
+  maxQuizAttempts = 3,
 }) {
   console.log(`\n🔓 Sending quiz unlock notifications for ${userName} - ${moduleTitle}`);
   
@@ -76,6 +140,7 @@ async function sendQuizUnlockNotifications({
           moduleTitle,
           companyName,
           unlockDate,
+          maxQuizAttempts,
           reminderTime,
           timeZone,
           attendeeEmail: userEmail,
@@ -190,10 +255,21 @@ export function scheduleDailyModuleReminders() {
               .doc(userId)
               .collection("roadmap");
 
-            const activeModules = await roadmapRef
-              .where("status", "==", "active")
+            // Always enforce practical expiry first, even when user never opened chat.
+            await enforceExpiredStatusForUser(roadmapRef, new Date());
+
+            let activeModules = await roadmapRef
+              .where("status", "==", "in-progress")
               .limit(1)
               .get();
+
+            // Backward compatibility for legacy "active" status.
+            if (activeModules.empty) {
+              activeModules = await roadmapRef
+                .where("status", "==", "active")
+                .limit(1)
+                .get();
+            }
 
             if (!activeModules.empty) {
               const activeModuleDoc = activeModules.docs[0];
@@ -222,6 +298,7 @@ export function scheduleDailyModuleReminders() {
                     companyName,
                     moduleId,
                     activeModule,
+                    maxQuizAttempts: userData?.quizPolicy?.maxQuizAttempts || 3,
                   });
                 } catch (unlockErr) {
                   console.error(`❌ Failed to send quiz unlock notification: ${unlockErr.message}`);

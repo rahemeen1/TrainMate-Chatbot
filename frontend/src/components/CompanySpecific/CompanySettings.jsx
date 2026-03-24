@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { doc, getDoc, setDoc, deleteField } from "firebase/firestore";
 import { db, auth } from "../../firebase";
 import CompanySidebar from "../../components/CompanySpecific/CompanySidebar";
+import CompanyPageLoader from "../../components/CompanySpecific/CompanyPageLoader";
 import { PencilIcon, CheckIcon } from "@heroicons/react/24/solid";
 import {
   reauthenticateWithCredential,
@@ -152,25 +153,7 @@ export default function CompanySettings() {
       {/* Sidebar stays as it is */}
       <CompanySidebar companyId={companyId} companyName={companyName} />
 
-      {/* Main content loading area */}
-      <div className="flex-1 flex flex-col items-center justify-center gap-4 p-10">
-        {/* Rotating hourglass */}
-        <svg
-          className="animate-spin h-8 w-8 text-[#00FFFF]"
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-        >
-          <path
-            fill="currentColor"
-            d="M12 2C6.477 2 2 6.477 2 12h2a8 8 0 0116 0h2c0-5.523-4.477-10-10-10zm0 20c5.523 0 10-4.477 10-10h-2a8 8 0 01-16 0H2c0 5.523 4.477 10 10 10z"
-          />
-        </svg>
-
-        <p className="text-base font-medium text-white">
-          Loading Company Settings...
-        </p>
-      </div>
+      <CompanyPageLoader message="Loading Company Settings..." />
     </div>
   );
 }
@@ -178,124 +161,140 @@ export default function CompanySettings() {
 
 
   return (
-    <div className="flex min-h-screen bg-[#031C3A] text-white">
+    <div className="company-page-shell flex min-h-screen">
       <CompanySidebar companyId={companyId} companyName={companyName} />
 
-      <div className="flex-1 p-10">
-        <h1 className="text-2xl text-[#00FFFF] font-bold mb-6">
-          Company Settings
-        </h1>
-
-        <div className="max-w-3xl space-y-6">
-          {/* Company ID */}
-          <div>
-            <p className="text-[#AFCBE3] text-sm">Company ID</p>
-            <p className="font-medium">{companyId}</p>
-          </div>
-
-          {/* Company Name */}
-          <div className="flex items-center justify-between border-b border-[#00FFFF30] py-2">
-            <div className="flex-1">
-              <p className="text-[#AFCBE3] text-sm">Company Name</p>
-              {editMode.name ? (
-                <input
-                  className="text-black w-full px-2 py-1 rounded"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                />
-              ) : (
-                <p className="font-medium">{name}</p>
-              )}
+      <div className="company-main-content flex-1 md:p-8 lg:p-10">
+        <div className="company-container space-y-6">
+          <div className="company-card p-6 md:p-8">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div>
+                <h1 className="company-title">Company Settings</h1>
+                <p className="company-subtitle">Manage account details and security settings.</p>
+              </div>
+              <div className="px-3 py-2 rounded-lg border border-[#00FFFF30] bg-[#031C3A]/70">
+                <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Company ID</p>
+                <p className="text-sm font-semibold text-white">{companyId || "N/A"}</p>
+              </div>
             </div>
-            <button
-              onClick={() =>
-                editMode.name
-                  ? saveField("name")
-                  : setEditMode({ ...editMode, name: true })
-              }
-              className="ml-3 p-2 bg-[#00FFFF] text-[#031C3A] rounded-full"
-            >
-              {editMode.name ? (
-                <CheckIcon className="w-5 h-5" />
-              ) : (
-                <PencilIcon className="w-5 h-5" />
-              )}
-            </button>
           </div>
 
-          {/* Email */}
-          <div className="flex items-center justify-between border-b border-[#00FFFF30] py-2">
-            <div className="flex-1">
-              <p className="text-[#AFCBE3] text-sm">Email</p>
-              {editMode.email ? (
-                <input
-                  className="text-black w-full px-2 py-1 rounded"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              ) : (
-                <p className="font-medium">{email}</p>
-              )}
-            </div>
-            <button
-              onClick={() =>
-                editMode.email
-                  ? saveField("email")
-                  : setEditMode({ ...editMode, email: true })
-              }
-              className="ml-3 p-2 bg-[#00FFFF] text-[#031C3A] rounded-full"
-            >
-              {editMode.email ? (
-                <CheckIcon className="w-5 h-5" />
-              ) : (
-                <PencilIcon className="w-5 h-5" />
-              )}
-            </button>
-          </div>
-
-          {/* Password */}
-          <div className="flex items-center justify-between border-b border-[#00FFFF30] py-2">
-            <div className="flex-1">
-              <p className="text-[#AFCBE3] text-sm">Password</p>
-              {editMode.password ? (
-                <div className="flex flex-col gap-2 mt-1">
-                  <input
-                    type="password"
-                    placeholder="Old Password"
-                    className="text-black px-2 py-1 rounded"
-                    value={oldPassword}
-                    onChange={(e) => setOldPassword(e.target.value)}
-                  />
-                  <input
-                    type="password"
-                    placeholder="New Password"
-                    className="text-black px-2 py-1 rounded"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                  />
+          <div className="company-card p-6 md:p-8 space-y-5">
+            <div className="rounded-xl border border-[#00FFFF25] bg-[#031C3A]/45 p-4 md:p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1">
+                  <p className="text-[#AFCBE3] text-sm">Company Name</p>
+                  {editMode.name ? (
+                    <input
+                      className="w-full mt-2 px-3 py-2 rounded-lg border border-[#00FFFF35] bg-[#021B36]/70 text-white placeholder-[#AFCBE3] focus:outline-none"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                    />
+                  ) : (
+                    <p className="font-medium mt-1">{name || "N/A"}</p>
+                  )}
                 </div>
-              ) : (
-                <p className="font-medium">********</p>
-              )}
+                <button
+                  onClick={() =>
+                    editMode.name
+                      ? saveField("name")
+                      : setEditMode({ ...editMode, name: true })
+                  }
+                  className="shrink-0 p-2 bg-[#00FFFF] text-[#031C3A] rounded-full hover:opacity-90"
+                >
+                  {editMode.name ? (
+                    <CheckIcon className="w-5 h-5" />
+                  ) : (
+                    <PencilIcon className="w-5 h-5" />
+                  )}
+                </button>
+              </div>
             </div>
-            <button
-              onClick={() =>
-                editMode.password
-                  ? saveField("password")
-                  : setEditMode({ ...editMode, password: true })
-              }
-              className="ml-3 p-2 bg-[#00FFFF] text-[#031C3A] rounded-full"
-            >
-              {editMode.password ? (
-                <CheckIcon className="w-5 h-5" />
-              ) : (
-                <PencilIcon className="w-5 h-5" />
-              )}
-            </button>
-          </div>
 
-          {error && <p className="text-red-500">{error}</p>}
-          {success && <p className="text-green-400">{success}</p>}
+            <div className="rounded-xl border border-[#00FFFF25] bg-[#031C3A]/45 p-4 md:p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1">
+                  <p className="text-[#AFCBE3] text-sm">Email</p>
+                  {editMode.email ? (
+                    <input
+                      className="w-full mt-2 px-3 py-2 rounded-lg border border-[#00FFFF35] bg-[#021B36]/70 text-white placeholder-[#AFCBE3] focus:outline-none"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                    />
+                  ) : (
+                    <p className="font-medium mt-1">{email || "N/A"}</p>
+                  )}
+                </div>
+                <button
+                  onClick={() =>
+                    editMode.email
+                      ? saveField("email")
+                      : setEditMode({ ...editMode, email: true })
+                  }
+                  className="shrink-0 p-2 bg-[#00FFFF] text-[#031C3A] rounded-full hover:opacity-90"
+                >
+                  {editMode.email ? (
+                    <CheckIcon className="w-5 h-5" />
+                  ) : (
+                    <PencilIcon className="w-5 h-5" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-[#00FFFF25] bg-[#031C3A]/45 p-4 md:p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1">
+                  <p className="text-[#AFCBE3] text-sm">Password</p>
+                  {editMode.password ? (
+                    <div className="flex flex-col gap-2 mt-2">
+                      <input
+                        type="password"
+                        placeholder="Old Password"
+                        className="px-3 py-2 rounded-lg border border-[#00FFFF35] bg-[#021B36]/70 text-white placeholder-[#AFCBE3] focus:outline-none"
+                        value={oldPassword}
+                        onChange={(e) => setOldPassword(e.target.value)}
+                      />
+                      <input
+                        type="password"
+                        placeholder="New Password"
+                        className="px-3 py-2 rounded-lg border border-[#00FFFF35] bg-[#021B36]/70 text-white placeholder-[#AFCBE3] focus:outline-none"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                      />
+                    </div>
+                  ) : (
+                    <p className="font-medium mt-1">********</p>
+                  )}
+                </div>
+                <button
+                  onClick={() =>
+                    editMode.password
+                      ? saveField("password")
+                      : setEditMode({ ...editMode, password: true })
+                  }
+                  className="shrink-0 p-2 bg-[#00FFFF] text-[#031C3A] rounded-full hover:opacity-90"
+                >
+                  {editMode.password ? (
+                    <CheckIcon className="w-5 h-5" />
+                  ) : (
+                    <PencilIcon className="w-5 h-5" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {error && (
+              <div className="rounded-lg border border-red-400/40 bg-red-500/10 text-red-300 text-sm px-3 py-2">
+                {error}
+              </div>
+            )}
+            {success && (
+              <div className="rounded-lg border border-emerald-400/40 bg-emerald-500/10 text-emerald-300 text-sm px-3 py-2">
+                {success}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

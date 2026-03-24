@@ -4,6 +4,7 @@ import Header from "./Header";
 import {
   BadgeCheck,
   Bot,
+  Building,
   Calendar,
   Check,
   ClipboardList,
@@ -24,6 +25,7 @@ const plans = [
     accent: "#00FFFF",
     price: "$59",
     capacity: "10 to 15 freshers",
+    departments: "Up to 3 departments",
     includes: [
       "Customized roadmap with module details",
       "Email updates for training milestones",
@@ -39,6 +41,7 @@ const plans = [
     accent: "#00FFFF",
     price: "$199",
     capacity: "20 to 40 freshers",
+    departments: "5+ departments",
     includes: [
       "Full quiz workflow with AI scores",
       "Agentic email nudges for cohorts",
@@ -62,6 +65,12 @@ const featureRows = [
     title: "Module details per role",
     basic: true,
     pro: true,
+  },
+  {
+    icon: Building,
+    title: "Department capacity",
+    basic: "3",
+    pro: "5+",
   },
   {
     icon: Calendar,
@@ -169,12 +178,14 @@ export default function ComparePlans() {
             </p>
             <div className="flex flex-wrap gap-3">
               {plans.map((plan) => (
-                <span
-                  key={plan.name}
-                  className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs text-white/70"
-                >
-                  {plan.capacity}
-                </span>
+                <div key={plan.name} className="flex flex-col gap-2">
+                  <span className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs text-white/70">
+                    {plan.capacity}
+                  </span>
+                  <span className="rounded-full border border-[#00FFFF]/20 bg-[#00FFFF]/5 px-4 py-2 text-xs text-[#00FFFF]">
+                    {plan.departments}
+                  </span>
+                </div>
               ))}
             </div>
           </div>
@@ -249,7 +260,11 @@ export default function ComparePlans() {
                       <span>{row.title}</span>
                     </div>
                     <div className="flex items-center justify-center border-t border-white/10 px-4 py-3">
-                      {row.basic ? (
+                      {typeof row.basic === "string" ? (
+                        <span className="text-sm font-medium text-[#00FFFF]">
+                          {row.basic}
+                        </span>
+                      ) : row.basic ? (
                         <span className="rounded-full bg-[#00FFFF]/20 px-3 py-1 text-xs text-[#00FFFF]">
                           Included
                         </span>
@@ -258,7 +273,11 @@ export default function ComparePlans() {
                       )}
                     </div>
                     <div className="flex items-center justify-center border-t border-white/10 px-4 py-3">
-                      {row.pro ? (
+                      {typeof row.pro === "string" ? (
+                        <span className="text-sm font-medium text-[#00FFFF]">
+                          {row.pro}
+                        </span>
+                      ) : row.pro ? (
                         <span className="rounded-full bg-[#00FFFF]/20 px-3 py-1 text-xs text-[#00FFFF]">
                           Included
                         </span>

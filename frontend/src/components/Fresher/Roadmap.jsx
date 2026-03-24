@@ -255,7 +255,8 @@ const getUnlockedModules = () => {
 
   return roadmap.map((module) => {
     const unlocked = unlockedNext;
-    if (!module.completed) unlockedNext = false;
+    const isExpiredStatus = module.status === "expired";
+    if (!module.completed && !isExpiredStatus) unlockedNext = false;
 
     const moduleMaxAttempts = Math.max(3, Number(module.maxAttemptsOverride) || 0);
     const moduleAttempts = Number(module.quizAttempts) || 0;
@@ -359,6 +360,7 @@ const getCompletionDays = (module) => {
 
 // Check if module is expired
 const isModuleExpired = (module) => {
+  if (module.status === "expired") return true;
   const timeInfo = getModuleTimeRemaining(module);
   return timeInfo.expired && !module.completed;
 };
@@ -485,7 +487,7 @@ if (!roadmap.length)
       </p>
     )}
     
-    {module.completed && getCompletionDays(module) && (
+    {module.completed && !module.moduleExpired && getCompletionDays(module) && (
       <p className="text-xs text-green-400 mb-2">
         ✓ Completed in {getCompletionDays(module)} day{getCompletionDays(module) !== 1 ? "s" : ""}
       </p>

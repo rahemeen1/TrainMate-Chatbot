@@ -22,7 +22,12 @@ function Certificate() {
   const [overallScore, setOverallScore] = useState(0);
   const [certificateTitle, setCertificateTitle] = useState("");
   const [roadmapGenerated, setRoadmapGenerated] = useState(false);
+  const [certificateUnlocked, setCertificateUnlocked] = useState(false);
+  const [finalAssessment, setFinalAssessment] = useState(null);
   const certificateRef = useRef(null);
+  const coordinatorSignature = "Rahemeen";
+  const directorSignature = companyName || "TrainMate";
+  const signatureFontFamily = '"Segoe Script", "Lucida Handwriting", "Bradley Hand", cursive';
 
   useEffect(() => {
     if (!userId || !companyId || !deptId) {
@@ -42,6 +47,8 @@ function Certificate() {
 
         const user = userSnap.data();
         setUserData(user);
+        setCertificateUnlocked(!!user.certificateUnlocked);
+        setFinalAssessment(user.finalAssessment || null);
         setTrainingOn(user.trainingOn || state.trainingOn || localStorage.getItem("trainingOn"));
 
         const roadmapRef = collection(
@@ -57,55 +64,19 @@ function Certificate() {
         const roadmapSnap = await getDocs(roadmapRef);
         setRoadmapGenerated(!roadmapSnap.empty);
 
-        let totalScore = 0;
-        let modulesChecked = 0;
+        const finalScore = Number(user.certificateFinalQuizScore) || 0;
+        setOverallScore(finalScore);
 
-        for (const moduleDoc of roadmapSnap.docs) {
-          try {
-            const resultsRef = doc(
-              db,
-              "freshers",
-              companyId,
-              "departments",
-              deptId,
-              "users",
-              userId,
-              "roadmap",
-              moduleDoc.id,
-              "quiz",
-              "current",
-              "results",
-              "latest"
-            );
-            const resultsSnap = await getDoc(resultsRef);
+        const fallbackTitle = finalScore >= 90
+          ? "Distinguished Excellence Award"
+          : finalScore >= 80
+          ? "Advanced Master Practitioner"
+          : finalScore >= 70
+          ? "Certified Professional"
+          : "Course Completer";
 
-            if (resultsSnap.exists()) {
-              const results = resultsSnap.data();
-              const score = results.score || 0;
-              totalScore += score;
-              modulesChecked++;
-            }
-          } catch (err) {
-            console.warn("Error fetching module score:", err);
-          }
-        }
-
-        const avgScore = modulesChecked > 0 ? Math.round(totalScore / modulesChecked) : 0;
-        setOverallScore(avgScore);
-
-        let title = "Trainee";
-        if (avgScore >= 90) {
-          title = "Distinguished Excellence Award";
-        } else if (avgScore >= 80) {
-          title = "Advanced Master Practitioner";
-        } else if (avgScore >= 70) {
-          title = "Certified Professional";
-        } else if (avgScore >= 60) {
-          title = "Competent Learner";
-        } else {
-          title = "Course Completer";
-        }
-        setCertificateTitle(title);
+        // Prefer AI-generated title from final quiz pass; fallback only if missing.
+        setCertificateTitle(user.certificateFinalQuizTitle || fallbackTitle);
       } catch (err) {
         console.error("Error fetching certificate data:", err);
       } finally {
@@ -120,24 +91,39 @@ function Certificate() {
     return <TrainingLockedScreen userData={userData} />;
   }
 
+  const captureCertificateCanvas = async () => {
+    const target = certificateRef.current;
+    if (!target) return null;
+
+    if (document.fonts?.ready) {
+      await document.fonts.ready;
+    }
+    await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+
+    return html2canvas(target, {
+      scale: Math.max(2, window.devicePixelRatio || 1),
+      backgroundColor: null,
+      useCORS: true,
+      logging: false,
+      scrollX: 0,
+      scrollY: -window.scrollY,
+    });
+  };
+
   const downloadPDF = async () => {
     try {
-      const canvas = await html2canvas(certificateRef.current, {
-        scale: 2,
-        backgroundColor: "#031C3A",
-      });
+      const canvas = await captureCertificateCanvas();
+      if (!canvas) return;
 
       const imgData = canvas.toDataURL("image/png");
       const pdf = new jsPDF({
-        orientation: "landscape",
-        unit: "mm",
-        format: "a4",
+        orientation: canvas.width >= canvas.height ? "landscape" : "portrait",
+        unit: "px",
+        format: [canvas.width, canvas.height],
+        hotfixes: ["px_scaling"],
       });
 
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-
-      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+      pdf.addImage(imgData, "PNG", 0, 0, canvas.width, canvas.height, undefined, "FAST");
       pdf.save(`${userData?.name || "Certificate"}_Certificate.pdf`);
     } catch (err) {
       console.error("Error downloading PDF:", err);
@@ -147,10 +133,8 @@ function Certificate() {
 
   const downloadPNG = async () => {
     try {
-      const canvas = await html2canvas(certificateRef.current, {
-        scale: 2,
-        backgroundColor: "#031C3A",
-      });
+      const canvas = await captureCertificateCanvas();
+      if (!canvas) return;
 
       const link = document.createElement("a");
       link.href = canvas.toDataURL("image/png");
@@ -186,6 +170,33 @@ function Certificate() {
     );
   }
 
+  if (!certificateUnlocked) {
+    return (
+      <div className="flex min-h-screen bg-[#031C3A] text-white items-center justify-center">
+        <div className="text-center max-w-xl px-6">
+          <div className="text-4xl mb-3">🔒</div>
+          <h2 className="text-2xl font-bold text-[#00FFFF] mb-3">Certificate Locked</h2>
+          <p className="text-[#AFCBE3] mb-5">
+            Pass the final certification quiz to unlock your certificate.
+          </p>
+          {finalAssessment?.status === "open" && (
+            <button
+              onClick={() => navigate(`/final-quiz-instructions/${companyId}/${deptId}/${userId}/${companyName}`)}
+              className="px-5 py-2 bg-[#00FFFF] text-[#031C3A] rounded font-semibold"
+            >
+              Go To Final Quiz
+            </button>
+          )}
+          {finalAssessment?.status && finalAssessment?.status !== "open" && (
+            <p className="text-sm text-[#AFCBE3] mt-3">
+              Current final quiz status: {finalAssessment.status}
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   const programName = trainingOn || companyName || "Training";
 
   return (
@@ -202,7 +213,7 @@ function Certificate() {
         </div>
         <div
           ref={certificateRef}
-          className="w-full max-w-[1000px] aspect-[297/180] bg-gradient-to-br from-[#021B36] via-[#031C3A] to-[#021B36] border border-[#00FFFF]/35 rounded-xl p-6 relative overflow-hidden shadow-2xl"
+          className="w-full max-w-[1120px] aspect-[297/210] bg-gradient-to-br from-[#021B36] via-[#031C3A] to-[#021B36] border border-[#00FFFF]/35 rounded-xl p-6 relative overflow-hidden shadow-2xl"
         >
           <div className="absolute inset-0">
             <div className="absolute -top-8 -left-8 w-48 h-24 bg-[#00FFFF]/20 rotate-6"></div>
@@ -212,48 +223,61 @@ function Certificate() {
           </div>
 
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <span className="text-[110px] font-semibold tracking-[0.25em] uppercase text-[#00FFFF]/4 select-none">
+            <span className="text-[96px] font-semibold tracking-[0.22em] uppercase text-[#00FFFF]/4 select-none">
               TrainMate
             </span>
           </div>
 
-          <div className="relative z-10 h-full bg-white rounded-lg border border-[#00FFFF]/40 p-10 text-[#031C3A]">
-            <div className="h-full border border-[#031C3A]/20 rounded-md p-12 flex flex-col justify-between relative">
-              <div className="absolute top-6 right-6 rounded-full bg-[#00FFFF] px-4 py-1 text-xs font-semibold text-[#031C3A] shadow-[0_0_18px_#00FFFF70]">
+          <div className="relative z-10 h-full bg-white rounded-lg border border-[#00FFFF]/40 p-8 md:p-9 text-[#031C3A]">
+            <div className="h-full border border-[#031C3A]/20 rounded-md px-10 py-8 md:px-12 md:py-9 grid grid-rows-[auto_1fr_auto] relative">
+              <div className="absolute top-6 right-6 rounded-full bg-[#00FFFF] px-4 py-1 text-[10px] font-semibold text-[#031C3A] shadow-[0_0_18px_#00FFFF70]">
                 Awarded: {certificateTitle} · {overallScore}%
               </div>
-              <div className="text-center">
-                   <p className="text-[#00AFC2] tracking-[0.3em] text-4xl font-semibold -mt-1">CERTIFICATE</p>
-               <p className="uppercase tracking-[0.35em] text-[#031C3A]/80 text-1xl mt-0.5">of Training</p>
+              <div className="text-center pt-8 md:pt-9">
+                <p className="text-[#00AFC2] tracking-[0.28em] text-4xl md:text-[52px] leading-none font-semibold">CERTIFICATE</p>
+                <p className="uppercase tracking-[0.33em] text-[#031C3A]/80 text-sm md:text-[15px] mt-2">of Training</p>
               </div>
 
-              <div className="text-center flex-1 flex flex-col items-center justify-start mt-16 gap-2">
-                <p className="text-sm text-[#031C3A]/80 -mt-6">This certificate is proudly awarded to</p>
-                <h2 className="text-4xl md:text-5xl font-semibold text-[#031C3A] mt-1">
+              <div className="text-center flex flex-col items-center justify-center gap-2 py-4 md:py-4 -mt-5">
+                <p className="text-sm md:text-[15px] text-[#031C3A]/80">This certificate is proudly awarded to</p>
+                <h2 className="text-4xl md:text-[54px] leading-tight font-semibold text-[#031C3A] mt-1">
                   {userData?.name || "Trainee"}
                 </h2>
-                <div className="w-48 h-px bg-[#031C3A]/40 mx-auto my-1.5"></div>
-                
-                <p className="text-sm text-[#031C3A]/80 max-w-[720px] mx-auto leading-5 mt-0.5">
-                  for successfully completed the program and demonstrated the skills and competencies required for 
-                 
+                <div className="w-56 h-px bg-[#031C3A]/35 mx-auto my-2"></div>
+
+                <p className="text-sm md:text-[15px] text-[#031C3A]/80 max-w-[670px] mx-auto leading-relaxed mt-1">
+                  for successfully completed the program and demonstrated the skills and competencies required for
                 </p>
-                <p className="text-base font-semibold text-[#00AFC2]">
+                <p className="text-lg md:text-[24px] font-semibold text-[#00AFC2] mt-0.5">
                   {programName} Training Program
                 </p>
-                <p className="text-xs text-[#031C3A]/70 mt-0.5">Date: {new Date().toLocaleDateString()}</p>
+                <p className="text-xs md:text-[13px] text-[#031C3A]/70 mt-2">Date: {new Date().toLocaleDateString()}</p>
               </div>
 
-              <div className="flex items-end justify-center gap-20 text-xs text-[#031C3A]/80">
-                <div className="text-center">
-                  <div className="w-40 h-px bg-[#031C3A]/40 mb-1"></div>
-                  <p className="uppercase tracking-widest">Program Coordinator</p>
-                  <p className="font-serif italic text-[#031C3A]">TrainMate Academy</p>
-                </div>
-                <div className="text-center">
-                  <div className="w-40 h-px bg-[#031C3A]/40 mb-1"></div>
-                  <p className="uppercase tracking-widest">Training Director</p>
-                  <p className="font-serif italic text-[#031C3A]">{companyName || "TrainMate"}</p>
+              <div className="pt-2 -mt-7">
+                <div className="flex items-end justify-center gap-24 text-xs text-[#031C3A]/80">
+                  <div className="text-center flex flex-col items-center">
+                    <p
+                      className="inline-block text-[20px] text-[#031C3A] -rotate-[4deg] leading-tight mb-2.5"
+                      style={{ fontFamily: signatureFontFamily, fontWeight: 400, letterSpacing: "0.02em" }}
+                    >
+                      {coordinatorSignature}
+                    </p>
+                    <div className="w-44 h-px bg-[#031C3A]/40 mb-1.5 mt-0.5"></div>
+                    <p className="uppercase tracking-[0.2em] text-[10px] leading-none">Program Coordinator</p>
+                    <p className="font-serif italic text-[13px] text-[#031C3A] mt-1 leading-none">TrainMate</p>
+                  </div>
+                  <div className="text-center flex flex-col items-center">
+                    <p
+                      className="inline-block text-[20px] text-[#031C3A] -rotate-[4deg] leading-tight mb-2.5"
+                      style={{ fontFamily: signatureFontFamily, fontWeight: 400, letterSpacing: "0.02em" }}
+                    >
+                      {directorSignature}
+                    </p>
+                    <div className="w-44 h-px bg-[#031C3A]/40 mb-1.5 mt-0.5"></div>
+                    <p className="uppercase tracking-[0.2em] text-[10px] leading-none">Training Director</p>
+                    <p className="font-serif italic text-[13px] text-[#031C3A] mt-1 leading-none">{companyName || "TrainMate"}</p>
+                  </div>
                 </div>
               </div>
             </div>

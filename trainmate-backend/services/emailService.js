@@ -273,6 +273,148 @@ export async function sendQuizSecurityAlertEmail({
   }
 }
 
+/**
+ * Send final certification quiz opened email to learner
+ * @param {Object} params
+ * @param {string} params.userEmail
+ * @param {string} params.userName
+ * @param {string} params.companyName
+ * @param {string} params.deadlineText
+ * @param {number} params.maxAttempts
+ * @param {number} params.passThreshold
+ */
+export async function sendFinalQuizOpenedEmail({
+  userEmail,
+  userName,
+  companyName,
+  deadlineText,
+  maxAttempts,
+  passThreshold,
+}) {
+  try {
+    console.log("Email service: preparing final quiz opened email...");
+    const transporter = createTransporter();
+
+    const recipientEmail = userEmail;
+    console.log(`Sending final quiz opened email to ${recipientEmail}`);
+
+    const mailOptions = {
+      from: {
+        name: "TrainMate",
+        address: "trainmate01@gmail.com",
+      },
+      to: recipientEmail,
+      subject: `Final Certification Quiz Opened - ${companyName}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 20px; background-color: #f4f4f4;">
+          <div style="background-color: #031C3A; padding: 24px; text-align: center; border-radius: 10px 10px 0 0;">
+            <h1 style="color: #00FFFF; margin: 0; font-size: 24px;">TrainMate</h1>
+          </div>
+          <div style="background-color: white; padding: 24px; border-radius: 0 0 10px 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+            <h2 style="color: #031C3A; margin-top: 0;">Final Certification Quiz is Now Open</h2>
+            <p style="color: #333; font-size: 15px; line-height: 1.6;">
+              Hi ${userName || "Learner"}, your final certification quiz for ${companyName || "TrainMate"} is now available.
+            </p>
+            <div style="background-color: #E8F4F8; padding: 16px; border-left: 4px solid #00FFFF; margin: 16px 0;">
+              <p style="margin: 6px 0; color: #333;"><strong>Attempts Allowed:</strong> ${maxAttempts}</p>
+              <p style="margin: 6px 0; color: #333;"><strong>Pass Threshold:</strong> ${passThreshold}%</p>
+              <p style="margin: 6px 0; color: #333;"><strong>Deadline:</strong> ${deadlineText}</p>
+              <p style="margin: 6px 0; color: #333;"><strong>Format:</strong> MCQ + One-Liners + Coding</p>
+            </div>
+            <p style="color: #333; font-size: 14px; line-height: 1.6;">
+              Please attempt the final quiz before the deadline. Passing this quiz unlocks your certificate immediately.
+            </p>
+            <p style="color: #666; font-size: 13px; line-height: 1.6; margin-top: 20px;">
+              Regards,<br>
+              <strong style="color: #031C3A;">TrainMate Team</strong>
+            </p>
+          </div>
+          <div style="text-align: center; padding: 16px; color: #666; font-size: 12px;">
+            <p>This is an automated message. Please do not reply.</p>
+          </div>
+        </div>
+      `,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log("Final quiz opened email sent:", info.messageId);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error("Final quiz opened email failed:", error);
+    throw error;
+  }
+}
+
+/**
+ * Send training completion notification to company admin email
+ * @param {Object} params
+ * @param {string} params.companyEmail
+ * @param {string} params.companyName
+ * @param {string} params.userName
+ * @param {string} params.userEmail
+ * @param {string} params.deptId
+ * @param {number} params.finalScore
+ */
+export async function sendTrainingCompletedEmail({
+  companyEmail,
+  companyName,
+  userName,
+  userEmail,
+  deptId,
+  finalScore,
+}) {
+  try {
+    console.log("Email service: preparing training completion email...");
+    const transporter = createTransporter();
+
+    const recipientEmail = companyEmail;
+    console.log(`Sending training completion email to ${recipientEmail}`);
+
+    const mailOptions = {
+      from: {
+        name: "TrainMate",
+        address: "trainmate01@gmail.com",
+      },
+      to: recipientEmail,
+      subject: `Training Completed Alert - ${companyName}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 20px; background-color: #f4f4f4;">
+          <div style="background-color: #031C3A; padding: 24px; text-align: center; border-radius: 10px 10px 0 0;">
+            <h1 style="color: #00FFFF; margin: 0; font-size: 24px;">TrainMate</h1>
+          </div>
+          <div style="background-color: white; padding: 24px; border-radius: 0 0 10px 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+            <h2 style="color: #031C3A; margin-top: 0;">Training Completion Notification</h2>
+            <p style="color: #333; font-size: 15px; line-height: 1.6;">
+              A fresher has successfully completed the full training journey and unlocked their certificate.
+            </p>
+            <div style="background-color: #E8F4F8; padding: 16px; border-left: 4px solid #00FFFF; margin: 16px 0;">
+              <p style="margin: 6px 0; color: #333;"><strong>Company:</strong> ${companyName || "TrainMate"}</p>
+              <p style="margin: 6px 0; color: #333;"><strong>User:</strong> ${userName || "Unknown"}</p>
+              <p style="margin: 6px 0; color: #333;"><strong>User Email:</strong> ${userEmail || "Unknown"}</p>
+              <p style="margin: 6px 0; color: #333;"><strong>Department:</strong> ${deptId || "Unknown"}</p>
+              <p style="margin: 6px 0; color: #333;"><strong>Final Score:</strong> ${typeof finalScore === "number" ? `${finalScore}%` : "N/A"}</p>
+            </div>
+            <p style="color: #666; font-size: 13px; line-height: 1.6; margin-top: 20px;">
+              Regards,<br>
+              <strong style="color: #031C3A;">TrainMate Team</strong>
+            </p>
+          </div>
+          <div style="text-align: center; padding: 16px; color: #666; font-size: 12px;">
+            <p>This is an automated message. Please do not reply.</p>
+          </div>
+        </div>
+      `,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log("Training completion email sent:", info.messageId);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error("Training completion email failed:", error);
+    throw error;
+  }
+}
+
 
 /**
  * Send user credentials email with PDF attachment
@@ -773,7 +915,11 @@ function generateCredentialsPDF(companyName, companyEmail, tempPassword) {
 
       doc.moveTo(50, 190).lineTo(550, 190).stroke("#00FFFF");
 
-      // Credentials
+      // Credentials section with dark blue background
+      doc.save();
+      doc.rect(40, 200, 520, 140).fill("#031C3A");
+      doc.restore();
+
       doc
         .fontSize(12)
         .fillColor("#00FFFF")

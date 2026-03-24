@@ -1,5 +1,5 @@
 import express from "express";
-import { generateUserRoadmap, regenerateRoadmapAfterFailure } from "../controllers/roadmap.controller.js";
+import { generateUserRoadmap, regenerateRoadmapModule } from "../controllers/roadmap.controller.js";
 
 const router = express.Router();
 
@@ -21,16 +21,16 @@ router.post("/generate", async (req, res) => {
 
 /**
  * @route   POST /api/roadmap/regenerate
- * @desc    Regenerate roadmap after quiz failure
- * @body    { companyId, deptId, userId, moduleId }
+ * @desc    Regenerate a failed module into 2-3 focused modules and resequence roadmap
+ * @body    { companyId, deptId, userId, moduleId, notificationId? }
  */
 router.post("/regenerate", async (req, res) => {
   try {
-    await regenerateRoadmapAfterFailure(req, res);
+    await regenerateRoadmapModule(req, res);
   } catch (error) {
-    console.error("🔥 Route-level error:", error);
+    console.error("🔥 Regenerate route-level error:", error);
     res.status(500).json({
-      error: "Roadmap regeneration route failed"
+      error: "Roadmap regenerate route failed"
     });
   }
 });

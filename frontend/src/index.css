@@ -37,6 +37,127 @@
   }
 }
 
+@layer components {
+  .company-page-shell {
+    background: #031C3A;
+    color: #ffffff;
+  }
+
+  .company-main-content {
+    padding: 1.5rem;
+  }
+
+  .company-container {
+    max-width: 72rem;
+    margin: 0 auto;
+  }
+
+  .company-card {
+    border: 1px solid rgba(0, 255, 255, 0.18);
+    background: rgba(2, 27, 54, 0.8);
+    border-radius: 1rem;
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.24);
+  }
+
+  .company-title {
+    font-size: 1.875rem;
+    line-height: 2.25rem;
+    font-weight: 700;
+    color: #00FFFF;
+  }
+
+  .company-subtitle {
+    color: #AFCBE3;
+    margin-top: 0.5rem;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+  }
+
+  .company-outline-btn {
+    border: 1px solid rgba(0, 255, 255, 0.2);
+    background: rgba(3, 28, 58, 0.7);
+    color: #AFCBE3;
+    border-radius: 0.5rem;
+    padding: 0.5rem 1rem;
+    font-weight: 600;
+    transition: background-color 180ms ease, border-color 180ms ease;
+  }
+
+  .company-outline-btn:hover {
+    background: rgba(0, 255, 255, 0.08);
+    border-color: rgba(0, 255, 255, 0.38);
+  }
+
+  .company-primary-btn {
+    border-radius: 0.5rem;
+    padding: 0.5rem 1rem;
+    font-weight: 600;
+    background: #00FFFF;
+    color: #031C3A;
+    transition: opacity 180ms ease;
+  }
+
+  .company-primary-btn:hover {
+    opacity: 0.9;
+  }
+
+  .company-kpi-card {
+    border: 1px solid rgba(0, 255, 255, 0.2);
+    background: rgba(2, 27, 54, 0.7);
+    border-radius: 0.75rem;
+    padding: 1rem;
+    transition: border-color 180ms ease;
+  }
+
+  .company-kpi-card:hover {
+    border-color: rgba(0, 255, 255, 0.4);
+  }
+
+  .company-kpi-label {
+    color: #AFCBE3;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 0.75rem;
+    line-height: 1rem;
+  }
+
+  .company-kpi-value {
+    font-size: 1.5rem;
+    line-height: 2rem;
+    margin-top: 0.5rem;
+    font-weight: 700;
+    color: #00FFFF;
+  }
+
+  .company-table-wrap {
+    border: 1px solid rgba(0, 255, 255, 0.18);
+    background: rgba(2, 27, 54, 0.8);
+    border-radius: 1rem;
+    overflow: hidden;
+  }
+
+  .company-table-head-row {
+    background: rgba(3, 28, 58, 0.8);
+    color: #00FFFF;
+    border-bottom: 1px solid rgba(0, 255, 255, 0.2);
+  }
+
+  .company-table-row {
+    border-top: 1px solid rgba(0, 255, 255, 0.13);
+    transition: background-color 160ms ease;
+  }
+
+  .company-table-row:hover {
+    background: rgba(0, 255, 255, 0.06);
+  }
+
+  .company-empty-state {
+    color: #AFCBE3;
+    text-align: center;
+    padding: 2rem;
+  }
+}
+
 @layer utilities {
   .animation-delay-200 {
     animation-delay: 200ms;

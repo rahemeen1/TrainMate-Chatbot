@@ -6,7 +6,7 @@ import { CohereClient } from "cohere-ai";
 import { updateMemoryAfterQuiz } from "../services/memoryService.js";
 import { evaluateCode } from "../services/codeEvaluator.service.js";
 import { createDailyModuleReminder, createQuizUnlockReminder } from "../services/calendarService.js";
-import { sendTrainingLockedEmail, sendQuizSecurityAlertEmail } from "../services/emailService.js";
+import { sendTrainingLockedEmail, sendQuizSecurityAlertEmail, sendFinalQuizOpenedEmail, sendTrainingCompletedEmail } from "../services/emailService.js";
 
 let primaryModel = null;
 let fallbackModel = null;
@@ -31,6 +31,9 @@ const MAX_QUIZ_ATTEMPTS = 3; // Maximum possible attempts (AI decides actual cou
 const ADMIN_FINAL_RETRY_ATTEMPTS = 1;
 const QUIZ_UNLOCK_TIME_PERCENT = 0.5; // Quiz unlocks after 50% of module time
 const TRAINING_LOCK_TEST_EMAIL = "trainmate01@gmail.com";
+const FINAL_QUIZ_MAX_ATTEMPTS = 2;
+const FINAL_QUIZ_PASS_THRESHOLD = 70;
+const FINAL_QUIZ_WINDOW_DAYS = 2;
 
 async function notifyTrainingLockForTesting({
 	companyId,
@@ -172,6 +175,41 @@ async function createOrUpdateModuleLockNotification({
 	return notificationId;
 }
 
+async function createTrainingCompletionNotification({
+	companyId,
+	deptId,
+	userId,
+	userName,
+	userEmail,
+	finalScore,
+}) {
+	const notificationId = `training-complete-${deptId}-${userId}`;
+	const notificationRef = db
+		.collection("companies")
+		.doc(companyId)
+		.collection("adminNotifications")
+		.doc(notificationId);
+
+	await notificationRef.set(
+		{
+			type: "training_completion",
+			status: "pending",
+			companyId,
+			deptId,
+			userId,
+			userName: userName || "",
+			userEmail: userEmail || "",
+			score: typeof finalScore === "number" ? finalScore : null,
+			message: `${userName || "A fresher"} completed full training and unlocked certificate with ${typeof finalScore === "number" ? `${finalScore}%` : "N/A"}.`,
+			createdAt: admin.firestore.FieldValue.serverTimestamp(),
+			resolvedAt: null,
+		},
+		{ merge: true }
+	);
+
+	return notificationId;
+}
+
 async function unlockNextModuleForUser({ userRef, currentModuleOrder }) {
 	const roadmapSnap = await userRef.collection("roadmap").orderBy("order").get();
 	const modules = roadmapSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
@@ -191,6 +229,153 @@ async function unlockNextModuleForUser({ userRef, currentModuleOrder }) {
 	);
 
 	return nextModule;
+}
+
+async function getFinalAttemptsUsed(userRef, fallback = 0) {
+	try {
+		const attemptsSnap = await userRef.collection("finalQuizAttempts").get();
+		return Math.max(Number(fallback) || 0, attemptsSnap.size);
+	} catch (err) {
+		console.warn("⚠️ [FINAL-QUIZ] Could not read finalQuizAttempts, using fallback:", err.message);
+		return Number(fallback) || 0;
+	}
+}
+
+function toDateSafe(value) {
+	if (!value) return null;
+	if (value instanceof Date) return value;
+	if (value?.toDate) return value.toDate();
+	const parsed = new Date(value);
+	return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function areAllModulesCompleted(modules = []) {
+	if (!Array.isArray(modules) || modules.length === 0) return false;
+	return modules.every((m) => {
+		const status = String(m.status || "").toLowerCase();
+		if (status === "expired") return false;
+		return status === "completed" || !!m.completed;
+	});
+}
+
+async function maybeOpenFinalAssessment({ userRef, userData = {}, companyName = "TrainMate" }) {
+	console.log("🧪 [FINAL-QUIZ] Checking eligibility to open final assessment...");
+	const roadmapSnap = await userRef.collection("roadmap").orderBy("order").get();
+	const modules = roadmapSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+
+	if (!areAllModulesCompleted(modules)) {
+		console.log("🧪 [FINAL-QUIZ] Not opening final assessment: not all modules completed.");
+		return { opened: false, reason: "NOT_ELIGIBLE", modulesCompleted: false };
+	}
+
+	const current = userData?.finalAssessment || {};
+	if (current.status === "passed") {
+		console.log("🧪 [FINAL-QUIZ] Already passed. No new opening needed.");
+		return { opened: false, reason: "ALREADY_PASSED", finalAssessment: current };
+	}
+
+	const currentAttemptsUsed = await getFinalAttemptsUsed(userRef, current.attemptsUsed);
+	const currentMaxAttempts = Number(current.maxAttempts) || FINAL_QUIZ_MAX_ATTEMPTS;
+	const currentDeadline = toDateSafe(current.deadlineAt);
+	console.log("🧪 [FINAL-QUIZ] Attempt guard values:", {
+		storedAttemptsUsed: Number(current.attemptsUsed) || 0,
+		effectiveAttemptsUsed: currentAttemptsUsed,
+		currentMaxAttempts,
+		status: current.status || "unknown",
+	});
+	if (currentAttemptsUsed >= currentMaxAttempts && current.status !== "passed") {
+		await userRef.set({
+			finalAssessment: {
+				...current,
+				status: "failed",
+			},
+		}, { merge: true });
+		console.log("🧪 [FINAL-QUIZ] Not opening: attempts already exhausted.");
+		return {
+			opened: false,
+			reason: "ATTEMPTS_EXHAUSTED",
+			finalAssessment: {
+				...current,
+				status: "failed",
+			},
+		};
+	}
+
+	if (currentDeadline && new Date() > currentDeadline && current.status !== "passed") {
+		await userRef.set({
+			finalAssessment: {
+				...current,
+				status: "expired",
+			},
+		}, { merge: true });
+		console.log("🧪 [FINAL-QUIZ] Not opening: final assessment deadline expired.");
+		return {
+			opened: false,
+			reason: "EXPIRED",
+			finalAssessment: {
+				...current,
+				status: "expired",
+			},
+		};
+	}
+
+	const now = new Date();
+	const deadline = new Date(now.getTime() + FINAL_QUIZ_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+	const nextFinalAssessment = {
+		status: "open",
+		openedAt: now,
+		deadlineAt: deadline,
+		maxAttempts: FINAL_QUIZ_MAX_ATTEMPTS,
+		attemptsUsed: currentAttemptsUsed,
+		passThreshold: FINAL_QUIZ_PASS_THRESHOLD,
+		emailSentAt: current.emailSentAt || null,
+		lastAttemptAt: current.lastAttemptAt || null,
+		lastScore: current.lastScore || null,
+		quizId: "current",
+	};
+
+	await userRef.set({
+		finalAssessment: nextFinalAssessment,
+		certificateUnlocked: userData?.certificateUnlocked || false,
+	}, { merge: true });
+
+	console.log("🧪 [FINAL-QUIZ] Final assessment marked OPEN.", {
+		deadlineAt: deadline.toISOString(),
+		maxAttempts: FINAL_QUIZ_MAX_ATTEMPTS,
+		passThreshold: FINAL_QUIZ_PASS_THRESHOLD,
+	});
+
+	if (!current.emailSentAt && userData?.email) {
+		const deadlineText = deadline.toLocaleString("en-US", {
+			weekday: "long",
+			year: "numeric",
+			month: "long",
+			day: "numeric",
+			hour: "numeric",
+			minute: "2-digit",
+		});
+		try {
+			await sendFinalQuizOpenedEmail({
+				userEmail: userData.email,
+				userName: userData.name || "Learner",
+				companyName,
+				deadlineText,
+				maxAttempts: FINAL_QUIZ_MAX_ATTEMPTS,
+				passThreshold: FINAL_QUIZ_PASS_THRESHOLD,
+			});
+			await userRef.set({
+				finalAssessment: {
+					...nextFinalAssessment,
+					emailSentAt: new Date(),
+				},
+			}, { merge: true });
+			console.log("🧪 [FINAL-QUIZ] Final quiz opened email sent.");
+		} catch (emailErr) {
+			console.warn("⚠️ [FINAL-QUIZ] Failed to send opening email:", emailErr.message);
+		}
+	}
+
+	return { opened: true, reason: "OPENED", finalAssessment: nextFinalAssessment };
 }
 
 async function embedText(text) {
@@ -743,6 +928,40 @@ Format: CORRECT|reason or INCORRECT|reason`;
 	} catch (err) {
 		console.error("LLM evaluation error, falling back to exact match:", err.message);
 		return normalizeText(userResponse) === normalizeText(correctAnswer);
+	}
+}
+
+async function generateAgenticCertificateTitle({ score, passThreshold }) {
+	const fallbackTitle = score >= 90
+		? "Distinguished Excellence Award"
+		: score >= 80
+		? "Advanced Master Practitioner"
+		: score >= passThreshold
+		? "Certified Professional"
+		: "Course Completer";
+
+	const prompt = `You are naming a professional completion certificate title.
+
+Rules:
+- Score: ${score}
+- Pass Threshold: ${passThreshold}
+- Return only ONE concise professional title.
+- No emoji.
+- Max 5 words.
+- Must sound corporate and achievement-oriented.
+
+Output only plain text title.`;
+
+	try {
+		const result = await generateWithRetry(prompt);
+		const raw = result?.response?.text?.()?.trim() || "";
+		const cleaned = raw.replace(/[\n\r`*_#]/g, " ").replace(/\s+/g, " ").trim();
+		if (!cleaned) return fallbackTitle;
+		const words = cleaned.split(" ").slice(0, 5).join(" ");
+		return words || fallbackTitle;
+	} catch (err) {
+		console.warn("⚠️ [FINAL-QUIZ] AI title generation failed, using fallback:", err.message);
+		return fallbackTitle;
 	}
 }
 
@@ -1522,6 +1741,15 @@ export const submitQuiz = async (req, res) => {
 							startedAt: admin.firestore.FieldValue.serverTimestamp(),
 						}, { merge: true });
 						console.log(`✓ Next module unlocked: ${nextModule.moduleTitle}`);
+					} else {
+						console.log("🧪 [FINAL-QUIZ] No remaining modules. Attempting to open final assessment...");
+						const companySnap = await db.collection("companies").doc(companyId).get();
+						const companyName = companySnap.exists ? companySnap.data()?.name || "TrainMate" : "TrainMate";
+						await maybeOpenFinalAssessment({
+							userRef,
+							userData,
+							companyName,
+						});
 					}
 
 					// Schedule calendar reminders for next active module
@@ -1575,9 +1803,13 @@ export const submitQuiz = async (req, res) => {
 
 								await createQuizUnlockReminder({
 									calendarId,
+									companyId,
+									deptId,
+									userId,
 									moduleTitle: nextModule.moduleTitle,
 									companyName,
 									unlockDate,
+									maxQuizAttempts: userData?.quizPolicy?.maxQuizAttempts || MAX_QUIZ_ATTEMPTS,
 									reminderTime,
 									timeZone,
 									attendeeEmail: userEmail,
@@ -1744,6 +1976,448 @@ export const submitQuiz = async (req, res) => {
 		console.error("Quiz submission error:", err);
 		console.error("Error stack:", err.stack);
 		return res.status(500).json({ error: "Quiz submission failed", details: err.message });
+	}
+};
+
+export const openFinalQuiz = async (req, res) => {
+	try {
+		const { companyId, deptId, userId } = req.body || {};
+		if (!companyId || !deptId || !userId) {
+			return res.status(400).json({ error: "Missing required IDs" });
+		}
+
+		console.log("\n=== FINAL QUIZ OPEN START ===");
+		console.log("🧪 [FINAL-QUIZ] Input:", { companyId, deptId, userId });
+
+		const userRef = db
+			.collection("freshers")
+			.doc(companyId)
+			.collection("departments")
+			.doc(deptId)
+			.collection("users")
+			.doc(userId);
+
+		const userSnap = await userRef.get();
+		if (!userSnap.exists) {
+			return res.status(404).json({ error: "User not found" });
+		}
+		const userData = userSnap.data() || {};
+
+		const companySnap = await db.collection("companies").doc(companyId).get();
+		const companyName = companySnap.exists ? companySnap.data()?.name || "TrainMate" : "TrainMate";
+
+		const result = await maybeOpenFinalAssessment({ userRef, userData, companyName });
+		const refreshedUserSnap = await userRef.get();
+		const refreshedUserData = refreshedUserSnap.data() || {};
+		const finalAssessment = refreshedUserData.finalAssessment || result.finalAssessment || {};
+
+		if (!result.opened && result.reason === "NOT_ELIGIBLE") {
+			console.log("🧪 [FINAL-QUIZ] Open blocked: modules not fully completed.");
+			return res.status(403).json({
+				error: "Final quiz is locked",
+				message: "Complete all modules before opening final quiz.",
+				status: "locked",
+			});
+		}
+
+		if (!result.opened && result.reason === "ATTEMPTS_EXHAUSTED") {
+			return res.status(403).json({
+				error: "Final quiz attempts exhausted",
+				message: "You already used all final quiz attempts. Please contact your admin for next steps.",
+				status: "failed",
+			});
+		}
+
+		if (!result.opened && result.reason === "EXPIRED") {
+			return res.status(403).json({
+				error: "Final quiz expired",
+				message: "Your final quiz window has expired. Please contact your admin.",
+				status: "expired",
+			});
+		}
+
+		console.log("=== FINAL QUIZ OPEN COMPLETE ===\n");
+		return res.json({
+			ok: true,
+			status: finalAssessment.status || "open",
+			deadlineAt: toDateSafe(finalAssessment.deadlineAt)?.toISOString() || null,
+			maxAttempts: finalAssessment.maxAttempts || FINAL_QUIZ_MAX_ATTEMPTS,
+			passThreshold: finalAssessment.passThreshold || FINAL_QUIZ_PASS_THRESHOLD,
+			emailSent: !!finalAssessment.emailSentAt,
+		});
+	} catch (err) {
+		console.error("Final quiz open error:", err);
+		return res.status(500).json({ error: "Failed to open final quiz", details: err.message });
+	}
+};
+
+export const generateFinalQuiz = async (req, res) => {
+	try {
+		const { companyId, deptId, userId } = req.body || {};
+		if (!companyId || !deptId || !userId) {
+			return res.status(400).json({ error: "Missing required IDs" });
+		}
+
+		console.log("\n=== FINAL QUIZ GENERATE START ===");
+		console.log("🧪 [FINAL-QUIZ] Generate input:", { companyId, deptId, userId });
+
+		const userRef = db
+			.collection("freshers")
+			.doc(companyId)
+			.collection("departments")
+			.doc(deptId)
+			.collection("users")
+			.doc(userId);
+
+		const [userSnap, companySnap] = await Promise.all([
+			userRef.get(),
+			db.collection("companies").doc(companyId).get(),
+		]);
+
+		if (!userSnap.exists) {
+			return res.status(404).json({ error: "User not found" });
+		}
+		const userData = userSnap.data() || {};
+		const companyName = companySnap.exists ? companySnap.data()?.name || "TrainMate" : "TrainMate";
+
+		const openResult = await maybeOpenFinalAssessment({ userRef, userData, companyName });
+		const refreshedUserSnap = await userRef.get();
+		const refreshedUserData = refreshedUserSnap.data() || {};
+		const finalAssessment = refreshedUserData.finalAssessment || {};
+
+		if (!openResult.opened && openResult.reason === "NOT_ELIGIBLE") {
+			return res.status(403).json({ error: "Final quiz is locked", message: "Complete all modules first." });
+		}
+
+		const status = String(finalAssessment.status || "locked").toLowerCase();
+		if (status !== "open") {
+			return res.status(403).json({ error: "Final quiz not open", status });
+		}
+
+		const deadlineAt = toDateSafe(finalAssessment.deadlineAt);
+		if (deadlineAt && new Date() > deadlineAt) {
+			await userRef.set({
+				finalAssessment: {
+					...finalAssessment,
+					status: "expired",
+				},
+			}, { merge: true });
+			console.log("🧪 [FINAL-QUIZ] Expired while generating.");
+			return res.status(403).json({ error: "Final quiz expired", status: "expired" });
+		}
+
+		const attemptsUsed = await getFinalAttemptsUsed(userRef, finalAssessment.attemptsUsed);
+		const maxAttempts = Number(finalAssessment.maxAttempts) || FINAL_QUIZ_MAX_ATTEMPTS;
+		console.log("🧪 [FINAL-QUIZ] Generate guard values:", {
+			storedAttemptsUsed: Number(finalAssessment.attemptsUsed) || 0,
+			effectiveAttemptsUsed: attemptsUsed,
+			maxAttempts,
+		});
+		if (attemptsUsed >= maxAttempts) {
+			await userRef.set({
+				finalAssessment: {
+					...finalAssessment,
+					attemptsUsed,
+					status: "failed",
+				},
+			}, { merge: true });
+			console.log("🧪 [FINAL-QUIZ] Attempts exhausted while generating.");
+			return res.status(403).json({ error: "Final quiz attempts exhausted", status: "failed" });
+		}
+
+		const roadmapSnap = await userRef.collection("roadmap").orderBy("order").get();
+		const modules = roadmapSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+		const finalTitle = "Final Certification Assessment";
+		const moduleOutline = modules
+			.map((m, idx) => `${idx + 1}. ${m.moduleTitle || "Untitled"} - ${m.description || ""}`)
+			.join("\n");
+
+		const context = `Comprehensive final certification for completed roadmap modules.\n\nLearner: ${userData.name || "Learner"}\nCompany: ${companyName}\n\nModules:\n${moduleOutline}`;
+
+		const { quiz, critique } = await generateQuizAgentic({
+			title: finalTitle,
+			context,
+			allowCoding: true,
+			moduleDescription: "Comprehensive final certification test across all completed roadmap modules.",
+			companyName,
+			deptName: deptId,
+		});
+
+		const finalQuizRef = userRef.collection("finalQuiz").doc("current");
+		await finalQuizRef.set({
+			...quiz,
+			type: "final",
+			quizId: "current",
+			createdAt: admin.firestore.FieldValue.serverTimestamp(),
+			passThreshold: Number(finalAssessment.passThreshold) || FINAL_QUIZ_PASS_THRESHOLD,
+			maxAttempts,
+			deadlineAt: deadlineAt || null,
+			agentic: {
+				critiquePass: critique?.pass || false,
+				critiqueScore: critique?.score || null,
+				comprehensive: true,
+			},
+		}, { merge: true });
+
+		console.log("🧪 [FINAL-QUIZ] Generated and stored final quiz.", {
+			mcq: quiz.mcq?.length || 0,
+			oneLiners: quiz.oneLiners?.length || 0,
+			coding: quiz.coding?.length || 0,
+		});
+
+		console.log("=== FINAL QUIZ GENERATE COMPLETE ===\n");
+		return res.json({
+			quizId: "current",
+			type: "final",
+			passThreshold: Number(finalAssessment.passThreshold) || FINAL_QUIZ_PASS_THRESHOLD,
+			deadlineAt: deadlineAt ? deadlineAt.toISOString() : null,
+			attemptsLeft: maxAttempts - attemptsUsed,
+			mcq: (quiz.mcq || []).map(({ correctIndex, explanation, ...rest }) => rest),
+			oneLiners: (quiz.oneLiners || []).map(({ answer, explanation, ...rest }) => rest),
+			coding: (quiz.coding || []).map(({ expectedApproach, ...rest }) => rest),
+		});
+	} catch (err) {
+		console.error("Final quiz generation error:", err);
+		return res.status(500).json({ error: "Final quiz generation failed", details: err.message });
+	}
+};
+
+export const submitFinalQuiz = async (req, res) => {
+	try {
+		const { companyId, deptId, userId, quizId = "current", answers } = req.body || {};
+		if (!companyId || !deptId || !userId) {
+			return res.status(400).json({ error: "Missing required IDs" });
+		}
+
+		console.log("\n=== FINAL QUIZ SUBMIT START ===");
+		console.log("🧪 [FINAL-QUIZ] Submit input:", { companyId, deptId, userId, quizId });
+
+		const userRef = db
+			.collection("freshers")
+			.doc(companyId)
+			.collection("departments")
+			.doc(deptId)
+			.collection("users")
+			.doc(userId);
+
+		const userSnap = await userRef.get();
+		if (!userSnap.exists) {
+			return res.status(404).json({ error: "User not found" });
+		}
+		const userData = userSnap.data() || {};
+		const finalAssessment = userData.finalAssessment || {};
+
+		if (String(finalAssessment.status || "").toLowerCase() !== "open") {
+			return res.status(403).json({ error: "Final quiz is not open", status: finalAssessment.status || "locked" });
+		}
+
+		const deadlineAt = toDateSafe(finalAssessment.deadlineAt);
+		if (deadlineAt && new Date() > deadlineAt) {
+			await userRef.set({
+				finalAssessment: { ...finalAssessment, status: "expired" },
+			}, { merge: true });
+			console.log("🧪 [FINAL-QUIZ] Expired on submit.");
+			return res.status(403).json({ error: "Final quiz expired", status: "expired" });
+		}
+
+		const maxAttempts = Number(finalAssessment.maxAttempts) || FINAL_QUIZ_MAX_ATTEMPTS;
+		const attemptsUsed = Number(finalAssessment.attemptsUsed) || 0;
+		if (attemptsUsed >= maxAttempts) {
+			await userRef.set({
+				finalAssessment: { ...finalAssessment, status: "failed" },
+			}, { merge: true });
+			return res.status(403).json({ error: "Final attempts exhausted", status: "failed" });
+		}
+
+		const finalQuizRef = userRef.collection("finalQuiz").doc(quizId);
+		const finalQuizSnap = await finalQuizRef.get();
+		if (!finalQuizSnap.exists) {
+			return res.status(404).json({ error: "Final quiz not found" });
+		}
+
+		const quizData = finalQuizSnap.data() || {};
+		const mcqAnswers = Array.isArray(answers?.mcq) ? answers.mcq : [];
+		const oneLinerAnswers = Array.isArray(answers?.oneLiners) ? answers.oneLiners : [];
+		const codingAnswers = Array.isArray(answers?.coding) ? answers.coding : [];
+
+		const mcqResults = (quizData.mcq || []).map((q) => {
+			const submitted = mcqAnswers.find((a) => a.id === q.id);
+			const selectedIndex = Number.isInteger(submitted?.selectedIndex) ? submitted.selectedIndex : null;
+			const isCorrect = selectedIndex === q.correctIndex;
+			return {
+				id: q.id,
+				question: q.question,
+				selectedIndex,
+				correctAnswer: q.options?.[q.correctIndex] || "",
+				isCorrect,
+			};
+		});
+
+		const oneLinerResults = await Promise.all(
+			(quizData.oneLiners || []).map(async (q) => {
+				const submitted = oneLinerAnswers.find((a) => a.id === q.id);
+				const response = submitted?.response || "";
+				const isCorrect = await evaluateOneLinerWithLLM(q.question, q.answer, response);
+				return {
+					id: q.id,
+					question: q.question,
+					response,
+					correctAnswer: q.answer,
+					isCorrect,
+				};
+			})
+		);
+
+		const codingResults = await Promise.all(
+			(quizData.coding || []).map(async (q) => {
+				const submitted = codingAnswers.find((a) => a.id === q.id);
+				const code = submitted?.code || "";
+				const evaluation = await evaluateCode({
+					question: q.question,
+					code,
+					expectedApproach: q.expectedApproach,
+					language: q.language,
+				});
+				return {
+					id: q.id,
+					question: q.question,
+					code,
+					score: evaluation.score,
+					isCorrect: evaluation.isCorrect,
+					feedback: evaluation.feedback,
+				};
+			})
+		);
+
+		const mcqCorrect = mcqResults.filter((r) => r.isCorrect).length;
+		const oneLinerCorrect = oneLinerResults.filter((r) => r.isCorrect).length;
+		const mcqScore = mcqResults.length ? (mcqCorrect / mcqResults.length) * 100 : 0;
+		const oneLinerScore = oneLinerResults.length ? (oneLinerCorrect / oneLinerResults.length) * 100 : 0;
+		const codingScore = codingResults.length
+			? codingResults.reduce((sum, r) => sum + (Number(r.score) || 0), 0) / codingResults.length
+			: 0;
+
+		const finalScore = Math.round(mcqScore * 0.5 + oneLinerScore * 0.25 + codingScore * 0.25);
+		const passThreshold = Number(finalAssessment.passThreshold) || FINAL_QUIZ_PASS_THRESHOLD;
+		const passed = finalScore >= passThreshold;
+		const nextAttemptsUsed = attemptsUsed + 1;
+
+		console.log("🧪 [FINAL-QUIZ] Evaluation summary:", {
+			mcqScore,
+			oneLinerScore,
+			codingScore,
+			finalScore,
+			passThreshold,
+			passed,
+			attempt: nextAttemptsUsed,
+		});
+
+		await userRef.collection("finalQuizAttempts").doc(`attempt-${nextAttemptsUsed}`).set({
+			attemptNumber: nextAttemptsUsed,
+			score: finalScore,
+			passed,
+			mcqScore,
+			oneLinerScore,
+			codingScore,
+			submittedAt: admin.firestore.FieldValue.serverTimestamp(),
+		});
+
+		await finalQuizRef.collection("results").doc("latest").set({
+			score: finalScore,
+			passed,
+			attemptNumber: nextAttemptsUsed,
+			mcq: mcqResults,
+			oneLiners: oneLinerResults,
+			coding: codingResults,
+			submittedAt: admin.firestore.FieldValue.serverTimestamp(),
+		});
+
+		let finalStatus = "open";
+		if (passed) finalStatus = "passed";
+		else if (nextAttemptsUsed >= maxAttempts) finalStatus = "failed";
+
+		const certificateTitle = passed
+			? await generateAgenticCertificateTitle({ score: finalScore, passThreshold })
+			: userData.certificateFinalQuizTitle || null;
+		if (passed) {
+			console.log("🧪 [FINAL-QUIZ] Agentic certificate title generated:", certificateTitle);
+		}
+
+		await userRef.set({
+			finalAssessment: {
+				...finalAssessment,
+				status: finalStatus,
+				attemptsUsed: nextAttemptsUsed,
+				lastAttemptAt: new Date(),
+				lastScore: finalScore,
+				quizId,
+			},
+			certificateUnlocked: passed ? true : !!userData.certificateUnlocked,
+			certificateUnlockedAt: passed ? new Date() : userData.certificateUnlockedAt || null,
+			certificateFinalQuizScore: passed ? finalScore : userData.certificateFinalQuizScore || null,
+			certificateFinalQuizTitle: passed ? certificateTitle : userData.certificateFinalQuizTitle || null,
+		}, { merge: true });
+
+		if (passed) {
+			try {
+				await createTrainingCompletionNotification({
+					companyId,
+					deptId,
+					userId,
+					userName: userData?.name,
+					userEmail: userData?.email,
+					finalScore,
+				});
+				console.log("🧪 [FINAL-QUIZ] Company completion notification created.");
+			} catch (notificationErr) {
+				console.warn("⚠️ [FINAL-QUIZ] Failed to create completion notification:", notificationErr.message);
+			}
+
+			try {
+				const companySnap = await db.collection("companies").doc(companyId).get();
+				const companyData = companySnap.exists ? companySnap.data() : {};
+				const companyEmail = companyData?.email || companyData?.companyEmail || null;
+				const companyName = companyData?.name || "TrainMate";
+
+				if (companyEmail) {
+					await sendTrainingCompletedEmail({
+						companyEmail,
+						companyName,
+						userName: userData?.name || "",
+						userEmail: userData?.email || "",
+						deptId,
+						finalScore,
+					});
+					console.log("🧪 [FINAL-QUIZ] Company completion email sent.");
+				} else {
+					console.warn("⚠️ [FINAL-QUIZ] Company email not found, skipping completion email.");
+				}
+			} catch (emailErr) {
+				console.warn("⚠️ [FINAL-QUIZ] Failed to send completion email:", emailErr.message);
+			}
+		}
+
+		console.log("🧪 [FINAL-QUIZ] User final assessment updated.", { finalStatus });
+		console.log("=== FINAL QUIZ SUBMIT COMPLETE ===\n");
+
+		return res.json({
+			ok: true,
+			score: finalScore,
+			passed,
+			attemptsUsed: nextAttemptsUsed,
+			attemptsLeft: Math.max(maxAttempts - nextAttemptsUsed, 0),
+			finalStatus,
+			certificateUnlocked: passed,
+			certificateTitle: passed ? certificateTitle : null,
+			message: passed
+				? "Congratulations! Final quiz passed. Certificate unlocked."
+				: finalStatus === "failed"
+				? "Final quiz failed and attempts exhausted."
+				: "Final quiz not passed. You still have attempts left.",
+		});
+	} catch (err) {
+		console.error("Final quiz submission error:", err);
+		return res.status(500).json({ error: "Final quiz submission failed", details: err.message });
 	}
 };
 

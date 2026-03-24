@@ -26,6 +26,9 @@ import ViewModuleDetails from "./components/Fresher/ViewModuleDetails";
 import ModuleQuiz from "./components/Fresher/ModuleQuiz";
 import ModuleQuizResults from "./components/Fresher/ModuleQuizResults";
 import Certificate from "./components/Fresher/Certificate";
+import FinalQuizInstructions from "./components/Fresher/FinalQuizInstructions";
+import FinalQuiz from "./components/Fresher/FinalQuiz";
+import FinalQuizResults from "./components/Fresher/FinalQuizResults";
 import TrainingLockedScreen from "./components/Fresher/TrainingLockedScreen";
 import GoogleAuthCallback from "./pages/GoogleAuthCallback";
 import CompanyGoogleAuthCallback from "./pages/CompanyGoogleAuthCallback";
@@ -62,6 +65,9 @@ export default function App() {
         <Route path="/module-details/:companyId/:deptId/:userId/:moduleId/:companyName" element={<ViewModuleDetails />} />
         <Route path="/quiz/:companyId/:deptId/:userId/:moduleId" element={<ModuleQuiz />} />
         <Route path="/quiz-results/:companyId/:deptId/:userId/:moduleId" element={<ModuleQuizResults />} />
+        <Route path="/final-quiz-instructions/:companyId/:deptId/:userId/:companyName" element={<FinalQuizInstructions />} />
+        <Route path="/final-quiz/:companyId/:deptId/:userId/:companyName" element={<FinalQuiz />} />
+        <Route path="/final-quiz-results/:companyId/:deptId/:userId/:companyName" element={<FinalQuizResults />} />
         <Route path="/training-locked" element={<TrainingLockedScreen />} />
         <Route path="/CompanySpecific/CompanyDetails" element={<CompanyDetails />} />
         <Route path="/company-license-payment" element={<CompanyLicensePayment />} />
