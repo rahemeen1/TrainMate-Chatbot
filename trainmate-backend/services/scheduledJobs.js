@@ -6,18 +6,23 @@ import { sendQuizUnlockEmail } from "./emailService.js";
 import { createQuizUnlockReminder } from "./calendarService.js";
 
 /**
- * Check if quiz should be unlocked (50% of module time passed)
+ * Check if quiz should be unlocked (70% of module time passed by default)
  * @param {Date} moduleStartDate - When module became active
  * @param {number} estimatedDays - Total estimated days for the module
+ * @param {number} unlockPercent - Quiz unlock percentage threshold
  * @returns {boolean} - True if quiz should be unlocked
  */
-function shouldUnlockQuiz(moduleStartDate, estimatedDays) {
+function shouldUnlockQuiz(moduleStartDate, estimatedDays, unlockPercent = 70) {
   const now = Date.now();
   const startTime = moduleStartDate instanceof Date 
     ? moduleStartDate.getTime() 
     : moduleStartDate.toDate ? moduleStartDate.toDate().getTime() : new Date(moduleStartDate).getTime();
-  
-  const unlockDelay = estimatedDays * 0.5 * 24 * 60 * 60 * 1000; // 50% of days in ms
+
+  const normalizedUnlockPercent = Number.isFinite(Number(unlockPercent))
+    ? Number(unlockPercent)
+    : 70;
+  const unlockRatio = Math.max(0, Math.min(100, normalizedUnlockPercent)) / 100;
+  const unlockDelay = estimatedDays * unlockRatio * 24 * 60 * 60 * 1000;
   const unlockTime = startTime + unlockDelay;
   
   // Check if quiz was just unlocked today (within last 24 hours)
@@ -284,8 +289,12 @@ export function scheduleDailyModuleReminders() {
               const daysPassed = Math.floor((today - moduleStartDate) / (1000 * 60 * 60 * 24));
               const dayNumber = daysPassed + 1;
 
-              // Check if quiz should be unlocked (50% time requirement met)
-              if (!activeModule.quizUnlockNotificationSent && shouldUnlockQuiz(moduleStartDate, estimatedDays)) {
+              // Check if quiz should be unlocked (70% time requirement by default)
+              const quizUnlockPercent = Math.max(
+                70,
+                Number(userData?.quizPolicy?.quizUnlockPercent) || 70
+              );
+              if (!activeModule.quizUnlockNotificationSent && shouldUnlockQuiz(moduleStartDate, estimatedDays, quizUnlockPercent)) {
                 console.log(`🔓 Quiz unlock condition met for ${userData.email} - ${moduleTitle}`);
                 try {
                   await sendQuizUnlockNotifications({

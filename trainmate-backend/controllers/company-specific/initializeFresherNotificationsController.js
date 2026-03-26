@@ -8,7 +8,7 @@ import {
 } from "../../services/aiAgenticNotificationService.js";
 
 const DEFAULT_MAX_QUIZ_ATTEMPTS = 3;
-const DEFAULT_QUIZ_UNLOCK_PERCENT = 50;
+const DEFAULT_QUIZ_UNLOCK_PERCENT = 70;
 
 export const initializeFresherNotifications = async (req, res) => {
   try {

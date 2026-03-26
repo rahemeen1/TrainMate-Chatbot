@@ -7,6 +7,7 @@ import { doc, getDoc } from "firebase/firestore";
 
 export function FresherSideMenu({ userId, companyId, deptId, companyName, roadmapGenerated = false }) {
   const location = useLocation();
+  const pathname = location.pathname || "";
   const state = location.state || {};
 
   const navigate = useNavigate();
@@ -15,6 +16,43 @@ const [finalStatus, setFinalStatus] = useState("locked");
 const [certificateUnlocked, setCertificateUnlocked] = useState(false);
 const [claimLoading, setClaimLoading] = useState(false);
 console.log(email);
+
+  const isActive = (itemKey) => {
+    if (itemKey === "dashboard") return pathname === "/fresher-dashboard";
+    if (itemKey === "about") return pathname === "/about";
+    if (itemKey === "roadmap") {
+      return (
+        pathname.startsWith("/roadmap") ||
+        pathname.startsWith("/module-details") ||
+        pathname.startsWith("/fresher-training") ||
+        pathname.startsWith("/quiz/") ||
+        pathname.startsWith("/quiz-results/")
+      );
+    }
+    if (itemKey === "assistant") return pathname.startsWith("/chatbot");
+    if (itemKey === "progress") return pathname.startsWith("/fresher-progress");
+    if (itemKey === "settings") return pathname.startsWith("/fresher-settings");
+    if (itemKey === "certificate") {
+      return (
+        pathname.startsWith("/certificate") ||
+        pathname.startsWith("/final-quiz") ||
+        pathname.startsWith("/final-quiz-instructions") ||
+        pathname.startsWith("/final-quiz-results")
+      );
+    }
+    return false;
+  };
+
+  const getMenuButtonClass = ({ active, disabled = false }) => {
+    if (disabled) {
+      return "text-left px-4 py-2 rounded-lg transition font-medium relative group opacity-60 cursor-not-allowed text-[#AFCBE3] bg-gray-500/10";
+    }
+    return `text-left px-4 py-2 rounded-lg transition font-medium border-b-2 ${
+      active
+        ? "border-[#00FFFF] text-[#00FFFF] bg-[#00FFFF]/10"
+        : "border-transparent text-[#AFCBE3] hover:bg-[#00FFFF]/20"
+    }`;
+  };
 
   useEffect(() => {
     const loadUserState = async () => {
@@ -96,14 +134,14 @@ console.log(email);
         onClick={() =>
           navigate("/fresher-dashboard", { state: { userId, companyId, deptId, companyName } })
         }
-        className="text-left px-4 py-2 rounded-lg hover:bg-[#00FFFF]/20 transition font-medium"
+        className={getMenuButtonClass({ active: isActive("dashboard") })}
       >
         Dashboard
       </button>
 
       <button
         onClick={() => navigate("/about")}
-        className="text-left px-4 py-2 rounded-lg hover:bg-[#00FFFF]/20 transition font-medium"
+        className={getMenuButtonClass({ active: isActive("about") })}
       >
         About Us
       </button>
@@ -113,11 +151,7 @@ console.log(email);
           if (!roadmapGenerated) return;
           navigate(`/roadmap/${companyId}/${deptId}/${userId}/${companyName}`);
         }}
-        className={`text-left px-4 py-2 rounded-lg transition font-medium relative group ${
-          roadmapGenerated
-            ? "hover:bg-[#00FFFF]/20 cursor-pointer text-[#AFCBE3]"
-            : "opacity-60 cursor-not-allowed text-[#AFCBE3] bg-gray-500/10"
-        }`}
+        className={`${getMenuButtonClass({ active: isActive("roadmap"), disabled: !roadmapGenerated })} relative group`}
       >
         {!roadmapGenerated && <span className="absolute top-1 left-1 text-xs">🔒</span>}
         <span className={roadmapGenerated ? "" : "ml-2"}>RoadMap</span>
@@ -132,11 +166,7 @@ console.log(email);
           if (!roadmapGenerated) return;
           navigate("/chatbot", { state: { userId, companyId, deptId, companyName, email } });
         }}
-        className={`text-left px-4 py-2 rounded-lg transition font-medium relative group ${
-          roadmapGenerated
-            ? "hover:bg-[#00FFFF]/20 cursor-pointer text-[#AFCBE3]"
-            : "opacity-60 cursor-not-allowed text-[#AFCBE3] bg-gray-500/10"
-        }`}
+        className={`${getMenuButtonClass({ active: isActive("assistant"), disabled: !roadmapGenerated })} relative group`}
       >
         {!roadmapGenerated && <span className="absolute top-1 left-1 text-xs">🔒</span>}
         <span className={roadmapGenerated ? "" : "ml-2"}>Training Assistant</span>
@@ -152,11 +182,7 @@ console.log(email);
           if (!roadmapGenerated) return;
           navigate("/fresher-progress", { state: { userId, companyId, deptId, companyName } });
         }}
-        className={`text-left px-4 py-2 rounded-lg transition font-medium relative group ${
-          roadmapGenerated
-            ? "hover:bg-[#00FFFF]/20 cursor-pointer text-[#AFCBE3]"
-            : "opacity-60 cursor-not-allowed text-[#AFCBE3] bg-gray-500/10"
-        }`}
+        className={`${getMenuButtonClass({ active: isActive("progress"), disabled: !roadmapGenerated })} relative group`}
       >
         {!roadmapGenerated && <span className="absolute top-1 left-1 text-xs">🔒</span>}
         <span className={roadmapGenerated ? "" : "ml-2"}>Progress Details</span>
@@ -171,18 +197,14 @@ console.log(email);
         onClick={() =>
           navigate("/fresher-settings", { state: { userId, companyId, deptId, companyName } })
         }
-        className="text-left px-4 py-2 rounded-lg hover:bg-[#00FFFF]/20 transition font-medium"
+        className={getMenuButtonClass({ active: isActive("settings") })}
       >
         Settings
       </button>
 
       <button
         onClick={handleClaimCertificate}
-        className={`text-left px-4 py-2 rounded-lg transition font-medium relative group ${
-          roadmapGenerated
-            ? "hover:bg-[#00FFFF]/20 cursor-pointer text-[#AFCBE3]"
-            : "opacity-60 cursor-not-allowed text-[#AFCBE3] bg-gray-500/10"
-        }`}
+        className={`${getMenuButtonClass({ active: isActive("certificate"), disabled: !roadmapGenerated })} relative group`}
       >
         {!roadmapGenerated && <span className="absolute top-1 left-1 text-xs">🔒</span>}
         <span className={roadmapGenerated ? "" : "ml-2"}>

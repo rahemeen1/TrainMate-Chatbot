@@ -29,7 +29,7 @@ const MAX_CONTEXT_CHARS = 8000;
 const QUIZ_PASS_THRESHOLD = 80; // Base threshold, AI can adjust
 const MAX_QUIZ_ATTEMPTS = 3; // Maximum possible attempts (AI decides actual count)
 const ADMIN_FINAL_RETRY_ATTEMPTS = 1;
-const QUIZ_UNLOCK_TIME_PERCENT = 0.5; // Quiz unlocks after 50% of module time
+const QUIZ_UNLOCK_TIME_PERCENT = 0.7; // Quiz unlocks after 70% of module time
 const TRAINING_LOCK_TEST_EMAIL = "trainmate01@gmail.com";
 const FINAL_QUIZ_MAX_ATTEMPTS = 2;
 const FINAL_QUIZ_PASS_THRESHOLD = 70;
@@ -64,7 +64,7 @@ async function notifyTrainingLockForTesting({
 }
 
 /**
- * Calculate when quiz should be unlocked (50% of module time)
+ * Calculate when quiz should be unlocked (70% of module time)
  * @param {Date} moduleStartDate - When module became active
  * @param {number} estimatedDays - Total estimated days for the module
  * @returns {Date} - The date/time when quiz unlocks
@@ -76,7 +76,7 @@ function calculateQuizUnlockTime(moduleStartDate, estimatedDays) {
 		? moduleStartDate.getTime() 
 		: moduleStartDate.toDate ? moduleStartDate.toDate().getTime() : new Date(moduleStartDate).getTime();
 	
-	const unlockDelay = estimatedDays * QUIZ_UNLOCK_TIME_PERCENT * 24 * 60 * 60 * 1000; // 50% of days in ms
+	const unlockDelay = estimatedDays * QUIZ_UNLOCK_TIME_PERCENT * 24 * 60 * 60 * 1000; // 70% of days in ms
 	return new Date(startTime + unlockDelay);
 }
 
@@ -86,7 +86,7 @@ function calculateQuizUnlockTime(moduleStartDate, estimatedDays) {
  * @returns {Object} - { isUnlocked: boolean, unlockTime: Date, remainingTime: string }
  */
 function checkQuizTimeUnlock(moduleData) {
-	const startDate = moduleData.startedAt || moduleData.startDate;
+	const startDate = moduleData.startedAt || moduleData.startDate || moduleData.FirstTimeCreatedAt || moduleData.createdAt;
 	const estimatedDays = moduleData.estimatedDays || 1;
 	
 	if (!startDate) {
@@ -130,7 +130,7 @@ function checkQuizTimeUnlock(moduleData) {
 		isUnlocked: false,
 		unlockTime,
 		remainingTime: remainingTimeStr,
-		message: `Quiz will be available after you've spent 50% of the module time. Unlock in: ${remainingTimeStr}`
+		message: `Quiz will be available after you've spent 70% of the module time. Unlock in: ${remainingTimeStr}`
 	};
 }
 
@@ -1146,8 +1146,7 @@ export const generateQuiz = async (req, res) => {
 			});
 		}
 		
-		/*
-		// 🔒 CHECK: Quiz unlock time requirement (50% of module time)
+		// 🔒 CHECK: Quiz unlock time requirement (70% of module time)
 		console.log(`Checking quiz unlock time requirement...`);
 		const quizUnlockStatus = checkQuizTimeUnlock(moduleData);
 		
@@ -1163,7 +1162,6 @@ export const generateQuiz = async (req, res) => {
 		}
 		
 		console.log(`✅ Quiz unlock requirement met - generating quiz`);
-		*/
 		
 		// Fetch department settings for quiz configuration
 		console.log(`Fetching department settings...`);
@@ -1373,8 +1371,7 @@ export const submitQuiz = async (req, res) => {
 			Math.max(MAX_QUIZ_ATTEMPTS, maxAttemptsOverride)
 		);
 
-		/*
-		// 🔒 CHECK: Quiz unlock time requirement (50% of module time)
+		// 🔒 CHECK: Quiz unlock time requirement (70% of module time)
 		console.log(`Checking quiz unlock time requirement...`);
 		const quizUnlockStatus = checkQuizTimeUnlock(moduleData);
 		
@@ -1390,7 +1387,6 @@ export const submitQuiz = async (req, res) => {
 		}
 		
 		console.log(`✅ Quiz unlock requirement met - proceeding with submission`);
-		*/
 
 		const quizSnap = await quizRef.get();
 		if (!quizSnap.exists) {

@@ -147,7 +147,7 @@ function Certificate() {
   };
 
   const Loader = () => (
-    <div className="flex min-h-screen bg-[#031C3A] text-white items-center justify-center">
+    <div className="flex min-h-screen fresher-page-shell text-white items-center justify-center">
       <div className="flex flex-col items-center gap-4">
         <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-[#00FFFF]" />
         <p className="text-lg font-semibold">Loading your certificate...</p>
@@ -160,7 +160,7 @@ function Certificate() {
 
   if (!roadmapGenerated) {
     return (
-      <div className="flex min-h-screen bg-[#031C3A] text-white items-center justify-center">
+      <div className="flex min-h-screen fresher-page-shell text-white items-center justify-center">
         <div className="text-center">
           <div className="text-4xl mb-3">🔒</div>
           <h2 className="text-2xl font-bold text-[#00FFFF] mb-3">Certificate Locked</h2>
@@ -172,7 +172,7 @@ function Certificate() {
 
   if (!certificateUnlocked) {
     return (
-      <div className="flex min-h-screen bg-[#031C3A] text-white items-center justify-center">
+      <div className="flex min-h-screen fresher-page-shell text-white items-center justify-center">
         <div className="text-center max-w-xl px-6">
           <div className="text-4xl mb-3">🔒</div>
           <h2 className="text-2xl font-bold text-[#00FFFF] mb-3">Certificate Locked</h2>
@@ -200,7 +200,7 @@ function Certificate() {
   const programName = trainingOn || companyName || "Training";
 
   return (
-    <div className="min-h-screen bg-[#031C3A] text-white overflow-y-auto">
+    <div className="min-h-screen fresher-page-shell text-white overflow-y-auto">
       <div className="min-h-screen p-8 bg-[#031C3A] flex flex-col items-center justify-center">
         <div className="w-full flex justify-start mb-4 -ml-2">
           <button

@@ -353,7 +353,7 @@ export async function createFresherWelcomeEvent({
   deptName,
   trainingTopic,
   maxQuizAttempts = 3,
-  quizUnlockPercent = 50,
+  quizUnlockPercent = 70,
   agenticMessage,
   messageTone,
   createdAt,

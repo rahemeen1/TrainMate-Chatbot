@@ -60,7 +60,7 @@ export default function CompanySidebar({ companyId, companyName }) {
       if (confirmed) navigate("/");
     } else {
       navigate(opt.path, {
-        state: { companyId, companyName },
+        state: { companyId: resolvedCompanyId, companyName: resolvedCompanyName },
       });
     }
   };

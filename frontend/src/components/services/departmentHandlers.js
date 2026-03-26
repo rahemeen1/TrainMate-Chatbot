@@ -264,7 +264,7 @@ export const addFresherUser = async ({
 
       quizPolicy: {
         maxQuizAttempts: 3,
-        quizUnlockPercent: 50,
+        quizUnlockPercent: 70,
       },
 
       createdAt: serverTimestamp(),

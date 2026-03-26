@@ -360,9 +360,9 @@ export async function aiAgenticSendModuleNotifications({
 
   // Quiz unlock notifications
   // NOTE: Quiz unlock notifications are now sent by the daily reminder cron job
-  // when the module reaches 50% of its estimated time (quiz unlock requirement)
+  // when the module reaches 70% of its estimated time (quiz unlock requirement)
   // See scheduledJobs.js for implementation
-  console.log(`📝 Quiz unlock notifications will be sent when module reaches 50% time completion`);
+  console.log(`📝 Quiz unlock notifications will be sent when module reaches 70% time completion`);
 }
 
 /**
