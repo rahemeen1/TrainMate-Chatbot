@@ -8,6 +8,7 @@ import { useNavigate } from "react-router-dom";
 import ViewCompanies from "./ViewCompanies";
 import ManageCompanies from "./ManageCompanies";
 import SuperAdminAnalytics from "./SuperAdminAnalytics";
+import ManageLicensingPlans from "./ManageLicensingPlans";
 
 
 export default function AdminDashboard() {
@@ -281,6 +282,15 @@ export default function AdminDashboard() {
 
           <li
             className={`cursor-pointer p-2 rounded-lg ${
+              activeSection === "licensingPlans" ? "bg-[#00FFFF]/20" : ""
+            }`}
+            onClick={() => handleSectionChange("licensingPlans")}
+          >
+            Licensing Plans
+          </li>
+
+          <li
+            className={`cursor-pointer p-2 rounded-lg ${
               activeSection === "manageAdmins" ? "bg-[#00FFFF]/20" : ""
             }`}
             onClick={() => handleSectionChange("manageAdmins")}
@@ -303,6 +313,7 @@ export default function AdminDashboard() {
           {activeSection === "viewCompanies" }
           {activeSection === "manageCompanies" }
           {activeSection === "manageAdmins" }
+          {activeSection === "licensingPlans" }
 
         {activeSection === "overview" && (
           <div className="max-w-7xl mx-auto space-y-8">
@@ -339,6 +350,7 @@ export default function AdminDashboard() {
         {activeSection === "manageAdmins" && <SuperAdminSettings />}
         {activeSection === "viewCompanies" && <ViewCompanies />}
         {activeSection === "manageCompanies" && <ManageCompanies />}
+        {activeSection === "licensingPlans" && <ManageLicensingPlans />}
       </div>
     </div>
   );

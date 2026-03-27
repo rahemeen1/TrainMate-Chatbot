@@ -1,6 +1,6 @@
 
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   addDoc,
@@ -16,21 +16,11 @@ import {
 } from "firebase/firestore";
 import { db } from "../../firebase";
 import CompanySidebar from "./CompanySidebar";
-
-const LICENSE_PLAN_CONFIG = {
-  "License Basic": {
-    title: "Basic License",
-    subtitle: "Core Training",
-    usdPrice: 59,
-    inrPrice: 15500,
-  },
-  "License Pro": {
-    title: "Pro License",
-    subtitle: "Adaptive Training Suite",
-    usdPrice: 199,
-    inrPrice: 52500,
-  },
-};
+import {
+  DEFAULT_LICENSING_PLANS,
+  getLicensingPlans,
+  planKeyFromLicenseName,
+} from "../../services/licensingConfig";
 
 const hashString = async (value) => {
   const encoder = new TextEncoder();
@@ -50,7 +40,23 @@ export default function CompanyLicensePayment() {
   const targetLicense = location?.state?.targetLicense || "License Basic";
   const returnTo = location?.state?.returnTo || "/CompanySpecific/CompanyDetails";
 
-  const selectedPlan = LICENSE_PLAN_CONFIG[targetLicense] || LICENSE_PLAN_CONFIG["License Basic"];
+  const [plans, setPlans] = useState(DEFAULT_LICENSING_PLANS);
+
+  useEffect(() => {
+    const fetchPlans = async () => {
+      try {
+        const data = await getLicensingPlans();
+        setPlans(data);
+      } catch (err) {
+        console.error("Failed to load licensing plans:", err);
+      }
+    };
+
+    fetchPlans();
+  }, []);
+
+  const selectedPlanKey = planKeyFromLicenseName(targetLicense);
+  const selectedPlan = plans[selectedPlanKey] || plans.basic;
 
   const [form, setForm] = useState({
     cardHolderName: "",
@@ -171,8 +177,8 @@ export default function CompanyLicensePayment() {
         <div className="max-w-3xl mx-auto space-y-6">
           <div className="rounded-2xl bg-[#021B36]/80 border border-[#00FFFF30] p-6">
             <p className="text-xs text-[#8EB6D3] uppercase tracking-[0.14em]">Secure Upgrade</p>
-            <h1 className="text-3xl font-bold text-[#E8F7FF] mt-1">Activate {selectedPlan.title}</h1>
-            <p className="text-[#AFCBE3] mt-2">{selectedPlan.subtitle}</p>
+            <h1 className="text-3xl font-bold text-[#E8F7FF] mt-1">Activate {selectedPlan.name} License</h1>
+            <p className="text-[#AFCBE3] mt-2">{selectedPlan.label}</p>
             <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="p-3 rounded-lg bg-[#031C3A]/70 border border-[#00FFFF30]">
                 <p className="text-xs text-[#8EB6D3] uppercase">USD</p>

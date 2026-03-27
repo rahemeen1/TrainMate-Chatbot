@@ -2,145 +2,42 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import Header from "./Header";
 import {
-  BadgeCheck,
-  Bot,
-  Building,
-  Calendar,
   Check,
-  ClipboardList,
-  Gauge,
-  Layers,
-  Mail,
   MessageCircle,
   Sparkles,
-  Target,
 } from "lucide-react";
 import EngagementModal from "./EngagementModal";
 import AuthModal from "../AuthModal";
-
-const plans = [
-  {
-    name: "Basic",
-    label: "Core Training",
-    accent: "#00FFFF",
-    price: "$59",
-    capacity: "10 to 15 freshers",
-    departments: "Up to 3 departments",
-    includes: [
-      "Customized roadmap with module details",
-      "Email updates for training milestones",
-      "Google Calendar integration",
-      "Basic completion certificate",
-      "Admin progress view for every fresher",
-      "Shared onboarding timeline",
-    ],
-  },
-  {
-    name: "Pro",
-    label: "Adaptive Training Suite",
-    accent: "#00FFFF",
-    price: "$199",
-    capacity: "20 to 40 freshers",
-    departments: "5+ departments",
-    includes: [
-      "Full quiz workflow with AI scores",
-      "Agentic email nudges for cohorts",
-      "Google Calendar automation",
-      "Weak-area roadmap regeneration",
-      "Final quiz to unlock certificates",
-      "Admin chatbot for fresher details",
-    ],
-  },
-];
-
-const featureRows = [
-  {
-    icon: Layers,
-    title: "Customized roadmap",
-    basic: true,
-    pro: true,
-  },
-  {
-    icon: ClipboardList,
-    title: "Module details per role",
-    basic: true,
-    pro: true,
-  },
-  {
-    icon: Building,
-    title: "Department capacity",
-    basic: "3",
-    pro: "5+",
-  },
-  {
-    icon: Calendar,
-    title: "Google Calendar integration",
-    basic: true,
-    pro: true,
-  },
-  {
-    icon: Mail,
-    title: "Email updates for milestones",
-    basic: true,
-    pro: true,
-  },
-  {
-    icon: Mail,
-    title: "Agentic email nudges",
-    basic: false,
-    pro: true,
-  },
-  {
-    icon: BadgeCheck,
-    title: "Admin view of fresher progress",
-    basic: true,
-    pro: true,
-  },
-  {
-    icon: Sparkles,
-    title: "Quizzes with AI scoring",
-    basic: false,
-    pro: true,
-  },
-  {
-    icon: Target,
-    title: "Roadmap regeneration from weak areas",
-    basic: false,
-    pro: true,
-  },
-  {
-    icon: Gauge,
-    title: "Agentic scores for every quiz",
-    basic: false,
-    pro: true,
-  },
-  {
-    icon: BadgeCheck,
-    title: "Final quiz unlocks certificate",
-    basic: false,
-    pro: true,
-  },
-  {
-    icon: BadgeCheck,
-    title: "Basic completion certificate",
-    basic: true,
-    pro: false,
-  },
-  {
-    icon: Bot,
-    title: "Admin chatbot for fresher details",
-    basic: false,
-    pro: true,
-  },
-];
+import { DEFAULT_LICENSING_PLANS, getLicensingPlans } from "../../services/licensingConfig";
 
 export default function ComparePlans() {
   const [engagementOpen, setEngagementOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState("login");
+  const [plans, setPlans] = useState(DEFAULT_LICENSING_PLANS);
+
+  const planList = [plans.basic, plans.pro];
+  const featureRows = Array.from(
+    new Set([...(plans.basic?.includes || []), ...(plans.pro?.includes || [])])
+  ).map((feature) => ({
+    title: feature,
+    basic: (plans.basic?.includes || []).includes(feature),
+    pro: (plans.pro?.includes || []).includes(feature),
+  }));
 
   useEffect(() => {
     window.scrollTo(0, 0);
+
+    const fetchPlans = async () => {
+      try {
+        const data = await getLicensingPlans();
+        setPlans(data);
+      } catch (err) {
+        console.error("Failed to load licensing plans:", err);
+      }
+    };
+
+    fetchPlans();
   }, []);
 
   return (
@@ -177,7 +74,7 @@ export default function ComparePlans() {
               From core roadmap tracking to AI-driven assessments, choose the coverage you need to onboard at scale.
             </p>
             <div className="flex flex-wrap gap-3">
-              {plans.map((plan) => (
+              {planList.map((plan) => (
                 <div key={plan.name} className="flex flex-col gap-2">
                   <span className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs text-white/70">
                     {plan.capacity}
@@ -256,7 +153,6 @@ export default function ComparePlans() {
                     className="contents border-t border-white/10"
                   >
                     <div className="flex items-center gap-3 border-t border-white/10 px-4 py-3 text-white/80">
-                      <row.icon size={16} className="text-white/50" />
                       <span>{row.title}</span>
                     </div>
                     <div className="flex items-center justify-center border-t border-white/10 px-4 py-3">
