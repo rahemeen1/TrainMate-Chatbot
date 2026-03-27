@@ -6,6 +6,9 @@ import { db } from "../../firebase";
 import { collection, doc, getDoc, getDocs, setDoc } from "firebase/firestore";
 import { PaperAirplaneIcon, ArrowLeftIcon } from "@heroicons/react/24/solid";
 import { UserCircleIcon, CpuChipIcon } from "@heroicons/react/24/solid";
+import { FEATURE_FLAGS, isFeatureAvailable } from "../../services/featureAccess";
+import { getCompanyLicensePlan } from "../../services/companyLicense";
+import CompanyPageLoader from "../CompanySpecific/CompanyPageLoader";
 
 
 export default function FresherChatbot() {
@@ -31,6 +34,31 @@ export default function FresherChatbot() {
   const [mode, setMode] = useState("new"); // new | read
   const [selectedDate, setSelectedDate] = useState(null);
   const todayDate = new Date().toISOString().split("T")[0];
+
+  const [licenseCheckLoading, setLicenseCheckLoading] = useState(true);
+  const [hasChatbotAccess, setHasChatbotAccess] = useState(false);
+
+  /* Check license access */
+  useEffect(() => {
+    const checkChatbotAccess = async () => {
+      if (!companyId) {
+        setLicenseCheckLoading(false);
+        return;
+      }
+
+      try {
+        const licensePlan = await getCompanyLicensePlan(companyId);
+        const hasAccess = isFeatureAvailable(licensePlan, FEATURE_FLAGS.CHATBOT);
+        setHasChatbotAccess(hasAccess);
+      } catch (err) {
+        console.error("Error checking chatbot access:", err);
+      } finally {
+        setLicenseCheckLoading(false);
+      }
+    };
+
+    checkChatbotAccess();
+  }, [companyId]);
 
 
   /* ---------------- USER LOAD ---------------- */
@@ -296,6 +324,30 @@ useEffect(() => {
   chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
 }, [messages, typing]);
 
+  if (licenseCheckLoading) {
+    return <CompanyPageLoader message="Verifying chatbot access..." layout="page" />;
+  }
+
+  if (!hasChatbotAccess) {
+    return (
+      <div className="flex min-h-screen bg-[#031C3A] text-white items-center justify-center p-6">
+        <div className="max-w-md rounded-2xl bg-[#021B36] border-2 border-[#00FFFF]/30 p-8 text-center space-y-6">
+          <div className="text-6xl">🔒</div>
+          <div>
+            <h1 className="text-2xl font-bold text-[#00FFFF] mb-2">Feature Locked</h1>
+            <p className="text-[#AFCBE3]">AI chatbot is not available on your current plan.</p>
+            <p className="text-sm text-[#9FC2DA] mt-2">Please upgrade to Pro to unlock chatbot features.</p>
+          </div>
+          <button
+            onClick={() => navigate(-1)}
+            className="w-full px-4 py-2 rounded-lg bg-[#00FFFF]/20 text-[#00FFFF] border border-[#00FFFF]/40 hover:bg-[#00FFFF]/30 transition"
+          >
+            Go Back
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#031C3A] text-white">

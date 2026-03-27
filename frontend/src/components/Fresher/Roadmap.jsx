@@ -7,6 +7,8 @@ import { collection, getDocs, doc, getDoc, updateDoc } from "firebase/firestore"
 import axios from "axios";
 import { FresherSideMenu } from "./FresherSideMenu";
 import TrainingLockedScreen from "./TrainingLockedScreen";
+import { getCompanyLicensePlan } from "../../services/companyLicense";
+import CompanyPageLoader from "../CompanySpecific/CompanyPageLoader";
 
 export default function Roadmap() {
   const BASE_MAX_QUIZ_ATTEMPTS = 3;
@@ -19,6 +21,7 @@ export default function Roadmap() {
   const [loadingModuleId, setLoadingModuleId] = useState(null);
   const [roadmapGeneratedAt, setRoadmapGeneratedAt] = useState(null);
   const [userData, setUserData] = useState(null);
+  const [licensePlan, setLicensePlan] = useState("License Basic");
   const generationRequestedRef = useRef(false);
 
 const getModuleStartDate = (module) => {
@@ -127,6 +130,10 @@ const getModuleStartDate = (module) => {
 
     const loadRoadmap = async () => {
       try {
+        // Fetch company license plan
+        const planType = await getCompanyLicensePlan(companyId);
+        setLicensePlan(planType);
+
         const userRef = doc(db, "freshers", companyId, "departments", deptId, "users", userId);
         const userSnap = await getDoc(userRef);
         if (userSnap.exists()) {
@@ -414,16 +421,7 @@ const isModuleExpired = (module) => {
     navigate(`/fresher-training/${companyId}/${deptId}/${userId}/${moduleId}`);
   };
   
-if (loading)
-  return (
-    <div className="flex min-h-screen bg-[#031C3A] text-white items-center justify-center">
-      <div className="flex flex-col items-center gap-4">
-        <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-[#00FFFF]" />
-        <p className="text-lg font-semibold">Loading roadmap modules...</p>
-        <p className="text-sm text-[#AFCBE3]">Please wait, this may take a few seconds.</p>
-      </div>
-    </div>
-  );
+if (loading) return <CompanyPageLoader message="Loading roadmap modules..." />;
 
 
 
@@ -564,9 +562,9 @@ if (!roadmap.length)
     {module.moduleExpired ? "⏰ EXPIRED" : module.completed ? "✓ Completed" : "In Progress"}
   </span>
 
-  {/* 🔒 TIME LOCK WARNING: Quiz not yet available */}
+  {/* 🔒 TIME LOCK WARNING: Quiz not yet available (Pro only) */}
   {/* Displayed when quiz is locked due to insufficient time elapsed (< unlock threshold of module time) */}
-  {!module.locked && !module.completed && !module.quizTimeUnlocked && (
+  {licensePlan === "License Pro" && !module.locked && !module.completed && !module.quizTimeUnlocked && (
     <div className="mt-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
       <div className="flex items-start gap-2">
         <span className="text-yellow-400 text-xl">⚠️</span>
@@ -581,9 +579,9 @@ if (!roadmap.length)
     </div>
   )}
   
-  {/* 🔓 TIME LOCK CLEARED: Quiz is now available */}
+  {/* 🔓 TIME LOCK CLEARED: Quiz is now available (Pro only) */}
   {/* Displayed when the module unlock threshold has elapsed - quiz is unlocked and ready */}
-  {!module.locked && !module.completed && module.quizTimeUnlocked && !module.quizPassed && (
+  {licensePlan === "License Pro" && !module.locked && !module.completed && module.quizTimeUnlocked && !module.quizPassed && (
     <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
       <div className="flex items-start gap-2">
         <span className="text-blue-400 text-xl">📝</span>
@@ -631,47 +629,49 @@ if (!roadmap.length)
 >
   View Details
 </button>
-      {/* Quiz button - disabled if quiz locked or time requirement not met */}
-      <button
-        onClick={() =>
-          navigate(
-            `/quiz/${companyId}/${deptId}/${userId}/${module.id}`,
-            { state: { companyName } }
-          )
-        }
-        disabled={!module.quizPassed && !module.quizTimeUnlocked}
-        title={
-          !module.quizPassed && !module.quizTimeUnlocked
-            ? module.quizUnlockMessage || "Quiz is locked until required module time is completed"
-            : module.quizAttempts > 0
-            ? `Retry Quiz - TrainMate will analyze and decide retry allocation`
-            : "Take Quiz - TrainMate will evaluate and provide feedback"
-        }
-        className={`px-4 py-2 border border-[#00FFFF] text-[#00FFFF] rounded relative group
-          hover:bg-[#00FFFF]/10 disabled:opacity-50 disabled:cursor-not-allowed
-        `}
-      >
-        {module.quizPassed ? "✅ Quiz Passed" :
-         module.quizAttempts > 0 
-           ? ` Retry (Attempt ${module.quizAttempts + 1})` 
-           : "📝 Take Quiz"}
-        
-        {/* Tooltip for AI-powered quiz */}
-        {module.quizTimeUnlocked && (
-          <div className="absolute left-full top-1/2 transform -translate-y-1/2 ml-3 hidden group-hover:block w-72 bg-[#021B36] border border-purple-500 rounded-lg p-3 text-sm z-10 whitespace-normal">
-            <div className="text-purple-300 font-semibold mb-1 flex items-center gap-2">
-              <span></span> TrainMate-Powered Assessment
+      {/* Quiz button - only available for Pro plan users */}
+      {licensePlan === "License Pro" && (
+        <button
+          onClick={() =>
+            navigate(
+              `/quiz/${companyId}/${deptId}/${userId}/${module.id}`,
+              { state: { companyName } }
+            )
+          }
+          disabled={!module.quizPassed && !module.quizTimeUnlocked}
+          title={
+            !module.quizPassed && !module.quizTimeUnlocked
+              ? module.quizUnlockMessage || "Quiz is locked until required module time is completed"
+              : module.quizAttempts > 0
+              ? `Retry Quiz - TrainMate will analyze and decide retry allocation`
+              : "Take Quiz - TrainMate will evaluate and provide feedback"
+          }
+          className={`px-4 py-2 border border-[#00FFFF] text-[#00FFFF] rounded relative group
+            hover:bg-[#00FFFF]/10 disabled:opacity-50 disabled:cursor-not-allowed
+          `}
+        >
+          {module.quizPassed ? "✅ Quiz Passed" :
+           module.quizAttempts > 0 
+             ? ` Retry (Attempt ${module.quizAttempts + 1})` 
+             : "📝 Take Quiz"}
+          
+          {/* Tooltip for AI-powered quiz */}
+          {module.quizTimeUnlocked && (
+            <div className="absolute left-full top-1/2 transform -translate-y-1/2 ml-3 hidden group-hover:block w-72 bg-[#021B36] border border-purple-500 rounded-lg p-3 text-sm z-10 whitespace-normal">
+              <div className="text-purple-300 font-semibold mb-1 flex items-center gap-2">
+                <span></span> TrainMate-Powered Assessment
+              </div>
+              <div className="text-[#AFCBE3] text-xs space-y-1">
+                <p>• It analyzes your performance in real-time</p>
+                <p>• Dynamically allocates retry attempts (1-3)</p>
+                <p>• Provides personalized recommendations</p>
+                <p>• Adapts module timeline based on progress</p>
+              </div>
+              <div className="absolute right-full top-1/2 transform -translate-y-1/2 w-0 h-0 border-t-8 border-b-8 border-r-8 border-transparent border-r-purple-500"></div>
             </div>
-            <div className="text-[#AFCBE3] text-xs space-y-1">
-              <p>• It analyzes your performance in real-time</p>
-              <p>• Dynamically allocates retry attempts (1-3)</p>
-              <p>• Provides personalized recommendations</p>
-              <p>• Adapts module timeline based on progress</p>
-            </div>
-            <div className="absolute right-full top-1/2 transform -translate-y-1/2 w-0 h-0 border-t-8 border-b-8 border-r-8 border-transparent border-r-purple-500"></div>
-          </div>
-        )}
-      </button>
+          )}
+        </button>
+      )}
 
     </div>
   )}

@@ -3,12 +3,14 @@ import TrainingLockedScreen from "./TrainingLockedScreen";
 import { useState, useEffect } from "react";
 import { db } from "../../firebase";
 import { doc, getDoc, collection, getDocs } from "firebase/firestore";
+import { getCompanyLicensePlan } from "../../services/companyLicense";
 
 export default function About() {
   const [companyName, setCompanyName] = useState("");
   const [userId, setUserId] = useState("");
   const [companyId, setCompanyId] = useState("");
   const [deptId, setDeptId] = useState("");
+  const [licensePlan, setLicensePlan] = useState("License Basic");
   const [roadmapGenerated, setRoadmapGenerated] = useState(false);
   const [userData, setUserData] = useState(null);
 
@@ -29,6 +31,9 @@ export default function About() {
 
     const checkRoadmapAndLock = async () => {
       try {
+        const detectedPlan = await getCompanyLicensePlan(companyId);
+        setLicensePlan(detectedPlan);
+
         // Check if roadmap exists
         const roadmapRef = collection(
           db,
@@ -57,7 +62,7 @@ export default function About() {
     checkRoadmapAndLock();
   }, [userId, companyId, deptId]);
 
-  const steps = [
+  const proSteps = [
     {
       id: 1,
       title: "Complete Onboarding",
@@ -95,6 +100,46 @@ export default function About() {
     }
   ];
 
+  const basicSteps = [
+    {
+      id: 1,
+      title: "Complete Onboarding",
+      description: "Upload your CV and share your expertise level. This helps TrainMate understand your current skill level and generate the right learning path for you."
+    },
+    {
+      id: 2,
+      title: "Generate Personalized Roadmap",
+      description: "TrainMate creates a role-specific roadmap using your onboarding details, company requirements, and skill gaps."
+    },
+    {
+      id: 3,
+      title: "Learn Module by Module",
+      description: "Work through each module in sequence within the allocated duration and complete all required learning tasks."
+    },
+    {
+      id: 4,
+      title: "Use Training Assistant",
+      description: "Use the AI training assistant for concept explanations, guidance, and daily support while completing modules."
+    },
+    {
+      id: 5,
+      title: "Complete All Modules",
+      description: "Finish every module in your roadmap and maintain consistent progress within the training timeline."
+    },
+    {
+      id: 6,
+      title: "Completion Verification",
+      description: "After all modules are completed, TrainMate verifies your completion status and unlocks certificate eligibility."
+    },
+    {
+      id: 7,
+      title: "Receive Certificate",
+      description: "Claim your training completion certificate once all required modules are successfully completed."
+    }
+  ];
+
+  const steps = licensePlan === "License Pro" ? proSteps : basicSteps;
+
   // Show training locked screen if training is locked and roadmap is generated
   if (userData?.trainingLocked && roadmapGenerated) {
     return <TrainingLockedScreen userData={userData} />;
@@ -122,7 +167,7 @@ export default function About() {
               Training Flow
             </h1>
             <p className="text-[#AFCBE3] text-base md:text-lg mb-5">
-              Follow these 7 steps to complete your training and earn your certificate
+              Follow these {steps.length} steps to complete your training and earn your certificate
             </p>
             <div className="bg-[#021B36]/60 border border-[#00FFFF]/30 rounded-xl p-5 md:p-6 mb-8 md:mb-10">
               <p className="text-[#AFCBE3] text-sm leading-relaxed">
@@ -177,7 +222,9 @@ export default function About() {
             <div className="bg-[#021B36]/60 border border-[#00FFFF]/30 rounded-xl p-5 md:p-6 hover:border-[#00FFFF]/70 transition-all duration-300">
               <h3 className="text-[#00FFFF] font-bold mb-3">Key Reminder</h3>
               <p className="text-[#AFCBE3] text-sm">
-                Complete each step in order. Stay consistent with your training schedule, master each module quiz, and use the Training Assistant whenever you need clarification. Your dedication will lead to successful completion and certification.
+                {licensePlan === "License Pro"
+                  ? "Complete each step in order. Stay consistent with your training schedule, master each module quiz, and use the Training Assistant whenever you need clarification. Your dedication will lead to successful completion and certification."
+                  : "Complete each step in order, stay consistent with your training schedule, and use the Training Assistant whenever needed. Finishing all modules on time will unlock your certificate."}
               </p>
             </div>
           </div>

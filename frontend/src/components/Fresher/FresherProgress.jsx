@@ -6,6 +6,8 @@ import { db } from "../../firebase";
 import { FresherSideMenu } from "./FresherSideMenu";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import TrainingLockedScreen from "./TrainingLockedScreen";
+import { getCompanyLicensePlan } from "../../services/companyLicense";
+import CompanyPageLoader from "../CompanySpecific/CompanyPageLoader";
 
 export default function FresherProgress() {
   const location = useLocation();
@@ -19,11 +21,14 @@ export default function FresherProgress() {
   const [animatedProgress, setAnimatedProgress] = useState(0);
   const [roadmapModulesDetailed, setRoadmapModulesDetailed] = useState([]);
   const [activityTimeline, setActivityTimeline] = useState([]);
+  const [licensePlan, setLicensePlan] = useState("License Basic");
 
   const toDate = (raw) => {
     if (!raw) return null;
     return raw.toDate ? raw.toDate() : new Date(raw);
   };
+
+  const isValidDate = (value) => value instanceof Date && !Number.isNaN(value.getTime());
 
   useEffect(() => {
     if (!userId || !companyId || !deptId) {
@@ -33,6 +38,9 @@ export default function FresherProgress() {
 
     const fetchProgress = async () => {
       try {
+        const detectedPlan = await getCompanyLicensePlan(companyId);
+        setLicensePlan(detectedPlan);
+
         // ✅ Get fresher data
         const userRef = doc(db, "freshers", companyId, "departments", deptId, "users", userId);
         const snap = await getDoc(userRef);
@@ -102,7 +110,7 @@ export default function FresherProgress() {
           );
           const completedAt = toDate(module.completedAt);
 
-          if (startedAt) {
+          if (isValidDate(startedAt)) {
             events.push({
               date: startedAt,
               label: `Started Module ${module.order}: ${module.moduleTitle}`,
@@ -111,7 +119,7 @@ export default function FresherProgress() {
             });
           }
 
-          if (completedAt) {
+          if (isValidDate(completedAt)) {
             events.push({
               date: completedAt,
               label: `Completed Module ${module.order}: ${module.moduleTitle}`,
@@ -122,10 +130,10 @@ export default function FresherProgress() {
         });
 
         events.sort((a, b) => {
-          const orderDiff = (a.order ?? 0) - (b.order ?? 0);
-          if (orderDiff !== 0) return orderDiff;
-          if (a.type === b.type) return 0;
-          return a.type === "start" ? -1 : 1;
+          const timeDiff = b.date.getTime() - a.date.getTime();
+          if (timeDiff !== 0) return timeDiff;
+          if (a.type !== b.type) return a.type === "complete" ? -1 : 1;
+          return (a.order ?? 0) - (b.order ?? 0);
         });
         setActivityTimeline(events);
 
@@ -206,17 +214,7 @@ export default function FresherProgress() {
   // if (loading) return <p className="text-white p-10">Loading fresher progress...</p>;
   // if (!userData) return <p className="text-white p-10">No data available.</p>;
   
-if (loading) {
-  return (
-    <div className="flex min-h-screen bg-[#031C3A] text-white items-center justify-center">
-      <div className="flex flex-col items-center gap-4">
-        <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-[#00FFFF]" />
-        <p className="text-lg font-semibold">Loading progress data...</p>
-        <p className="text-sm text-[#AFCBE3]">Please wait, this may take a few seconds.</p>
-      </div>
-    </div>
-  );
-}
+if (loading) return <CompanyPageLoader message="Loading progress data..." layout="page" />;
 
 // Check if training is locked
 if (userData?.trainingLocked) {
@@ -259,9 +257,11 @@ if (!userData) {
               <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${userData?.certificateUnlocked ? "bg-green-500/10 text-green-300 border-green-400/30" : "bg-amber-500/10 text-amber-300 border-amber-400/30"}`}>
                 Certificate: {userData?.certificateUnlocked ? "Unlocked" : "Locked"}
               </span>
-              <span className="px-3 py-1 rounded-full text-xs font-semibold border bg-[#00FFFF10] text-[#00FFFF] border-[#00FFFF30]">
-                Final Quiz: {userData?.finalAssessment?.status || "locked"}
-              </span>
+              {licensePlan === "License Pro" && (
+                <span className="px-3 py-1 rounded-full text-xs font-semibold border bg-[#00FFFF10] text-[#00FFFF] border-[#00FFFF30]">
+                  Final Quiz: {userData?.finalAssessment?.status || "locked"}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -290,6 +290,7 @@ if (!userData) {
         </div>
 
         {(() => {
+          const isBasicLicense = licensePlan === "License Basic";
           const trainingStats = userData.trainingStats || {};
           const activeDays = trainingStats.activeDays ?? 0;
           const currentStreak = trainingStats.currentStreak ?? 0;
@@ -384,78 +385,80 @@ if (!userData) {
           return (
             <>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                <div className="bg-[#021B36]/80 p-6 rounded-xl border border-[#00FFFF30]">
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-xl text-[#00FFFF] font-semibold">Quiz Performance</h2>
-                    <span className="text-xs text-[#AFCBE3]">
-                      Coverage: {quizzesGenerated}/{totalModules}
-                    </span>
-                  </div>
-                  <div className="space-y-3 text-sm">
-                    <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18] flex items-center justify-between">
-                      <div>
-                        <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Total Attempts</p>
-                        <p className="text-sm text-[#CFE8FF]">Across generated quizzes</p>
-                      </div>
-                      <span className="px-3 py-1 rounded-full bg-[#00FFFF]/15 text-[#00FFFF] font-semibold">
-                        {totalAttempts}
+                {!isBasicLicense && (
+                  <div className="bg-[#021B36]/80 p-6 rounded-xl border border-[#00FFFF30]">
+                    <div className="flex items-center justify-between mb-4">
+                      <h2 className="text-xl text-[#00FFFF] font-semibold">Quiz Performance</h2>
+                      <span className="text-xs text-[#AFCBE3]">
+                        Coverage: {quizzesGenerated}/{totalModules}
                       </span>
                     </div>
-                    <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18]">
-                      <div className="flex items-center justify-between">
-                        <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Pass Rate</p>
-                        <span className="text-sm font-semibold text-[#00FFFF]">{passRate}%</span>
-                      </div>
-                      <div className="mt-2 h-2 rounded-full bg-[#031C3A] overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-[#00FFFF] to-green-400"
-                          style={{ width: `${passRate}%` }}
-                        />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18]">
-                        <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Quizzes Generated</p>
-                        <p className="text-lg font-semibold text-[#00FFFF] mt-1">{quizzesGenerated}</p>
-                      </div>
-                      <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18]">
-                        <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Passed / Failed</p>
-                        <p className="text-lg font-semibold text-[#00FFFF] mt-1">
-                          {quizzesPassed} / {quizzesFailed}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 p-3 rounded-lg bg-[#031C3A]/70 border border-[#00FFFF25]">
-                      <div className="flex items-center justify-between mb-2">
-                        <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Final Quiz Attempts</p>
-                        <span className="text-xs px-2 py-1 rounded-full bg-[#00FFFF15] text-[#00FFFF] border border-[#00FFFF25] capitalize">
-                          {finalStatus}
+                    <div className="space-y-3 text-sm">
+                      <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18] flex items-center justify-between">
+                        <div>
+                          <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Total Attempts</p>
+                          <p className="text-sm text-[#CFE8FF]">Across generated quizzes</p>
+                        </div>
+                        <span className="px-3 py-1 rounded-full bg-[#00FFFF]/15 text-[#00FFFF] font-semibold">
+                          {totalAttempts}
                         </span>
                       </div>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        <div className="p-2 rounded bg-[#031C3A] border border-[#00FFFF18]">
-                          <p className="text-[10px] uppercase tracking-wide text-[#AFCBE3]">Used</p>
-                          <p className="text-sm font-semibold text-[#00FFFF] mt-1">{finalAttemptsUsed}</p>
+                      <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18]">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Pass Rate</p>
+                          <span className="text-sm font-semibold text-[#00FFFF]">{passRate}%</span>
                         </div>
-                        <div className="p-2 rounded bg-[#031C3A] border border-[#00FFFF18]">
-                          <p className="text-[10px] uppercase tracking-wide text-[#AFCBE3]">Left</p>
-                          <p className="text-sm font-semibold text-[#00FFFF] mt-1">{finalAttemptsLeft}</p>
+                        <div className="mt-2 h-2 rounded-full bg-[#031C3A] overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-[#00FFFF] to-green-400"
+                            style={{ width: `${passRate}%` }}
+                          />
                         </div>
-                        <div className="p-2 rounded bg-[#031C3A] border border-[#00FFFF18]">
-                          <p className="text-[10px] uppercase tracking-wide text-[#AFCBE3]">Threshold</p>
-                          <p className="text-sm font-semibold text-[#00FFFF] mt-1">{finalPassThreshold}%</p>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18]">
+                          <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Quizzes Generated</p>
+                          <p className="text-lg font-semibold text-[#00FFFF] mt-1">{quizzesGenerated}</p>
                         </div>
-                        <div className="p-2 rounded bg-[#031C3A] border border-[#00FFFF18]">
-                          <p className="text-[10px] uppercase tracking-wide text-[#AFCBE3]">Last Score</p>
-                          <p className="text-sm font-semibold text-[#00FFFF] mt-1">{finalLastScore ?? "-"}</p>
+                        <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18]">
+                          <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Passed / Failed</p>
+                          <p className="text-lg font-semibold text-[#00FFFF] mt-1">
+                            {quizzesPassed} / {quizzesFailed}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 p-3 rounded-lg bg-[#031C3A]/70 border border-[#00FFFF25]">
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Final Quiz Attempts</p>
+                          <span className="text-xs px-2 py-1 rounded-full bg-[#00FFFF15] text-[#00FFFF] border border-[#00FFFF25] capitalize">
+                            {finalStatus}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          <div className="p-2 rounded bg-[#031C3A] border border-[#00FFFF18]">
+                            <p className="text-[10px] uppercase tracking-wide text-[#AFCBE3]">Used</p>
+                            <p className="text-sm font-semibold text-[#00FFFF] mt-1">{finalAttemptsUsed}</p>
+                          </div>
+                          <div className="p-2 rounded bg-[#031C3A] border border-[#00FFFF18]">
+                            <p className="text-[10px] uppercase tracking-wide text-[#AFCBE3]">Left</p>
+                            <p className="text-sm font-semibold text-[#00FFFF] mt-1">{finalAttemptsLeft}</p>
+                          </div>
+                          <div className="p-2 rounded bg-[#031C3A] border border-[#00FFFF18]">
+                            <p className="text-[10px] uppercase tracking-wide text-[#AFCBE3]">Threshold</p>
+                            <p className="text-sm font-semibold text-[#00FFFF] mt-1">{finalPassThreshold}%</p>
+                          </div>
+                          <div className="p-2 rounded bg-[#031C3A] border border-[#00FFFF18]">
+                            <p className="text-[10px] uppercase tracking-wide text-[#AFCBE3]">Last Score</p>
+                            <p className="text-sm font-semibold text-[#00FFFF] mt-1">{finalLastScore ?? "-"}</p>
+                          </div>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
+                )}
 
-                <div className="bg-[#021B36]/80 p-6 rounded-xl border border-[#00FFFF30]">
+                <div className={`bg-[#021B36]/80 p-6 rounded-xl border border-[#00FFFF30] ${isBasicLicense ? "lg:col-span-2" : ""}`}>
                   <div className="flex items-center justify-between mb-4">
                     <h2 className="text-xl text-[#00FFFF] font-semibold">Time Metrics</h2>
                     <span className="text-xs text-[#AFCBE3]">
@@ -587,29 +590,6 @@ if (!userData) {
                 </div>
               </div>
 
-              <div className="bg-[#021B36]/80 p-6 rounded-xl border border-[#00FFFF30] mb-6">
-                <h2 className="text-xl text-[#00FFFF] font-semibold mb-4">Activity Timeline</h2>
-                {activityTimeline.length === 0 ? (
-                  <p className="text-sm text-[#AFCBE3]">No recent activity recorded.</p>
-                ) : (
-                  <div className="space-y-3">
-                    {activityTimeline.map((item, idx) => (
-                      <div
-                        key={`activity-${idx}`}
-                        className="flex items-start gap-3 p-3 rounded-lg bg-[#031C3A]/70 border border-[#00FFFF20]"
-                      >
-                        <div className="w-2 h-2 mt-1.5 rounded-full bg-[#00FFFF]" />
-                        <div>
-                          <p className="text-sm text-[#CFE8FF] font-medium">{item.label}</p>
-                          <p className="text-xs text-[#AFCBE3] mt-0.5">
-                            {item.date.toLocaleString()}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
             </>
           );
         })()}

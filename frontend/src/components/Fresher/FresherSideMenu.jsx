@@ -3,7 +3,8 @@ import { signOut } from "firebase/auth";
 import { auth } from "../../firebase";
 import { useEffect, useState } from "react";
 import { db } from "../../firebase";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, collection, getDocs } from "firebase/firestore";
+import { getCompanyLicensePlan } from "../../services/companyLicense";
 
 export function FresherSideMenu({ userId, companyId, deptId, companyName, roadmapGenerated = false }) {
   const location = useLocation();
@@ -15,6 +16,8 @@ const [email, setEmail] = useState(state.email || localStorage.getItem("email"))
 const [finalStatus, setFinalStatus] = useState("locked");
 const [certificateUnlocked, setCertificateUnlocked] = useState(false);
 const [claimLoading, setClaimLoading] = useState(false);
+const [licensePlan, setLicensePlan] = useState("License Basic");
+const [allModulesCompleted, setAllModulesCompleted] = useState(false);
 console.log(email);
 
   const isActive = (itemKey) => {
@@ -58,15 +61,31 @@ console.log(email);
     const loadUserState = async () => {
       if (!companyId || !deptId || !userId) return;
       try {
+        // Fetch company license plan
+        const detectedPlan = await getCompanyLicensePlan(companyId);
+        setLicensePlan(detectedPlan);
+
         const userRef = doc(db, "freshers", companyId, "departments", deptId, "users", userId);
         const userSnap = await getDoc(userRef);
         if (!userSnap.exists()) return;
         const userData = userSnap.data() || {};
         setCertificateUnlocked(!!userData.certificateUnlocked);
         setFinalStatus(userData?.finalAssessment?.status || "locked");
+
+        // Check if all modules are completed (for Basic plan certificate unlock)
+        const roadmapRef = collection(userRef, "roadmap");
+        const roadmapSnap = await getDocs(roadmapRef);
+        if (!roadmapSnap.empty) {
+          const modules = roadmapSnap.docs.map(d => d.data());
+          const allCompleted = modules.length > 0 && modules.every(m => m.modulePassed || m.moduleCompleted);
+          setAllModulesCompleted(allCompleted);
+        }
+
         console.log("[FINAL-QUIZ][UI] Side menu state loaded:", {
           certificateUnlocked: !!userData.certificateUnlocked,
           finalStatus: userData?.finalAssessment?.status || "locked",
+          licensePlan: detectedPlan,
+          allModulesCompleted,
         });
       } catch (err) {
         console.warn("[FINAL-QUIZ][UI] Failed to load user state:", err.message);
@@ -78,6 +97,18 @@ console.log(email);
   const handleClaimCertificate = async () => {
     if (!roadmapGenerated) return;
 
+    // For Basic plan: check if all modules are completed to unlock certificate
+    if (licensePlan === "License Basic") {
+      if (certificateUnlocked || allModulesCompleted) {
+        navigate("/certificate", { state: { userId, companyId, deptId, companyName } });
+        return;
+      }
+      // Basic plan users don't need final quiz, just show them the alert
+      alert("Complete all training modules to unlock your certificate.");
+      return;
+    }
+
+    // For Pro plan: require final quiz assessment
     if (certificateUnlocked || finalStatus === "passed") {
       navigate("/certificate", { state: { userId, companyId, deptId, companyName } });
       return;
@@ -211,7 +242,11 @@ console.log(email);
           {claimLoading ? "Opening Final Quiz..." : "Claim Certificate"}
         </span>
         <div className="absolute left-0 top-full mt-1 bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] text-xs font-semibold whitespace-nowrap px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition pointer-events-none shadow-lg z-50">
-          {certificateUnlocked || finalStatus === "passed"
+          {licensePlan === "License Basic"
+            ? certificateUnlocked || allModulesCompleted
+              ? "Certificate unlocked"
+              : "Complete all modules to unlock certificate"
+            : certificateUnlocked || finalStatus === "passed"
             ? "Certificate unlocked"
             : finalStatus === "open"
             ? "Final quiz is open"

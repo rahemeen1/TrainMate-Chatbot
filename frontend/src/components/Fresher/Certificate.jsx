@@ -5,6 +5,7 @@ import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import { db } from "../../firebase";
 import TrainingLockedScreen from "./TrainingLockedScreen";
+import CompanyPageLoader from "../CompanySpecific/CompanyPageLoader";
 
 function Certificate() {
   const location = useLocation();
@@ -146,17 +147,7 @@ function Certificate() {
     }
   };
 
-  const Loader = () => (
-    <div className="flex min-h-screen fresher-page-shell text-white items-center justify-center">
-      <div className="flex flex-col items-center gap-4">
-        <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-[#00FFFF]" />
-        <p className="text-lg font-semibold">Loading your certificate...</p>
-        <p className="text-sm text-[#AFCBE3]">Please wait, this may take a few seconds.</p>
-      </div>
-    </div>
-  );
-
-  if (loading) return <Loader />;
+  if (loading) return <CompanyPageLoader message="Loading your certificate..." layout="page" />;
 
   if (!roadmapGenerated) {
     return (

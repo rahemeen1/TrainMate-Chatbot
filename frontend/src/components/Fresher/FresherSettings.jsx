@@ -5,6 +5,7 @@ import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db, auth } from "../../firebase";
 import { jsPDF } from "jspdf";
 import { FresherSideMenu } from "./FresherSideMenu";
+import CompanyPageLoader from "../CompanySpecific/CompanyPageLoader";
 import { PencilIcon, CheckIcon } from "@heroicons/react/24/solid";
 import { reauthenticateWithCredential, EmailAuthProvider, updatePassword, updateEmail } from "firebase/auth";
 
@@ -129,31 +130,29 @@ const isValidPhone = (value) => {
   };
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen bg-[#031C3A] text-white items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-[#00FFFF]" />
-          <p className="text-lg font-semibold">Loading settings...</p>
-          <p className="text-sm text-[#AFCBE3]">Please wait, this may take a few seconds.</p>
-        </div>
-      </div>
-    );
+    return <CompanyPageLoader message="Loading settings..." layout="page" />;
   }
 
 
 
   return (
-    <div className="flex min-h-screen bg-[#031C3A] text-white">
+    <div className="relative flex min-h-screen bg-[#031C3A] text-white overflow-hidden">
+      <div className="pointer-events-none absolute -top-24 -left-24 w-72 h-72 rounded-full bg-[#00FFFF]/10 blur-3xl" />
+      <div className="pointer-events-none absolute top-1/3 -right-20 w-72 h-72 rounded-full bg-[#00FFC2]/10 blur-3xl" />
       {/* Side Menu */}
-      <div className="w-64 bg-[#021B36]/90 p-4">
+      <div className="w-64 bg-[#021B36]/90 p-4 relative z-10">
         <FresherSideMenu userId={userId} companyId={companyId} deptId={deptId} companyName={companyName} roadmapGenerated={true} />
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 p-10">
-        <h1 className="text-2xl text-[#00FFFF] font-bold mb-6">Fresher Settings</h1>
+      <div className="flex-1 p-10 relative z-10">
+        <div className="mb-6 backdrop-blur-xl bg-[#021B36]/50 border border-[#00FFFF25] rounded-2xl p-6 shadow-[0_15px_50px_rgba(0,255,255,0.08)]">
+          <p className="text-xs uppercase tracking-[0.2em] text-[#AFCBE3] mb-2">Account Preferences</p>
+          <h1 className="text-3xl text-[#00FFFF] font-bold">Fresher Settings</h1>
+          <p className="text-[#AFCBE3] mt-1">Manage your profile details, contact number, and password.</p>
+        </div>
 
-        <div className="max-w-3xl space-y-6 text-left">
+        <div className="w-full space-y-6 text-left backdrop-blur-xl bg-[#021B36]/60 border border-[#00FFFF25] rounded-2xl p-6 shadow-[0_15px_50px_rgba(0,255,255,0.08)]">
           {/* User ID */}
           <div className="flex flex-col py-2">
             <p className="text-[#AFCBE3] text-sm">User ID</p>

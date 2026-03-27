@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "../../firebase";
+import { FEATURE_FLAGS, isFeatureAvailable } from "../../services/featureAccess";
+import { getCompanyLicensePlan } from "../../services/companyLicense";
+import CompanyPageLoader from "../CompanySpecific/CompanyPageLoader";
 
 const QUIZ_TIME_LIMIT_SECONDS = 15 * 60;
 
@@ -8,6 +13,8 @@ export default function FinalQuiz() {
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(false);
+  const [licenseCheckLoading, setLicenseCheckLoading] = useState(true);
+  const [hasQuizAccess, setHasQuizAccess] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [errorStatus, setErrorStatus] = useState("");
@@ -24,7 +31,29 @@ export default function FinalQuiz() {
   const [autoSubmitted, setAutoSubmitted] = useState(false);
   const [hasTriedGenerate, setHasTriedGenerate] = useState(false);
 
-  const canGenerate = useMemo(() => companyId && deptId && userId, [companyId, deptId, userId]);
+  const canGenerate = useMemo(() => companyId && deptId && userId && hasQuizAccess, [companyId, deptId, userId, hasQuizAccess]);
+
+  // Check license on mount
+  useEffect(() => {
+    const checkFinalQuizAccess = async () => {
+      if (!companyId) {
+        setLicenseCheckLoading(false);
+        return;
+      }
+
+      try {
+        const licensePlan = await getCompanyLicensePlan(companyId);
+        const hasAccess = isFeatureAvailable(licensePlan, FEATURE_FLAGS.FINAL_QUIZ);
+        setHasQuizAccess(hasAccess);
+      } catch (err) {
+        console.error("Error checking final quiz access:", err);
+      } finally {
+        setLicenseCheckLoading(false);
+      }
+    };
+
+    checkFinalQuizAccess();
+  }, [companyId]);
 
   const mcqList = quiz?.mcq || [];
   const oneLinerList = quiz?.oneLiners || [];
@@ -235,7 +264,7 @@ export default function FinalQuiz() {
   }, [quizTimeLeft, quiz, submitting, autoSubmitted]);
 
   if (loading) {
-    return <div className="min-h-screen bg-[#031C3A] text-white flex items-center justify-center">Generating final quiz...</div>;
+    return <CompanyPageLoader message="Generating final quiz..." layout="page" />;
   }
 
   if (error && !quiz) {
@@ -288,6 +317,32 @@ export default function FinalQuiz() {
               Go Back
             </button>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // License check - show locked UI if not Pro plan
+  if (licenseCheckLoading) {
+    return <CompanyPageLoader message="Verifying quiz access..." layout="page" />;
+  }
+
+  if (!hasQuizAccess) {
+    return (
+      <div className="flex min-h-screen bg-[#031C3A] text-white items-center justify-center p-6">
+        <div className="max-w-md rounded-2xl bg-[#021B36] border-2 border-[#00FFFF]/30 p-8 text-center space-y-6">
+          <div className="text-6xl">🔒</div>
+          <div>
+            <h1 className="text-2xl font-bold text-[#00FFFF] mb-2">Feature Locked</h1>
+            <p className="text-[#AFCBE3]">Final certification quiz is not available on your current plan.</p>
+            <p className="text-sm text-[#9FC2DA] mt-2">Please upgrade to Pro to unlock certification features.</p>
+          </div>
+          <button
+            onClick={() => navigate(-1)}
+            className="w-full px-4 py-2 rounded-lg bg-[#00FFFF]/20 text-[#00FFFF] border border-[#00FFFF]/40 hover:bg-[#00FFFF]/30 transition"
+          >
+            Go Back
+          </button>
         </div>
       </div>
     );

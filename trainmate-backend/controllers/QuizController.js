@@ -1075,6 +1075,17 @@ export const generateQuiz = async (req, res) => {
 		console.log(`\n=== GENERATE QUIZ START ===`);
 		console.log(`CompanyId: ${companyId}, DeptId: ${deptId}, UserId: ${userId}, ModuleId: ${moduleId}`);
 
+		// Check license - quizzes only available on Pro plan
+		const companySnap = await db.collection("companies").doc(companyId).get();
+		const licensePlan = companySnap.data()?.licensePlan || "License Basic";
+		if (licensePlan === "License Basic") {
+			return res.status(403).json({
+				error: "Feature not available on your plan",
+				message: "Quizzes are only available on the Pro plan. Please upgrade to access this feature.",
+				requiresUpgrade: true,
+			});
+		}
+
 		const userRef = db
 			.collection("freshers")
 			.doc(companyId)
@@ -2069,6 +2080,16 @@ export const generateFinalQuiz = async (req, res) => {
 			userRef.get(),
 			db.collection("companies").doc(companyId).get(),
 		]);
+
+		// Check license - final quiz only available on Pro plan
+		const licensePlan = companySnap.data()?.licensePlan || "License Basic";
+		if (licensePlan === "License Basic") {
+			return res.status(403).json({
+				error: "Feature not available on your plan",
+				message: "Final certification quiz is only available on the Pro plan. Please upgrade to access this feature.",
+				requiresUpgrade: true,
+			});
+		}
 
 		if (!userSnap.exists) {
 			return res.status(404).json({ error: "User not found" });
