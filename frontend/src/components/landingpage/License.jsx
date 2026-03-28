@@ -1,111 +1,34 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import Header from "./Header";
 import {
-  BadgeCheck,
-  Bot,
-  Calendar,
   Check,
-  ClipboardList,
-  Gauge,
-  Layers,
-  Mail,
   Sparkles,
-  Target,
 } from "lucide-react";
 import EngagementModal from "./EngagementModal";
 import AuthModal from "../AuthModal";
-
-const basicFeatures = [
-  {
-    icon: Layers,
-    title: "Customized roadmap",
-    description: "Role-based roadmap with module details and structured paths.",
-  },
-  {
-    icon: Mail,
-    title: "Email updates",
-    description: "Send simple training updates to freshers and admins.",
-  },
-  {
-    icon: Calendar,
-    title: "Google Calendar integration",
-    description: "Sync training plans and reminders across teams.",
-  },
-  {
-    icon: BadgeCheck,
-    title: "Basic completion certificate",
-    description: "Issue a simple certificate after training completion.",
-  },
-  {
-    icon: ClipboardList,
-    title: "Admin progress view",
-    description: "Company admins track each fresher's progress in one place.",
-  },
-  {
-    icon: BadgeCheck,
-    title: "10 to 15 freshers",
-    description: "One license supports up to 15 freshers at a time.",
-  },
-  {
-    icon: Layers,
-    title: "Up to 3 departments",
-    description: "Manage training for up to 3 different departments or teams.",
-  },
-];
-
-const proFeatures = [
-  {
-    icon: Sparkles,
-    title: "Full quiz suite",
-    description: "Module quizzes with AI scoring and instant insights.",
-  },
-  {
-    icon: Mail,
-    title: "Agentic emails",
-    description: "AI-driven email follow-ups and cohort nudges.",
-  },
-  {
-    icon: Calendar,
-    title: "Google Calendar automation",
-    description: "Auto-schedule milestones and training check-ins.",
-  },
-  {
-    icon: Target,
-    title: "Weak-area roadmap",
-    description: "Regenerate roadmaps based on weak areas and gaps.",
-  },
-  {
-    icon: Gauge,
-    title: "Agentic scores",
-    description: "AI agentic scores for every quiz attempt.",
-  },
-  {
-    icon: BadgeCheck,
-    title: "Final unlock quiz",
-    description: "Final training quiz unlocks certification access.",
-  },
-  {
-    icon: Bot,
-    title: "Admin chatbot",
-    description: "Ask about fresher details without database searches.",
-  },
-  {
-    icon: Layers,
-    title: "20 to 40 freshers",
-    description: "One license supports up to 40 freshers at a time.",
-  },
-  {
-    icon: Target,
-    title: "5+ departments",
-    description: "Manage training across 5 or more departments simultaneously.",
-  },
-];
+import { DEFAULT_LICENSING_PLANS, getLicensingPlans } from "../../services/licensingConfig";
 
 export default function License() {
   const [engagementOpen, setEngagementOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState("login");
+  const [plans, setPlans] = useState(DEFAULT_LICENSING_PLANS);
+
+  useEffect(() => {
+    const fetchPlans = async () => {
+      try {
+        const data = await getLicensingPlans();
+        setPlans(data);
+      } catch (err) {
+        console.error("Failed to load licensing plans:", err);
+      }
+    };
+
+    fetchPlans();
+  }, []);
+
+  const planCards = [plans.basic, plans.pro];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#02142B] via-[#031C3A] to-[#04354E] text-white relative overflow-hidden">
@@ -178,85 +101,50 @@ export default function License() {
         </section>
 
         <section className="grid gap-8 lg:grid-cols-2">
-          <div className="rounded-3xl border border-[#00FFFF]/30 bg-[#0B122B]/90 p-8 shadow-[0_25px_60px_rgba(0,0,0,0.45)] animate-fade-in-up">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs uppercase tracking-[0.3em] text-white/60">
-                  Basic
-                </p>
-                <h3 className="mt-2 text-2xl font-semibold text-white [font-family:'Space_Grotesk',sans-serif]">
-                  Core Training
-                </h3>
-              </div>
-              <span className="rounded-full bg-[#00FFFF]/20 px-3 py-1 text-xs font-semibold text-[#00FFFF]">
-                10 to 15 freshers
-              </span>
-            </div>
-            <div className="mt-4 rounded-lg bg-[#00FFFF]/10 px-3 py-2">
-              <p className="text-lg font-semibold text-[#00FFFF]">$59/month</p>
-              <p className="text-xs text-white/60">Rs 15,500/month</p>
-            </div>
-            <div className="mt-6 space-y-4">
-              {basicFeatures.map((feature) => (
-                <div
-                  key={feature.title}
-                  className="flex gap-3 rounded-2xl border border-white/10 bg-white/5 p-4"
-                >
-                  <div className="mt-1 flex h-10 w-10 items-center justify-center rounded-xl bg-[#00FFFF]/10">
-                    <feature.icon size={18} className="text-[#00FFFF]" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-white">
-                      {feature.title}
-                    </p>
-                    <p className="text-xs text-white/70">
-                      {feature.description}
-                    </p>
-                  </div>
+          {planCards.map((plan, index) => (
+            <div
+              key={plan.name}
+              className={`rounded-3xl p-8 shadow-[0_25px_60px_rgba(0,0,0,0.45)] animate-fade-in-up ${
+                index === 0
+                  ? "border border-[#00FFFF]/30 bg-[#0B122B]/90"
+                  : "border border-[#00FFFF]/40 bg-gradient-to-br from-[#0B122B] via-[#0C1B35] to-[#0E2743] animation-delay-200"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.3em] text-white/60">{plan.name}</p>
+                  <h3 className="mt-2 text-2xl font-semibold text-white [font-family:'Space_Grotesk',sans-serif]">
+                    {plan.label}
+                  </h3>
                 </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-[#00FFFF]/40 bg-gradient-to-br from-[#0B122B] via-[#0C1B35] to-[#0E2743] p-8 shadow-[0_25px_60px_rgba(0,0,0,0.45)] animate-fade-in-up animation-delay-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs uppercase tracking-[0.3em] text-white/60">
-                  Pro
-                </p>
-                <h3 className="mt-2 text-2xl font-semibold text-white [font-family:'Space_Grotesk',sans-serif]">
-                  Adaptive Training Suite
-                </h3>
+                <span className="rounded-full bg-[#00FFFF]/20 px-3 py-1 text-xs font-semibold text-[#00FFFF]">
+                  {plan.capacity}
+                </span>
               </div>
-              <span className="rounded-full bg-[#00FFFF]/20 px-3 py-1 text-xs font-semibold text-[#00FFFF]">
-                20 to 40 freshers
-              </span>
-            </div>
-            <div className="mt-4 rounded-lg bg-[#00FFFF]/10 px-3 py-2">
-              <p className="text-lg font-semibold text-[#00FFFF]">$199/month</p>
-              <p className="text-xs text-white/60">Rs 52,500/month</p>
-            </div>
-            <div className="mt-6 space-y-4">
-              {proFeatures.map((feature) => (
-                <div
-                  key={feature.title}
-                  className="flex gap-3 rounded-2xl border border-white/10 bg-white/5 p-4"
-                >
-                  <div className="mt-1 flex h-10 w-10 items-center justify-center rounded-xl bg-[#00FFFF]/10">
-                    <feature.icon size={18} className="text-[#00FFFF]" />
+              <div className="mt-4 rounded-lg bg-[#00FFFF]/10 px-3 py-2">
+                <p className="text-lg font-semibold text-[#00FFFF]">${plan.usdPrice}/month</p>
+                <p className="text-xs text-white/60">Rs {Number(plan.inrPrice).toLocaleString("en-IN")}/month</p>
+              </div>
+              <div className="mt-2">
+                <span className="rounded-full border border-[#00FFFF]/20 bg-[#00FFFF]/5 px-3 py-1 text-xs text-[#AEEFFF]">
+                  {plan.departments}
+                </span>
+              </div>
+              <div className="mt-6 space-y-4">
+                {(plan.includes || []).map((feature) => (
+                  <div
+                    key={`${plan.name}-${feature}`}
+                    className="flex gap-3 rounded-2xl border border-white/10 bg-white/5 p-4"
+                  >
+                    <div className="mt-1 flex h-10 w-10 items-center justify-center rounded-xl bg-[#00FFFF]/10">
+                      <Check size={18} className="text-[#00FFFF]" />
+                    </div>
+                    <p className="text-sm font-semibold text-white">{feature}</p>
                   </div>
-                  <div>
-                    <p className="text-sm font-semibold text-white">
-                      {feature.title}
-                    </p>
-                    <p className="text-xs text-white/70">
-                      {feature.description}
-                    </p>
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
+          ))}
         </section>
 
         <section className="flex flex-col items-center gap-4 rounded-3xl border-2 border-[#00FFFF]/70 bg-gradient-to-br from-[#061528] via-[#0A1F38] to-[#0E2845] p-8 text-center shadow-[0_0_30px_rgba(0,255,255,0.4)] hover:shadow-[0_0_40px_rgba(0,255,255,0.6)] transition-all">

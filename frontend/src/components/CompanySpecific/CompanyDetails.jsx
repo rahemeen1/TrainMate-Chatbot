@@ -4,25 +4,9 @@ import { db } from "../../firebase";
 import { doc, getDoc, collection, getDocs, updateDoc, query, orderBy, limit } from "firebase/firestore";
 import CompanySidebar from "../../components/CompanySpecific/CompanySidebar";
 import CompanyPageLoader from "../../components/CompanySpecific/CompanyPageLoader";
+import { DEFAULT_LICENSING_PLANS, getLicensingPlans } from "../../services/licensingConfig";
 
 const LICENSE_PLAN_OPTIONS = ["License Basic", "License Pro"];
-
-const PRO_PLAN_DETAILS = {
-  title: "Pro",
-  subtitle: "Adaptive Training Suite",
-  capacity: "20 to 40 freshers",
-  usdPrice: "$199/month",
-  inrPrice: "Rs 52,500/month",
-  features: [
-    "Full quiz suite",
-    "Agentic emails",
-    "Google Calendar automation",
-    "Weak-area roadmap",
-    "Agentic scores",
-    "Final unlock quiz",
-    "Admin chatbot",
-  ],
-};
 
 export default function CompanyDetails() {
   const location = useLocation();
@@ -39,6 +23,7 @@ export default function CompanyDetails() {
   const [initialLicense, setInitialLicense] = useState("License Basic");
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [onboardingDocId, setOnboardingDocId] = useState("");
+  const [licensingPlans, setLicensingPlans] = useState(DEFAULT_LICENSING_PLANS);
 
 
   // Fetch company and onboarding details
@@ -85,6 +70,28 @@ export default function CompanyDetails() {
 
     fetchData();
   }, [companyId]);
+
+  useEffect(() => {
+    const fetchPlanConfig = async () => {
+      try {
+        const data = await getLicensingPlans();
+        setLicensingPlans(data);
+      } catch (err) {
+        console.error("Failed to load licensing plans:", err);
+      }
+    };
+
+    fetchPlanConfig();
+  }, []);
+
+  const proPlanDetails = {
+    title: licensingPlans.pro.name,
+    subtitle: licensingPlans.pro.label,
+    capacity: licensingPlans.pro.capacity,
+    usdPrice: `$${licensingPlans.pro.usdPrice}/month`,
+    inrPrice: `Rs ${Number(licensingPlans.pro.inrPrice).toLocaleString("en-IN")}/month`,
+    features: licensingPlans.pro.includes,
+  };
 
   const handleChange = (field, value) => {
     if (field === 2 || field === 3) return; // Training Duration and Batch Size read-only
@@ -319,8 +326,8 @@ export default function CompanyDetails() {
             <div className="flex items-start justify-between gap-4 mb-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.14em] text-[#8EB6D3]">Upgrade Plan</p>
-                <h3 className="text-2xl font-bold text-[#E8F7FF] mt-1">{PRO_PLAN_DETAILS.title}</h3>
-                <p className="text-[#AFCBE3]">{PRO_PLAN_DETAILS.subtitle}</p>
+                <h3 className="text-2xl font-bold text-[#E8F7FF] mt-1">{proPlanDetails.title}</h3>
+                <p className="text-[#AFCBE3]">{proPlanDetails.subtitle}</p>
               </div>
               <button
                 onClick={() => setShowUpgradeModal(false)}
@@ -333,22 +340,22 @@ export default function CompanyDetails() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
               <div className="rounded-lg border border-[#00FFFF30] bg-[#031C3A]/70 p-3">
                 <p className="text-xs text-[#8EB6D3] uppercase">Capacity</p>
-                <p className="text-sm font-semibold text-white mt-1">{PRO_PLAN_DETAILS.capacity}</p>
+                <p className="text-sm font-semibold text-white mt-1">{proPlanDetails.capacity}</p>
               </div>
               <div className="rounded-lg border border-[#00FFFF30] bg-[#031C3A]/70 p-3">
                 <p className="text-xs text-[#8EB6D3] uppercase">USD</p>
-                <p className="text-sm font-semibold text-white mt-1">{PRO_PLAN_DETAILS.usdPrice}</p>
+                <p className="text-sm font-semibold text-white mt-1">{proPlanDetails.usdPrice}</p>
               </div>
               <div className="rounded-lg border border-[#00FFFF30] bg-[#031C3A]/70 p-3">
                 <p className="text-xs text-[#8EB6D3] uppercase">INR</p>
-                <p className="text-sm font-semibold text-white mt-1">{PRO_PLAN_DETAILS.inrPrice}</p>
+                <p className="text-sm font-semibold text-white mt-1">{proPlanDetails.inrPrice}</p>
               </div>
             </div>
 
             <div className="rounded-lg border border-[#00FFFF30] bg-[#031C3A]/60 p-4 mb-5">
               <p className="text-sm font-semibold text-[#00FFFF] mb-2">Included Features</p>
               <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-[#AFCBE3]">
-                {PRO_PLAN_DETAILS.features.map((feature) => (
+                {proPlanDetails.features.map((feature) => (
                   <li key={feature}>• {feature}</li>
                 ))}
               </ul>

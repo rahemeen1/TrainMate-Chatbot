@@ -231,18 +231,6 @@ export default function SuperAdminAnalytics({ analytics }) {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <SectionCard title="Company Growth Timeline">
-          <ResponsiveContainer width="100%" height={270}>
-            <BarChart data={analytics.growthTimeline}>
-              <CartesianGrid stroke="#1f3a5a" strokeDasharray="3 3" />
-              <XAxis dataKey="name" stroke="#AFCBE3" interval={0} height={48} tick={<MultiLineTick />} />
-              <YAxis stroke="#AFCBE3" allowDecimals={false} />
-              <Tooltip />
-              <Bar dataKey="value" fill="#34D399" radius={[6, 6, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </SectionCard>
-
         <SectionCard title="Data Quality & Adoption">
           <ResponsiveContainer width="100%" height={270}>
             <BarChart data={qualityAndAdoptionData}>
@@ -251,20 +239,6 @@ export default function SuperAdminAnalytics({ analytics }) {
               <YAxis stroke="#AFCBE3" allowDecimals={false} domain={[0, 100]} />
               <Tooltip />
               <Bar dataKey="value" fill="#60A5FA" radius={[6, 6, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </SectionCard>
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <SectionCard title="Hiring Timeline Preferences">
-          <ResponsiveContainer width="100%" height={270}>
-            <BarChart data={analytics.hiringTimelineDistribution}>
-              <CartesianGrid stroke="#1f3a5a" strokeDasharray="3 3" />
-              <XAxis dataKey="name" stroke="#AFCBE3" />
-              <YAxis stroke="#AFCBE3" allowDecimals={false} />
-              <Tooltip />
-              <Bar dataKey="value" fill="#A78BFA" radius={[6, 6, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </SectionCard>

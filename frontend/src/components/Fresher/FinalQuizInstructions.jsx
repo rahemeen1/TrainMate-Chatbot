@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import CompanyPageLoader from "../CompanySpecific/CompanyPageLoader";
 
 export default function FinalQuizInstructions() {
   const { companyId, deptId, userId, companyName } = useParams();
@@ -47,14 +48,7 @@ export default function FinalQuizInstructions() {
   }, [companyId, deptId, userId]);
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-[#04172D] text-white flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-14 w-14 border-t-4 border-b-4 border-[#00FFFF] mx-auto mb-4" />
-          <p className="text-lg font-semibold">Preparing final instructions...</p>
-        </div>
-      </div>
-    );
+    return <CompanyPageLoader message="Preparing final instructions..." layout="page" />;
   }
 
   if (error) {

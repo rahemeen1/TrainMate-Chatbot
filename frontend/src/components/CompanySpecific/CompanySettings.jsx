@@ -1,7 +1,7 @@
 // CompanySettings.jsx
 import { useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { doc, getDoc, setDoc, deleteField } from "firebase/firestore";
+import { doc, getDoc, setDoc, deleteField, collection, getDocs, query, where } from "firebase/firestore";
 import { db, auth } from "../../firebase";
 import CompanySidebar from "../../components/CompanySpecific/CompanySidebar";
 import CompanyPageLoader from "../../components/CompanySpecific/CompanyPageLoader";
@@ -15,7 +15,13 @@ import {
 
 export default function CompanySettings() {
   const location = useLocation();
-  const { companyId, companyName } = location.state || {};
+  const [companyContext, setCompanyContext] = useState({
+    companyId: location.state?.companyId || localStorage.getItem("companyId") || "",
+    companyName: location.state?.companyName || localStorage.getItem("companyName") || "Company",
+  });
+
+  const companyId = companyContext.companyId;
+  const companyName = companyContext.companyName;
 
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
@@ -30,24 +36,67 @@ export default function CompanySettings() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const currentUser = auth.currentUser;
+  useEffect(() => {
+    const routedCompanyId = location.state?.companyId;
+    const routedCompanyName = location.state?.companyName;
+
+    if (!routedCompanyId) return;
+
+    localStorage.setItem("companyId", routedCompanyId);
+    if (routedCompanyName) localStorage.setItem("companyName", routedCompanyName);
+
+    setCompanyContext({
+      companyId: routedCompanyId,
+      companyName: routedCompanyName || localStorage.getItem("companyName") || "Company",
+    });
+  }, [location.state]);
 
   useEffect(() => {
     const fetchCompany = async () => {
       try {
-        const ref = doc(db, "companies", companyId);
+        let activeCompanyId = companyId;
+
+        if (!activeCompanyId) {
+          const authEmail = (auth.currentUser?.email || "").trim().toLowerCase();
+
+          if (authEmail) {
+            const companiesRef = collection(db, "companies");
+            const [emailSnap, companyEmailSnap, pendingSnap] = await Promise.all([
+              getDocs(query(companiesRef, where("email", "==", authEmail))),
+              getDocs(query(companiesRef, where("companyEmail", "==", authEmail))),
+              getDocs(query(companiesRef, where("pendingEmail", "==", authEmail))),
+            ]);
+
+            const matchedDoc = emailSnap.docs[0] || companyEmailSnap.docs[0] || pendingSnap.docs[0];
+            if (matchedDoc) {
+              activeCompanyId = matchedDoc.id;
+              const matchedData = matchedDoc.data() || {};
+              const matchedName = matchedData.companyName || matchedData.name || "Company";
+
+              localStorage.setItem("companyId", activeCompanyId);
+              localStorage.setItem("companyName", matchedName);
+
+              setCompanyContext({ companyId: activeCompanyId, companyName: matchedName });
+            }
+          }
+        }
+
+        if (!activeCompanyId) return;
+
+        const ref = doc(db, "companies", activeCompanyId);
         const snap = await getDoc(ref);
         if (snap.exists()) {
           const c = snap.data();
           const authEmail = (auth.currentUser?.email || "").toLowerCase();
           const pendingEmail = (c.pendingEmail || "").toLowerCase();
-          const savedEmail = (c.email || "").toLowerCase();
+          const savedEmail = (c.email || c.companyEmail || "").toLowerCase();
 
           if (pendingEmail && authEmail && pendingEmail === authEmail) {
             await setDoc(
               ref,
               {
                 email: pendingEmail,
+                companyEmail: pendingEmail,
                 pendingEmail: deleteField(),
                 emailChangeRequestedAt: deleteField(),
               },
@@ -57,14 +106,17 @@ export default function CompanySettings() {
             setSuccess("Email verified and updated successfully.");
             setEmail(pendingEmail);
           } else {
-            setEmail(c.email || "");
+            setEmail(c.pendingEmail || c.companyEmail || c.email || "");
           }
 
-          setName(c.companyName || c.name || "");
+          const resolvedName = c.companyName || c.name || "";
+          setName(resolvedName);
 
-          if (!pendingEmail && authEmail && savedEmail && authEmail !== savedEmail) {
-            await setDoc(ref, { email: authEmail }, { merge: true });
-            setEmail(authEmail);
+          if (activeCompanyId !== companyId || resolvedName !== companyName) {
+            setCompanyContext({
+              companyId: activeCompanyId,
+              companyName: resolvedName || companyName || "Company",
+            });
           }
         }
       } catch (err) {
@@ -83,6 +135,7 @@ export default function CompanySettings() {
     setSuccess("");
     try {
       const ref = doc(db, "companies", companyId);
+      const currentUser = auth.currentUser;
 
       if (field === "password") {
         if (!oldPassword || !newPassword)

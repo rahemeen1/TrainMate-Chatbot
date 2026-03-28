@@ -7,9 +7,12 @@ import { collection, getDocs, doc, getDoc, updateDoc } from "firebase/firestore"
 import axios from "axios";
 import { FresherSideMenu } from "./FresherSideMenu";
 import TrainingLockedScreen from "./TrainingLockedScreen";
+import { getCompanyLicensePlan } from "../../services/companyLicense";
+import CompanyPageLoader from "../CompanySpecific/CompanyPageLoader";
 
 export default function Roadmap() {
   const BASE_MAX_QUIZ_ATTEMPTS = 3;
+  const DEFAULT_QUIZ_UNLOCK_PERCENT = 70;
   const { companyId, deptId, userId,companyName } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -18,6 +21,7 @@ export default function Roadmap() {
   const [loadingModuleId, setLoadingModuleId] = useState(null);
   const [roadmapGeneratedAt, setRoadmapGeneratedAt] = useState(null);
   const [userData, setUserData] = useState(null);
+  const [licensePlan, setLicensePlan] = useState("License Basic");
   const generationRequestedRef = useRef(false);
 
 const getModuleStartDate = (module) => {
@@ -40,11 +44,54 @@ const getModuleStartDate = (module) => {
   return new Date(roadmapGeneratedAt.getTime() + daysOffset * 24 * 60 * 60 * 1000);
 };
 
-  const checkQuizTimeUnlock = () => ({
-    isUnlocked: true,
-    remainingTime: null,
-    message: "",
-  });
+  const checkQuizTimeUnlock = (module) => {
+    const startDate = getModuleStartDate(module);
+    const estimatedDays = Number(module?.estimatedDays) || 1;
+    const configuredUnlockPercent = Number(userData?.quizPolicy?.quizUnlockPercent);
+    const unlockPercent = Number.isFinite(configuredUnlockPercent)
+      ? Math.max(DEFAULT_QUIZ_UNLOCK_PERCENT, configuredUnlockPercent)
+      : DEFAULT_QUIZ_UNLOCK_PERCENT;
+
+    if (!startDate) {
+      return {
+        isUnlocked: false,
+        remainingTime: "Module not started yet",
+        message: "Please start the module before attempting the quiz.",
+      };
+    }
+
+    const unlockDelayMs = estimatedDays * (unlockPercent / 100) * 24 * 60 * 60 * 1000;
+    const unlockAt = startDate.getTime() + unlockDelayMs;
+    const now = Date.now();
+
+    if (now >= unlockAt) {
+      return {
+        isUnlocked: true,
+        remainingTime: null,
+        message: "Quiz is now available!",
+      };
+    }
+
+    const remainingMs = unlockAt - now;
+    const remainingDays = Math.floor(remainingMs / (1000 * 60 * 60 * 24));
+    const remainingHours = Math.floor((remainingMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const remainingMinutes = Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60));
+
+    let remainingTimeStr = "";
+    if (remainingDays > 0) {
+      remainingTimeStr = `${remainingDays} day${remainingDays > 1 ? "s" : ""} and ${remainingHours} hour${remainingHours !== 1 ? "s" : ""}`;
+    } else if (remainingHours > 0) {
+      remainingTimeStr = `${remainingHours} hour${remainingHours !== 1 ? "s" : ""} and ${remainingMinutes} minute${remainingMinutes !== 1 ? "s" : ""}`;
+    } else {
+      remainingTimeStr = `${remainingMinutes} minute${remainingMinutes !== 1 ? "s" : ""}`;
+    }
+
+    return {
+      isUnlocked: false,
+      remainingTime: remainingTimeStr,
+      message: `Quiz will be available after you've spent ${unlockPercent}% of the module time. Unlock in: ${remainingTimeStr}`,
+    };
+  };
 
   // Update overall progress after marking module done
   const updateProgress = async () => {
@@ -83,6 +130,10 @@ const getModuleStartDate = (module) => {
 
     const loadRoadmap = async () => {
       try {
+        // Fetch company license plan
+        const planType = await getCompanyLicensePlan(companyId);
+        setLicensePlan(planType);
+
         const userRef = doc(db, "freshers", companyId, "departments", deptId, "users", userId);
         const userSnap = await getDoc(userRef);
         if (userSnap.exists()) {
@@ -266,7 +317,7 @@ const getUnlockedModules = () => {
     const timeRemaining = getModuleTimeRemaining(module);
     const moduleExpired = isModuleExpired(module);
     
-    // Check if quiz should be unlocked (50% time requirement)
+    // Check if quiz should be unlocked (70% time requirement by default)
     const quizUnlockStatus = checkQuizTimeUnlock(module);
     const moduleAttemptLimit = Number.isInteger(module.maxAttemptsOverride)
       ? module.maxAttemptsOverride
@@ -370,16 +421,7 @@ const isModuleExpired = (module) => {
     navigate(`/fresher-training/${companyId}/${deptId}/${userId}/${moduleId}`);
   };
   
-if (loading)
-  return (
-    <div className="flex min-h-screen bg-[#031C3A] text-white items-center justify-center">
-      <div className="flex flex-col items-center gap-4">
-        <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-[#00FFFF]" />
-        <p className="text-lg font-semibold">Loading roadmap modules...</p>
-        <p className="text-sm text-[#AFCBE3]">Please wait, this may take a few seconds.</p>
-      </div>
-    </div>
-  );
+if (loading) return <CompanyPageLoader message="Loading roadmap modules..." />;
 
 
 
@@ -520,16 +562,16 @@ if (!roadmap.length)
     {module.moduleExpired ? "⏰ EXPIRED" : module.completed ? "✓ Completed" : "In Progress"}
   </span>
 
-  {/* 🔒 50% TIME LOCK WARNING: Quiz not yet available */}
-  {/* Displayed when quiz is locked due to insufficient time elapsed (< 50% of module time) */}
-  {!module.locked && !module.completed && !module.quizTimeUnlocked && (
+  {/* 🔒 TIME LOCK WARNING: Quiz not yet available (Pro only) */}
+  {/* Displayed when quiz is locked due to insufficient time elapsed (< unlock threshold of module time) */}
+  {licensePlan === "License Pro" && !module.locked && !module.completed && !module.quizTimeUnlocked && (
     <div className="mt-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
       <div className="flex items-start gap-2">
         <span className="text-yellow-400 text-xl">⚠️</span>
         <div className="flex-1">
           <p className="text-yellow-400 font-semibold text-sm mb-1">Quiz Not Yet Available</p>
           <p className="text-[#AFCBE3] text-xs">
-            {/* Shows countdown until 50% threshold is met */}
+            {/* Shows countdown until unlock threshold is met */}
             {module.quizUnlockMessage}. You must complete the quiz within the module timeframe ({module.timeRemaining.message}) or the module will be locked.
           </p>
         </div>
@@ -537,16 +579,16 @@ if (!roadmap.length)
     </div>
   )}
   
-  {/* 🔓 50% TIME LOCK CLEARED: Quiz is now available */}
-  {/* Displayed when 50% of module time has elapsed - quiz is unlocked and ready */}
-  {!module.locked && !module.completed && module.quizTimeUnlocked && !module.quizPassed && (
+  {/* 🔓 TIME LOCK CLEARED: Quiz is now available (Pro only) */}
+  {/* Displayed when the module unlock threshold has elapsed - quiz is unlocked and ready */}
+  {licensePlan === "License Pro" && !module.locked && !module.completed && module.quizTimeUnlocked && !module.quizPassed && (
     <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
       <div className="flex items-start gap-2">
         <span className="text-blue-400 text-xl">📝</span>
         <div className="flex-1">
           <p className="text-blue-400 font-semibold text-sm mb-1">Quiz Available - Complete Soon!</p>
           <p className="text-[#AFCBE3] text-xs">
-            {/* 50% time threshold has been met - learner can now attempt quiz */}
+            {/* Module time unlock threshold has been met - learner can now attempt quiz */}
             You can now attempt the quiz. Please complete it within the remaining time ({module.timeRemaining.message}) or the module will be locked.
           </p>
           {module.retriesGranted !== undefined && module.retriesGranted > 0 && (
@@ -587,45 +629,49 @@ if (!roadmap.length)
 >
   View Details
 </button>
-      {/* Quiz button - disabled if quiz locked or time requirement not met */}
-      <button
-        onClick={() =>
-          navigate(
-            `/quiz/${companyId}/${deptId}/${userId}/${module.id}`,
-            { state: { companyName } }
-          )
-        }
-        disabled={false}
-        title={
-          module.quizAttempts > 0
-            ? `Retry Quiz - TrainMate will analyze and decide retry allocation`
-            : "Take Quiz - TrainMate will evaluate and provide feedback"
-        }
-        className={`px-4 py-2 border border-[#00FFFF] text-[#00FFFF] rounded relative group
-          hover:bg-[#00FFFF]/10
-        `}
-      >
-        {module.quizPassed ? "✅ Quiz Passed" :
-         module.quizAttempts > 0 
-           ? ` Retry (Attempt ${module.quizAttempts + 1})` 
-           : "📝 Take Quiz"}
-        
-        {/* Tooltip for AI-powered quiz */}
-        {module.quizTimeUnlocked && (
-          <div className="absolute left-full top-1/2 transform -translate-y-1/2 ml-3 hidden group-hover:block w-72 bg-[#021B36] border border-purple-500 rounded-lg p-3 text-sm z-10 whitespace-normal">
-            <div className="text-purple-300 font-semibold mb-1 flex items-center gap-2">
-              <span></span> TrainMate-Powered Assessment
+      {/* Quiz button - only available for Pro plan users */}
+      {licensePlan === "License Pro" && (
+        <button
+          onClick={() =>
+            navigate(
+              `/quiz/${companyId}/${deptId}/${userId}/${module.id}`,
+              { state: { companyName } }
+            )
+          }
+          disabled={!module.quizPassed && !module.quizTimeUnlocked}
+          title={
+            !module.quizPassed && !module.quizTimeUnlocked
+              ? module.quizUnlockMessage || "Quiz is locked until required module time is completed"
+              : module.quizAttempts > 0
+              ? `Retry Quiz - TrainMate will analyze and decide retry allocation`
+              : "Take Quiz - TrainMate will evaluate and provide feedback"
+          }
+          className={`px-4 py-2 border border-[#00FFFF] text-[#00FFFF] rounded relative group
+            hover:bg-[#00FFFF]/10 disabled:opacity-50 disabled:cursor-not-allowed
+          `}
+        >
+          {module.quizPassed ? "✅ Quiz Passed" :
+           module.quizAttempts > 0 
+             ? ` Retry (Attempt ${module.quizAttempts + 1})` 
+             : "📝 Take Quiz"}
+          
+          {/* Tooltip for AI-powered quiz */}
+          {module.quizTimeUnlocked && (
+            <div className="absolute left-full top-1/2 transform -translate-y-1/2 ml-3 hidden group-hover:block w-72 bg-[#021B36] border border-purple-500 rounded-lg p-3 text-sm z-10 whitespace-normal">
+              <div className="text-purple-300 font-semibold mb-1 flex items-center gap-2">
+                <span></span> TrainMate-Powered Assessment
+              </div>
+              <div className="text-[#AFCBE3] text-xs space-y-1">
+                <p>• It analyzes your performance in real-time</p>
+                <p>• Dynamically allocates retry attempts (1-3)</p>
+                <p>• Provides personalized recommendations</p>
+                <p>• Adapts module timeline based on progress</p>
+              </div>
+              <div className="absolute right-full top-1/2 transform -translate-y-1/2 w-0 h-0 border-t-8 border-b-8 border-r-8 border-transparent border-r-purple-500"></div>
             </div>
-            <div className="text-[#AFCBE3] text-xs space-y-1">
-              <p>• It analyzes your performance in real-time</p>
-              <p>• Dynamically allocates retry attempts (1-3)</p>
-              <p>• Provides personalized recommendations</p>
-              <p>• Adapts module timeline based on progress</p>
-            </div>
-            <div className="absolute right-full top-1/2 transform -translate-y-1/2 w-0 h-0 border-t-8 border-b-8 border-r-8 border-transparent border-r-purple-500"></div>
-          </div>
-        )}
-      </button>
+          )}
+        </button>
+      )}
 
     </div>
   )}
