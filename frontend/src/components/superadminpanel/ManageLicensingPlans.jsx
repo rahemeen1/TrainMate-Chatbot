@@ -134,7 +134,7 @@ export default function ManageLicensingPlans() {
                     onChange={(v) => handleFieldChange(planKey, "usdPrice", v)}
                   />
                   <InputField
-                    label="INR Price"
+                    label="PKR Price"
                     type="number"
                     value={plan.inrPrice}
                     onChange={(v) => handleFieldChange(planKey, "inrPrice", v)}

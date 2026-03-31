@@ -89,7 +89,7 @@ export default function CompanyDetails() {
     subtitle: licensingPlans.pro.label,
     capacity: licensingPlans.pro.capacity,
     usdPrice: `$${licensingPlans.pro.usdPrice}/month`,
-    inrPrice: `Rs ${Number(licensingPlans.pro.inrPrice).toLocaleString("en-IN")}/month`,
+    inrPrice: `PKR ${Number(licensingPlans.pro.inrPrice).toLocaleString("en-PK")}/month`,
     features: licensingPlans.pro.includes,
   };
 
@@ -347,7 +347,7 @@ export default function CompanyDetails() {
                 <p className="text-sm font-semibold text-white mt-1">{proPlanDetails.usdPrice}</p>
               </div>
               <div className="rounded-lg border border-[#00FFFF30] bg-[#031C3A]/70 p-3">
-                <p className="text-xs text-[#8EB6D3] uppercase">INR</p>
+                <p className="text-xs text-[#8EB6D3] uppercase">PKR</p>
                 <p className="text-sm font-semibold text-white mt-1">{proPlanDetails.inrPrice}</p>
               </div>
             </div>

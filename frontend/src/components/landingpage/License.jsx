@@ -123,7 +123,7 @@ export default function License() {
               </div>
               <div className="mt-4 rounded-lg bg-[#00FFFF]/10 px-3 py-2">
                 <p className="text-lg font-semibold text-[#00FFFF]">${plan.usdPrice}/month</p>
-                <p className="text-xs text-white/60">Rs {Number(plan.inrPrice).toLocaleString("en-IN")}/month</p>
+                <p className="text-xs text-white/60">PKR {Number(plan.inrPrice).toLocaleString("en-PK")}/month</p>
               </div>
               <div className="mt-2">
                 <span className="rounded-full border border-[#00FFFF]/20 bg-[#00FFFF]/5 px-3 py-1 text-xs text-[#AEEFFF]">

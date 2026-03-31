@@ -34,7 +34,7 @@ const PLAN_OPTIONS = [
     capacity: "10 to 15 freshers",
     maxDepartments: 3,
     usdPrice: "$59/month",
-    inrPrice: "Rs 15,500/month",
+    inrPrice: "PKR 15,500/month",
     facilities: [
       "Customized roadmap",
       "Email updates",
@@ -52,7 +52,7 @@ const PLAN_OPTIONS = [
     capacity: "20 to 40 freshers",
     maxDepartments: 5,
     usdPrice: "$199/month",
-    inrPrice: "Rs 52,500/month",
+    inrPrice: "PKR 52,500/month",
     facilities: [
       "Full quiz suite",
       "Agentic emails",
@@ -76,7 +76,7 @@ const PAYMENT_METHODS = ["Credit Card", "Debit Card"];
 
 const PAYMENT_PROVIDER = "internal-demo";
 const PAYMENT_STATUS = "success";
-const PAYMENT_CURRENCY = "USD/INR";
+const PAYMENT_CURRENCY = "USD/PKR";
 
 const normalizeId = (value) => {
   const normalized = String(value || "").trim();
@@ -1016,7 +1016,7 @@ const CustomXAxisTick = ({ x, y, payload }) => {
     {(() => {
       const planConfig = PLAN_OPTIONS.find(p => p.value === answers[0]);
       const amountUsd = planConfig?.usdPrice || "$0/month";
-      const amountInr = planConfig?.inrPrice || "Rs 0/month";
+      const amountInr = planConfig?.inrPrice || "PKR 0/month";
       
       return (
         <>
