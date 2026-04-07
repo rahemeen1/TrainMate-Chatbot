@@ -415,6 +415,84 @@ export async function sendTrainingCompletedEmail({
   }
 }
 
+/**
+ * Send final quiz failed notification to company admin email
+ * @param {Object} params
+ * @param {string} params.companyEmail
+ * @param {string} params.companyName
+ * @param {string} params.userName
+ * @param {string} params.userEmail
+ * @param {string} params.deptId
+ * @param {number} params.attemptsUsed
+ * @param {number} params.maxAttempts
+ * @param {number} params.finalScore
+ */
+export async function sendFinalQuizFailedEmail({
+  companyEmail,
+  companyName,
+  userName,
+  userEmail,
+  deptId,
+  attemptsUsed,
+  maxAttempts,
+  finalScore,
+}) {
+  try {
+    console.log("Email service: preparing final quiz failed email...");
+    const transporter = createTransporter();
+
+    const recipientEmail = companyEmail;
+    console.log(`Sending final quiz failed email to ${recipientEmail}`);
+
+    const mailOptions = {
+      from: {
+        name: "TrainMate",
+        address: "trainmate01@gmail.com",
+      },
+      to: recipientEmail,
+      subject: `Final Quiz Failed Alert - ${companyName}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 20px; background-color: #f4f4f4;">
+          <div style="background-color: #031C3A; padding: 24px; text-align: center; border-radius: 10px 10px 0 0;">
+            <h1 style="color: #00FFFF; margin: 0; font-size: 24px;">TrainMate</h1>
+          </div>
+          <div style="background-color: white; padding: 24px; border-radius: 0 0 10px 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+            <h2 style="color: #031C3A; margin-top: 0;">Final Quiz Attempts Exhausted</h2>
+            <p style="color: #333; font-size: 15px; line-height: 1.6;">
+              A trainee has failed the final quiz and used all available attempts.
+            </p>
+            <div style="background-color: #FFF5F5; padding: 16px; border-left: 4px solid #FF6B6B; margin: 16px 0;">
+              <p style="margin: 6px 0; color: #333;"><strong>Company:</strong> ${companyName || "TrainMate"}</p>
+              <p style="margin: 6px 0; color: #333;"><strong>User:</strong> ${userName || "Unknown"}</p>
+              <p style="margin: 6px 0; color: #333;"><strong>User Email:</strong> ${userEmail || "Unknown"}</p>
+              <p style="margin: 6px 0; color: #333;"><strong>Department:</strong> ${deptId || "Unknown"}</p>
+              <p style="margin: 6px 0; color: #333;"><strong>Attempts Used:</strong> ${Number(attemptsUsed) || 0}/${Number(maxAttempts) || 0}</p>
+              <p style="margin: 6px 0; color: #333;"><strong>Latest Final Score:</strong> ${typeof finalScore === "number" && !Number.isNaN(finalScore) ? `${finalScore}%` : "N/A"}</p>
+            </div>
+            <p style="color: #333; font-size: 14px; line-height: 1.6;">
+              Please review the learner's progress and decide the next steps.
+            </p>
+            <p style="color: #666; font-size: 13px; line-height: 1.6; margin-top: 20px;">
+              Regards,<br>
+              <strong style="color: #031C3A;">TrainMate Team</strong>
+            </p>
+          </div>
+          <div style="text-align: center; padding: 16px; color: #666; font-size: 12px;">
+            <p>This is an automated message. Please do not reply.</p>
+          </div>
+        </div>
+      `,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log("Final quiz failed email sent:", info.messageId);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error("Final quiz failed email failed:", error);
+    throw error;
+  }
+}
+
 
 /**
  * Send user credentials email with PDF attachment

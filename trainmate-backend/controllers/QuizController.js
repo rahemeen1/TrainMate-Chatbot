@@ -6,7 +6,7 @@ import { CohereClient } from "cohere-ai";
 import { updateMemoryAfterQuiz } from "../services/memoryService.js";
 import { evaluateCode } from "../services/codeEvaluator.service.js";
 import { createDailyModuleReminder, createQuizUnlockReminder } from "../services/calendarService.js";
-import { sendTrainingLockedEmail, sendQuizSecurityAlertEmail, sendFinalQuizOpenedEmail, sendTrainingCompletedEmail } from "../services/emailService.js";
+import { sendTrainingLockedEmail, sendQuizSecurityAlertEmail, sendFinalQuizOpenedEmail, sendTrainingCompletedEmail, sendFinalQuizFailedEmail } from "../services/emailService.js";
 
 let primaryModel = null;
 let fallbackModel = null;
@@ -201,6 +201,45 @@ async function createTrainingCompletionNotification({
 			userEmail: userEmail || "",
 			score: typeof finalScore === "number" ? finalScore : null,
 			message: `${userName || "A fresher"} completed full training and unlocked certificate with ${typeof finalScore === "number" ? `${finalScore}%` : "N/A"}.`,
+			createdAt: admin.firestore.FieldValue.serverTimestamp(),
+			resolvedAt: null,
+		},
+		{ merge: true }
+	);
+
+	return notificationId;
+}
+
+async function createFinalQuizFailedNotification({
+	companyId,
+	deptId,
+	userId,
+	userName,
+	userEmail,
+	attemptsUsed,
+	maxAttempts,
+	finalScore,
+}) {
+	const notificationId = `final-quiz-failed-${deptId}-${userId}`;
+	const notificationRef = db
+		.collection("companies")
+		.doc(companyId)
+		.collection("adminNotifications")
+		.doc(notificationId);
+
+	await notificationRef.set(
+		{
+			type: "final_quiz_failed",
+			status: "pending",
+			companyId,
+			deptId,
+			userId,
+			userName: userName || "",
+			userEmail: userEmail || "",
+			attemptsUsed: Number(attemptsUsed) || 0,
+			maxAttempts: Number(maxAttempts) || FINAL_QUIZ_MAX_ATTEMPTS,
+			score: typeof finalScore === "number" ? finalScore : null,
+			message: `${userName || "A fresher"} failed the final quiz after ${attemptsUsed}/${maxAttempts} attempts.${typeof finalScore === "number" ? ` Last score: ${finalScore}%.` : ""}`,
 			createdAt: admin.firestore.FieldValue.serverTimestamp(),
 			resolvedAt: null,
 		},
@@ -2243,6 +2282,46 @@ export const submitFinalQuiz = async (req, res) => {
 			await userRef.set({
 				finalAssessment: { ...finalAssessment, status: "failed" },
 			}, { merge: true });
+
+			try {
+				await createFinalQuizFailedNotification({
+					companyId,
+					deptId,
+					userId,
+					userName: userData?.name,
+					userEmail: userData?.email,
+					attemptsUsed,
+					maxAttempts,
+					finalScore: Number(finalAssessment?.lastScore),
+				});
+				console.log("🧪 [FINAL-QUIZ] Company final-quiz-failed notification created (pre-check).");
+			} catch (notificationErr) {
+				console.warn("⚠️ [FINAL-QUIZ] Failed to create final-quiz-failed notification (pre-check):", notificationErr.message);
+			}
+
+			try {
+				const companySnap = await db.collection("companies").doc(companyId).get();
+				const companyData = companySnap.exists ? companySnap.data() : {};
+				const companyEmail = companyData?.email || companyData?.companyEmail || null;
+				const companyName = companyData?.name || "TrainMate";
+
+				if (companyEmail) {
+					await sendFinalQuizFailedEmail({
+						companyEmail,
+						companyName,
+						userName: userData?.name || "",
+						userEmail: userData?.email || "",
+						deptId,
+						attemptsUsed,
+						maxAttempts,
+						finalScore: Number(finalAssessment?.lastScore),
+					});
+					console.log("🧪 [FINAL-QUIZ] Company final-quiz-failed email sent (pre-check).");
+				}
+			} catch (emailErr) {
+				console.warn("⚠️ [FINAL-QUIZ] Failed to send final-quiz-failed email (pre-check):", emailErr.message);
+			}
+
 			return res.status(403).json({ error: "Final attempts exhausted", status: "failed" });
 		}
 
@@ -2411,6 +2490,47 @@ export const submitFinalQuiz = async (req, res) => {
 				}
 			} catch (emailErr) {
 				console.warn("⚠️ [FINAL-QUIZ] Failed to send completion email:", emailErr.message);
+			}
+		} else if (finalStatus === "failed") {
+			try {
+				await createFinalQuizFailedNotification({
+					companyId,
+					deptId,
+					userId,
+					userName: userData?.name,
+					userEmail: userData?.email,
+					attemptsUsed: nextAttemptsUsed,
+					maxAttempts,
+					finalScore,
+				});
+				console.log("🧪 [FINAL-QUIZ] Company final-quiz-failed notification created.");
+			} catch (notificationErr) {
+				console.warn("⚠️ [FINAL-QUIZ] Failed to create final-quiz-failed notification:", notificationErr.message);
+			}
+
+			try {
+				const companySnap = await db.collection("companies").doc(companyId).get();
+				const companyData = companySnap.exists ? companySnap.data() : {};
+				const companyEmail = companyData?.email || companyData?.companyEmail || null;
+				const companyName = companyData?.name || "TrainMate";
+
+				if (companyEmail) {
+					await sendFinalQuizFailedEmail({
+						companyEmail,
+						companyName,
+						userName: userData?.name || "",
+						userEmail: userData?.email || "",
+						deptId,
+						attemptsUsed: nextAttemptsUsed,
+						maxAttempts,
+						finalScore,
+					});
+					console.log("🧪 [FINAL-QUIZ] Company final-quiz-failed email sent.");
+				} else {
+					console.warn("⚠️ [FINAL-QUIZ] Company email not found, skipping final-quiz-failed email.");
+				}
+			} catch (emailErr) {
+				console.warn("⚠️ [FINAL-QUIZ] Failed to send final-quiz-failed email:", emailErr.message);
 			}
 		}
 

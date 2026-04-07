@@ -351,7 +351,7 @@ if (loading) {
       <style>{scrollbarStyles}</style>
       <div className="flex h-screen bg-[#031C3A] text-white overflow-hidden">
         {/* SIDE MENU */}
-        <div className={`w-64 bg-[#021B36]/90 p-4 overflow-hidden custom-scrollbar ${isTrainingLocked ? "pointer-events-none opacity-50" : ""}`}>
+        <div className={`w-64 bg-[#021B36]/90 p-4 overflow-hidden custom-scrollbar ${isTrainingLocked ? "opacity-50" : ""}`}>
           <div>
             <FresherSideMenu
               userId={userId}
@@ -359,6 +359,7 @@ if (loading) {
               deptId={deptId}
               companyName={companyName}
               roadmapGenerated={roadmapGenerated}
+              isTrainingLocked={isTrainingLocked}
             />
           </div>
         </div>
