@@ -38,6 +38,7 @@ export const initiateGoogleOAuth = () => {
     scope,
     access_type: "offline",
     prompt: "consent",
+    include_granted_scopes: "true",
     state: generateState(),
   });
 
@@ -57,13 +58,22 @@ export const storeOAuthTokens = async (userId, companyId, deptId, tokens) => {
       userId
     );
 
+    const fresherSnap = await getDoc(fresherRef);
+    const existingRefreshToken = fresherSnap.exists()
+      ? fresherSnap.data()?.googleOAuth?.refreshToken || null
+      : null;
+    const finalRefreshToken = tokens.refresh_token || existingRefreshToken;
+
     await updateDoc(fresherRef, {
       googleOAuth: {
         accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token,
+        refreshToken: finalRefreshToken,
         expiresAt: new Date(Date.now() + tokens.expires_in * 1000),
         tokenType: tokens.token_type,
         scope: tokens.scope,
+        isConnected: true,
+        lastAuthError: null,
+        lastAuthErrorAt: null,
       },
       googleOAuthSetupAt: new Date(),
     });

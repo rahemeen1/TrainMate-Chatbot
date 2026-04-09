@@ -32,11 +32,13 @@ const authUrl = oauth2Client.generateAuthUrl({
   access_type: "offline",
   scope: scopes,
   prompt: "consent",
+  include_granted_scopes: true,
   response_type: "code",
 });
 
 console.log("Open this URL in your browser:");
 console.log(authUrl);
+console.log(`\nUsing redirect URI: ${REDIRECT_URI}`);
 console.log("\nAfter allowing, copy the code from the URL and paste here.");
 
 const rl = readline.createInterface({
@@ -56,6 +58,11 @@ rl.question("Paste the authorization code here: ", async (code) => {
     console.log("Exchanging code for tokens...\n");
 
     const { tokens } = await oauth2Client.getToken(code);
+
+    if (!tokens.refresh_token) {
+      console.error("Google did not return a refresh token. Remove app access from Google Account and retry with prompt=consent.");
+      process.exit(1);
+    }
 
     console.log("Add this to your .env:");
     console.log(`GOOGLE_REFRESH_TOKEN="${tokens.refresh_token}"`);

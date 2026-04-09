@@ -68,7 +68,15 @@ async function testCalendarAccess() {
     console.log("No calendars found\n");
     return false;
   } catch (error) {
+    const status = error?.code || error?.status || error?.response?.status;
+    const details = error?.response?.data || error?.errors || null;
     console.error("Failed to access Google Calendar:", error.message);
+    if (status) {
+      console.error("Status:", status);
+    }
+    if (details) {
+      console.error("Details:", JSON.stringify(details));
+    }
     return false;
   }
 }

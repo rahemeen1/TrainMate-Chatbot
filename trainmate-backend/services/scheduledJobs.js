@@ -1,9 +1,7 @@
 // trainmate-backend/services/scheduledJobs.js
 import cron from "node-cron";
 import { db } from "../config/firebase.js";
-import { aiAgenticSendDailyReminder, aiDecideNotificationStrategy, aiGeneratePersonalizedContent, analyzeUserEngagement } from "./aiAgenticNotificationService.js";
-import { sendQuizUnlockEmail } from "./emailService.js";
-import { createQuizUnlockReminder } from "./calendarService.js";
+import { handleQuizUnlock } from "./notificationService.js";
 
 /**
  * Check if quiz should be unlocked (70% of module time passed by default)
@@ -94,7 +92,8 @@ async function enforceExpiredStatusForUser(roadmapRef, now = new Date()) {
 }
 
 /**
- * Send quiz unlock notifications (email and calendar)
+ * Send quiz unlock notifications (email only - reuses existing calendar event)
+ * Simplified version - just delegates to notification service
  */
 async function sendQuizUnlockNotifications({
   companyId,
@@ -105,80 +104,20 @@ async function sendQuizUnlockNotifications({
   moduleTitle,
   companyName,
   moduleId,
-  activeModule,
-  maxQuizAttempts = 3,
 }) {
-  console.log(`\n🔓 Sending quiz unlock notifications for ${userName} - ${moduleTitle}`);
+  console.log(`\n🔓 Quiz unlock for ${userName} - ${moduleTitle}`);
   
   try {
-    const engagementData = await analyzeUserEngagement(companyId, deptId, userId);
-    
-    const aiDecision = await aiDecideNotificationStrategy({
+    // Use simplified notification service - sends ONLY email notification
+    await handleQuizUnlock({
+      companyId,
+      deptId,
+      userId,
+      userEmail,
       userName,
+      moduleTitle,
       companyName,
-      trainingTopic: moduleTitle,
-      engagementData,
-      notificationType: "QUIZ_UNLOCK",
-      isNewUser: false,
-      timezone: process.env.DEFAULT_TIMEZONE,
-      activeModule,
     });
-    
-    if (!aiDecision.shouldSend) {
-      console.log(`⏭️ AI: Skip quiz unlock notification - ${aiDecision.reason}`);
-      return false;
-    }
-    
-    console.log(`✅ AI: Send quiz unlock notification - ${aiDecision.reason}`);
-    
-    const timeZone = process.env.DEFAULT_TIMEZONE || "Asia/Karachi";
-    const reminderTime = aiDecision.optimalTime || "15:00";
-    const unlockDate = new Date();
-    
-    // Send calendar reminder
-    if (aiDecision.createCalendarEvent) {
-      try {
-        await createQuizUnlockReminder({
-          companyId,
-          deptId,
-          userId,
-          moduleTitle,
-          companyName,
-          unlockDate,
-          maxQuizAttempts,
-          reminderTime,
-          timeZone,
-          attendeeEmail: userEmail,
-        });
-        console.log(`✅ Quiz unlock calendar reminder added for ${userEmail}`);
-      } catch (calendarErr) {
-        console.error(`❌ Calendar reminder failed: ${calendarErr.message}`);
-      }
-    }
-    
-    // Send email notification
-    if (aiDecision.sendEmail) {
-      try {
-        const quizDeadline = new Date(unlockDate);
-        quizDeadline.setDate(quizDeadline.getDate() + 7);
-        
-        await sendQuizUnlockEmail({
-          userEmail,
-          userName,
-          moduleTitle,
-          companyName,
-          quizDeadline: quizDeadline.toLocaleDateString("en-US", {
-            weekday: "long",
-            year: "numeric",
-            month: "long",
-            day: "numeric",
-          }),
-        });
-        console.log(`✅ Quiz unlock email sent to ${userEmail}`);
-      } catch (emailErr) {
-        console.error(`❌ Quiz unlock email failed: ${emailErr.message}`);
-      }
-    }
     
     // Mark quiz as unlocked in Firestore
     const moduleRef = db
@@ -198,7 +137,7 @@ async function sendQuizUnlockNotifications({
     
     return true;
   } catch (error) {
-    console.error(`❌ Quiz unlock notification failed: ${error.message}`);
+    console.error(`❌ Quiz unlock failed: ${error.message}`);
     return false;
   }
 }
@@ -306,36 +245,15 @@ export function scheduleDailyModuleReminders() {
                     moduleTitle,
                     companyName,
                     moduleId,
-                    activeModule,
-                    maxQuizAttempts: userData?.quizPolicy?.maxQuizAttempts || 3,
                   });
                 } catch (unlockErr) {
                   console.error(`❌ Failed to send quiz unlock notification: ${unlockErr.message}`);
                 }
               }
 
-              // Send daily reminder
-              if (userData.email) {
-                try {
-                  const sent = await aiAgenticSendDailyReminder({
-                    companyId,
-                    deptId,
-                    userId,
-                    userEmail: userData.email,
-                    userName: userData.name || "Trainee",
-                    moduleTitle: moduleTitle,
-                    companyName: companyName,
-                    dayNumber: dayNumber,
-                    userData: userData,
-                  });
-                  
-                  if (sent) {
-                    console.log(`✅ AI-powered daily reminder sent to ${userData.email} - ${moduleTitle}`);
-                  }
-                } catch (emailErr) {
-                  console.error(`❌ Failed to send reminder to ${userData.email}:`, emailErr.message);
-                }
-              }
+              // NOTE: Daily reminders are now handled by the recurring calendar event
+              // created in notificationService.js when roadmap is generated
+              // No need to send daily emails - they come from Google Calendar reminders
             }
           }
         }
