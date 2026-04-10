@@ -4,14 +4,12 @@ import HeroSection from "./HeroSection";
 import LearnMoreSection from "./LearnMoreSection";
 import AuthModal from "../AuthModal";
 import LoadingScreen from "./LoadingScreen";
-import EngagementModal from "./EngagementModal";
 
 export default function Home() {
   const [isLoading, setIsLoading] = useState(true);
   const [learnMoreOpen, setLearnMoreOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState("login");
-  const [engagementOpen, setEngagementOpen] = useState(false);
 
   if (isLoading) {
     return <LoadingScreen onFinish={() => setIsLoading(false)} />;
@@ -32,22 +30,25 @@ export default function Home() {
 
       <HeroSection
         onLearnMoreClick={() => setLearnMoreOpen(true)}
-        onGetStartedClick={() => setEngagementOpen(true)}
+        onGetStartedClick={() => {
+          setAuthMode("signup");
+          setAuthModalOpen(true);
+        }}
       />
       <LearnMoreSection
         isOpen={learnMoreOpen}
         onClose={() => setLearnMoreOpen(false)}
-        onGetStartedClick={() => setEngagementOpen(true)}
+        onGetStartedClick={() => {
+          setLearnMoreOpen(false);
+          setAuthMode("signup");
+          setAuthModalOpen(true);
+        }}
       />
 
       <AuthModal
         isOpen={authModalOpen}
         mode={authMode}
         onClose={() => setAuthModalOpen(false)}
-      />
-      <EngagementModal
-        isOpen={engagementOpen}
-        onClose={() => setEngagementOpen(false)}
       />
     </div>
   );

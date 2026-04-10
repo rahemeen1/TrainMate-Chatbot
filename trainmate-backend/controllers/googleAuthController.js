@@ -24,7 +24,7 @@ console.log("Google OAuth config:", {
  */
 export const googleOAuthCallback = async (req, res) => {
   try {
-    const { code } = req.body;
+    const { code, redirectUri } = req.body;
 
     if (!code) {
       return res.status(400).json({ error: "No authorization code provided" });
@@ -36,13 +36,18 @@ export const googleOAuthCallback = async (req, res) => {
         .json({ error: "Google OAuth credentials not configured" });
     }
 
+    const exchangeRedirectUri =
+      redirectUri ||
+      GOOGLE_REDIRECT_URI ||
+      `${process.env.FRONTEND_URL}/auth/google/callback`;
+
     console.log("Exchanging Google authorization code for tokens...");
-    console.log("Redirect URI:", GOOGLE_REDIRECT_URI);
+    console.log("Redirect URI:", exchangeRedirectUri);
 
     const oauth2Client = new google.auth.OAuth2(
       GOOGLE_CLIENT_ID,
       GOOGLE_CLIENT_SECRET,
-      GOOGLE_REDIRECT_URI
+      exchangeRedirectUri
     );
 
     const { tokens } = await oauth2Client.getToken(code);
@@ -91,12 +96,19 @@ export const googleOAuthCallback = async (req, res) => {
       .collection("users")
       .doc(userId);
 
+    const existingFresherSnap = await fresherRef.get();
+    const existingRefreshToken = existingFresherSnap.data()?.googleOAuth?.refreshToken || null;
+    const finalRefreshToken = tokens.refresh_token || existingRefreshToken;
+
     await fresherRef.update({
       googleOAuth: {
         accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token || null,
+        refreshToken: finalRefreshToken,
         expiresAt: new Date(tokens.expiry_date),
         scope: tokens.scope,
+        isConnected: true,
+        lastAuthError: null,
+        lastAuthErrorAt: null,
       },
       googleOAuthSetupAt: new Date(),
       googleCalendarEmail: googleEmail,
@@ -108,7 +120,7 @@ export const googleOAuthCallback = async (req, res) => {
       success: true,
       tokens: {
         access_token: tokens.access_token,
-        refresh_token: tokens.refresh_token,
+        refresh_token: finalRefreshToken,
         expires_in: Math.floor((tokens.expiry_date - Date.now()) / 1000),
         token_type: tokens.token_type,
         scope: tokens.scope,
@@ -161,6 +173,7 @@ export const generateCompanyGoogleAuthUrl = (req, res) => {
       scope: scopes,
       state: companyId, // Pass companyId in state for verification
       prompt: "consent", // Force consent to get refresh token
+      include_granted_scopes: true,
     });
 
     console.log("✅ Generated Google Auth URL for company:", companyId);
@@ -224,14 +237,22 @@ export const companyGoogleOAuthCallback = async (req, res) => {
 
     console.log("Google account email:", googleEmail);
 
-    // Store OAuth tokens in company document
+    // Preserve existing refresh token if Google does not resend it
     const companyRef = db.collection("companies").doc(companyId);
+    const existingCompanySnap = await companyRef.get();
+    const existingRefreshToken = existingCompanySnap.data()?.googleOAuth?.refreshToken || null;
+    const finalRefreshToken = tokens.refresh_token || existingRefreshToken;
+
+    // Store OAuth tokens in company document
     await companyRef.update({
       googleOAuth: {
         accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token || null,
+        refreshToken: finalRefreshToken,
         expiresAt: new Date(tokens.expiry_date),
         scope: tokens.scope,
+        isConnected: true,
+        lastAuthError: null,
+        lastAuthErrorAt: null,
       },
       googleOAuthSetupAt: new Date(),
       googleCalendarEmail: googleEmail,

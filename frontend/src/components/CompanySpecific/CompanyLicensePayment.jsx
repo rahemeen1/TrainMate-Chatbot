@@ -116,7 +116,7 @@ export default function CompanyLicensePayment() {
         plan: targetLicense,
         amountUsd: selectedPlan.usdPrice,
         amountInr: selectedPlan.inrPrice,
-        currency: "USD/INR",
+        currency: "USD/PKR",
         status: "success",
         cardHolderName: form.cardHolderName.trim(),
         cardLast4: normalizedCard.slice(-4),
@@ -185,8 +185,8 @@ export default function CompanyLicensePayment() {
                 <p className="text-lg font-semibold text-[#E8F7FF]">${selectedPlan.usdPrice}/month</p>
               </div>
               <div className="p-3 rounded-lg bg-[#031C3A]/70 border border-[#00FFFF30]">
-                <p className="text-xs text-[#8EB6D3] uppercase">INR</p>
-                <p className="text-lg font-semibold text-[#E8F7FF]">Rs {selectedPlan.inrPrice.toLocaleString("en-IN")}/month</p>
+                <p className="text-xs text-[#8EB6D3] uppercase">PKR</p>
+                <p className="text-lg font-semibold text-[#E8F7FF]">PKR {selectedPlan.inrPrice.toLocaleString("en-PK")}/month</p>
               </div>
             </div>
           </div>

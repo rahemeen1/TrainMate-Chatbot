@@ -7,6 +7,7 @@ import { FresherSideMenu } from "./FresherSideMenu";
 import TrainingLockedScreen from "./TrainingLockedScreen";
 
 export default function FresherTraining() {
+  const DEFAULT_QUIZ_UNLOCK_PERCENT = 70;
   const { companyId, deptId, userId } = useParams();
   const location = useLocation(); 
   const navigate = useNavigate();
@@ -18,6 +19,7 @@ export default function FresherTraining() {
   const [loading, setLoading] = useState(true);
   const [selectedModule, setSelectedModule] = useState(null);
   const [showQuizConfirm, setShowQuizConfirm] = useState(false);
+  const [quizModalType, setQuizModalType] = useState("confirm");
   const [weaknessAnalysis, setWeaknessAnalysis] = useState(null);
   const [showWeaknessBanner, setShowWeaknessBanner] = useState(false);
   const [userData, setUserData] = useState(null);
@@ -169,7 +171,76 @@ export default function FresherTraining() {
 
   const moduleTimeRemaining = selectedModule ? getModuleTimeRemaining(selectedModule) : null;
 
+  const getQuizTimeUnlock = (module) => {
+    if (!module) {
+      return {
+        isUnlocked: false,
+        unlockPercent: DEFAULT_QUIZ_UNLOCK_PERCENT,
+        remainingTime: "No module selected",
+        message: "Select a module to continue.",
+      };
+    }
+
+    const startDateRaw = module.startedAt || module.startDate || module.FirstTimeCreatedAt || module.createdAt;
+    const estimatedDays = Number(module.estimatedDays) || 1;
+    const configuredUnlockPercent = Number(userData?.quizPolicy?.quizUnlockPercent);
+    const unlockPercent = Number.isFinite(configuredUnlockPercent)
+      ? Math.max(DEFAULT_QUIZ_UNLOCK_PERCENT, configuredUnlockPercent)
+      : DEFAULT_QUIZ_UNLOCK_PERCENT;
+
+    if (!startDateRaw) {
+      return {
+        isUnlocked: false,
+        unlockPercent,
+        remainingTime: "Module not started yet",
+        message: "Quiz unlocks after module start.",
+      };
+    }
+
+    const startDate = startDateRaw.toDate ? startDateRaw.toDate() : new Date(startDateRaw);
+    const unlockAt = startDate.getTime() + (estimatedDays * (unlockPercent / 100) * 24 * 60 * 60 * 1000);
+    const now = Date.now();
+
+    if (now >= unlockAt) {
+      return {
+        isUnlocked: true,
+        unlockPercent,
+        remainingTime: null,
+        message: "Quiz is now available!",
+      };
+    }
+
+    const remainingMs = unlockAt - now;
+    const remainingDays = Math.floor(remainingMs / (1000 * 60 * 60 * 24));
+    const remainingHours = Math.floor((remainingMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const remainingMinutes = Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60));
+
+    let remainingTime = "";
+    if (remainingDays > 0) {
+      remainingTime = `${remainingDays} day${remainingDays > 1 ? "s" : ""} and ${remainingHours} hour${remainingHours !== 1 ? "s" : ""}`;
+    } else if (remainingHours > 0) {
+      remainingTime = `${remainingHours} hour${remainingHours !== 1 ? "s" : ""} and ${remainingMinutes} minute${remainingMinutes !== 1 ? "s" : ""}`;
+    } else {
+      remainingTime = `${remainingMinutes} minute${remainingMinutes !== 1 ? "s" : ""}`;
+    }
+
+    return {
+      isUnlocked: false,
+      unlockPercent,
+      remainingTime,
+      message: `Quiz unlocks after ${unlockPercent}% module time. Remaining: ${remainingTime}`,
+    };
+  };
+
+  const quizUnlockInfo = selectedModule ? getQuizTimeUnlock(selectedModule) : null;
+
   const takeQuiz = (moduleId) => {
+    if (!quizUnlockInfo?.isUnlocked) {
+      setQuizModalType("locked");
+      setShowQuizConfirm(true);
+      return;
+    }
+    setQuizModalType("confirm");
     setShowQuizConfirm(true); // Show confirmation modal
   };
 
@@ -325,10 +396,16 @@ return (
                 {/* Mark Module as Completed Button - Always same text */}
                 <button
                   onClick={() => takeQuiz()}
-                  className="px-4 py-2 bg-[#00FFFF] text-[#031C3A] rounded font-semibold flex items-center justify-center gap-2 hover:bg-[#00FFFF]/90 transition"
+                  className="px-4 py-2 rounded font-semibold flex items-center justify-center gap-2 transition bg-[#00FFFF] text-[#031C3A] hover:bg-[#00FFFF]/90"
                 >
                   Mark Module as Completed
                 </button>
+                {!quizUnlockInfo?.isUnlocked && (
+                  <p className="text-xs text-yellow-300">
+                    Quiz locked until {quizUnlockInfo?.unlockPercent || DEFAULT_QUIZ_UNLOCK_PERCENT}% module time is completed.
+                    {quizUnlockInfo?.remainingTime ? ` (${quizUnlockInfo.remainingTime} left)` : ""}
+                  </p>
+                )}
               </>
             ) : (
               <span className="text-green-400 font-semibold">
@@ -365,41 +442,60 @@ return (
       {showQuizConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-[#021B36] border border-[#00FFFF] rounded-lg p-8 max-w-md shadow-xl">
-            <h3 className="text-2xl font-bold text-[#00FFFF] mb-4">
-              📝 Take Quiz
-            </h3>
-            <p className="text-[#AFCBE3] mb-4">
-              To mark this module as <span className="font-semibold text-white">completed</span>, you need to take and pass the quiz.
-            </p>
-            <p className="text-[#AFCBE3] mb-4">
-              Do you want me to redirect you to the quiz page?
-            </p>
-            
-            {/* 🤖 AI-Powered Assessment Info */}
-            <div className="mb-6 p-3 bg-purple-500/10 border border-purple-500/30 rounded-lg">
-              <div className="flex items-start gap-2">
-                <span className="text-purple-400 text-xl">🤖</span>
-                <div className="text-xs text-[#AFCBE3]">
-                  <p className="font-semibold text-purple-300 mb-1">AI-Powered Assessment</p>
-                  <p>AI will analyze your performance and dynamically allocate retry attempts (1-3) based on your learning progress.</p>
+            {quizModalType === "confirm" ? (
+              <>
+                <h3 className="text-2xl font-bold text-[#00FFFF] mb-4">
+                  📝 Take Quiz
+                </h3>
+                <p className="text-[#AFCBE3] mb-4">
+                  To mark this module as <span className="font-semibold text-white">completed</span>, you need to take and pass the quiz.
+                </p>
+                <p className="text-[#AFCBE3] mb-4">
+                  Do you want me to redirect you to the quiz page?
+                </p>
+
+                {/* 🤖 AI-Powered Assessment Info */}
+                <div className="mb-6 p-3 bg-purple-500/10 border border-purple-500/30 rounded-lg">
+                  <div className="flex items-start gap-2">
+                    <span className="text-purple-400 text-xl">🤖</span>
+                    <div className="text-xs text-[#AFCBE3]">
+                      <p className="font-semibold text-purple-300 mb-1">AI-Powered Assessment</p>
+                      <p>AI will analyze your performance and dynamically allocate retry attempts (1-3) based on your learning progress.</p>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
+              </>
+            ) : (
+              <>
+                <h3 className="text-2xl font-bold text-yellow-300 mb-4">
+                  🔒 Quiz Locked
+                </h3>
+                <p className="text-[#AFCBE3] mb-4">
+                  Quiz locked until {quizUnlockInfo?.unlockPercent || DEFAULT_QUIZ_UNLOCK_PERCENT}% module time is completed.
+                </p>
+                {quizUnlockInfo?.remainingTime && (
+                  <p className="text-sm text-yellow-300 mb-6">
+                    Time remaining: {quizUnlockInfo.remainingTime}
+                  </p>
+                )}
+              </>
+            )}
             
             <div className="flex gap-4">
-              <button
-                onClick={confirmQuiz}
-                className="flex-1 px-4 py-2 bg-[#00FFFF] text-[#031C3A] 
-                  rounded font-semibold hover:bg-[#00FFFF]/90 transition"
-              >
-                Yes, Take Quiz
-              </button>
+              {quizModalType === "confirm" && (
+                <button
+                  onClick={confirmQuiz}
+                  className="flex-1 px-4 py-2 bg-[#00FFFF] text-[#031C3A] 
+                    rounded font-semibold hover:bg-[#00FFFF]/90 transition"
+                >
+                  Yes, Take Quiz
+                </button>
+              )}
               <button
                 onClick={cancelQuiz}
-                className="flex-1 px-4 py-2 border border-[#00FFFF] text-[#00FFFF] 
-                  rounded font-semibold hover:bg-[#00FFFF]/10 transition"
+                className={`${quizModalType === "confirm" ? "flex-1" : "w-full"} px-4 py-2 border border-[#00FFFF] text-[#00FFFF] rounded font-semibold hover:bg-[#00FFFF]/10 transition`}
               >
-                Cancel
+                {quizModalType === "confirm" ? "Cancel" : "OK"}
               </button>
             </div>
           </div>

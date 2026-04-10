@@ -5,10 +5,8 @@ import { retrieveDeptDocsFromPinecone } from "../services/pineconeService.js";
 import { generateRoadmap } from "../services/llmService.js";
 import { extractSkillsFromText } from "../services/skillExtractor.service.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { sendRoadmapEmail, sendDailyModuleReminderEmail, sendQuizUnlockEmail } from "../services/emailService.js";
 import { generateRoadmapPDF } from "../services/pdfService.js";
-import { createDailyModuleReminder, createQuizUnlockReminder, createRoadmapGeneratedEvent } from "../services/calendarService.js";
-import { aiAgenticSendRoadmapNotifications, aiAgenticSendModuleNotifications } from "../services/aiAgenticNotificationService.js";
+import { handleRoadmapGenerated } from "../services/notificationService.js";
 
 const MAX_QUIZ_ATTEMPTS = 3; // Must match QuizController.js
 
@@ -838,9 +836,9 @@ console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboa
       console.warn("⚠️ Failed to fetch company name:", err.message || err);
     }
 
-    // 📧 Send notifications using AI Agentic Notification Service
+    // 📧 Send notifications (simplified: one calendar event + daily reminders)
     try {
-      console.log("📧 Generating PDF and preparing AI-powered notifications...");
+      console.log("📧 Generating PDF and scheduling notifications...");
       
       // Generate PDF
       const pdfBuffer = await generateRoadmapPDF({
@@ -850,52 +848,25 @@ console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboa
         modules: roadmapModules,
       });
       
-      // Use AI agentic service to intelligently send roadmap notifications
-      await aiAgenticSendRoadmapNotifications({
+      // Handle roadmap generation: sends email + creates ONE recurring calendar event
+      const notificationResult = await handleRoadmapGenerated({
         companyId,
         deptId,
         userId: user.userId,
+        userEmail: user.email,        // Using actual user email
         userName: user.name,
-        userEmail: user.email,
         companyName,
         trainingTopic: trainingOn,
         modules: roadmapModules,
         pdfBuffer,
-        userData: user,
       });
 
-      // Use AI agentic service for module notifications
-      const activeModule = roadmapModules[0];
-      if (activeModule && user.email) {
-        await aiAgenticSendModuleNotifications({
-          companyId,
-          deptId,
-          userId: user.userId,
-          userName: user.name,
-          userEmail: user.email,
-          companyName,
-          activeModule,
-          userData: user,
-        });
-      }
-
-      // Create Google Calendar event for roadmap generation
-      try {
-        await createRoadmapGeneratedEvent({
-          companyId,
-          deptId,
-          userId: user.userId,
-          userName: user.name,
-          attendeeEmail: user.email,
-          companyName,
-          trainingTopic: trainingOn,
-          generatedAt: new Date(),
-          timeZone: user.timeZone || "UTC",
-        });
-        console.log("✅ Google Calendar event created for roadmap generation");
-      } catch (calendarErr) {
-        console.warn("⚠️ Google Calendar event creation failed (non-critical):", calendarErr.message);
-        // Don't fail the request if calendar event creation fails
+      if (notificationResult?.calendarEventCreated) {
+        console.log(`✅ Roadmap notifications scheduled for ${user.email}`);
+      } else {
+        console.warn(
+          `⚠️ Roadmap email sent but calendar scheduling failed for ${user.email}: ${notificationResult?.calendarError || "unknown error"}`
+        );
       }
     } catch (notificationErr) {
       console.warn("⚠️ Notification sending failed (non-critical):", notificationErr.message);

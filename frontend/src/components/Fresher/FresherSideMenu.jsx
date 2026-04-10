@@ -6,7 +6,7 @@ import { db } from "../../firebase";
 import { doc, getDoc, collection, getDocs } from "firebase/firestore";
 import { getCompanyLicensePlan } from "../../services/companyLicense";
 
-export function FresherSideMenu({ userId, companyId, deptId, companyName, roadmapGenerated = false }) {
+export function FresherSideMenu({ userId, companyId, deptId, companyName, roadmapGenerated = false, isTrainingLocked = false }) {
   const location = useLocation();
   const pathname = location.pathname || "";
   const state = location.state || {};
@@ -19,6 +19,8 @@ const [claimLoading, setClaimLoading] = useState(false);
 const [licensePlan, setLicensePlan] = useState("License Basic");
 const [allModulesCompleted, setAllModulesCompleted] = useState(false);
 console.log(email);
+
+  const lockMenu = Boolean(isTrainingLocked);
 
   const isActive = (itemKey) => {
     if (itemKey === "dashboard") return pathname === "/fresher-dashboard";
@@ -162,87 +164,100 @@ console.log(email);
 
       {/* Fresher routes - pass companyName */}
       <button
-        onClick={() =>
-          navigate("/fresher-dashboard", { state: { userId, companyId, deptId, companyName } })
-        }
-        className={getMenuButtonClass({ active: isActive("dashboard") })}
+        onClick={() => {
+          if (lockMenu) return;
+          navigate("/fresher-dashboard", { state: { userId, companyId, deptId, companyName } });
+        }}
+        className={getMenuButtonClass({ active: isActive("dashboard"), disabled: lockMenu })}
       >
         Dashboard
       </button>
 
       <button
-        onClick={() => navigate("/about")}
-        className={getMenuButtonClass({ active: isActive("about") })}
+        onClick={() => {
+          if (lockMenu) return;
+          navigate("/about");
+        }}
+        className={getMenuButtonClass({ active: isActive("about"), disabled: lockMenu })}
       >
         About Us
       </button>
 
       <button
         onClick={() => {
+          if (lockMenu) return;
           if (!roadmapGenerated) return;
           navigate(`/roadmap/${companyId}/${deptId}/${userId}/${companyName}`);
         }}
-        className={`${getMenuButtonClass({ active: isActive("roadmap"), disabled: !roadmapGenerated })} relative group`}
+        className={`${getMenuButtonClass({ active: isActive("roadmap"), disabled: lockMenu || !roadmapGenerated })} relative group`}
       >
-        {!roadmapGenerated && <span className="absolute top-1 left-1 text-xs">🔒</span>}
-        <span className={roadmapGenerated ? "" : "ml-2"}>RoadMap</span>
-        {!roadmapGenerated && (
+        {(lockMenu || !roadmapGenerated) && <span className="absolute top-1 left-1 text-xs">🔒</span>}
+        <span className={lockMenu || !roadmapGenerated ? "ml-2" : ""}>RoadMap</span>
+        {(lockMenu || !roadmapGenerated) && (
           <div className="absolute left-0 top-full mt-1 bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] text-xs font-semibold whitespace-nowrap px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition pointer-events-none shadow-lg z-50">
-            Generate roadmap to unlock
+            {lockMenu ? "Training is locked by admin" : "Generate roadmap to unlock"}
           </div>
         )}
       </button>
        <button
         onClick={() => {
+          if (lockMenu) return;
           if (!roadmapGenerated) return;
           navigate("/chatbot", { state: { userId, companyId, deptId, companyName, email } });
         }}
-        className={`${getMenuButtonClass({ active: isActive("assistant"), disabled: !roadmapGenerated })} relative group`}
+        className={`${getMenuButtonClass({ active: isActive("assistant"), disabled: lockMenu || !roadmapGenerated })} relative group`}
       >
-        {!roadmapGenerated && <span className="absolute top-1 left-1 text-xs">🔒</span>}
-        <span className={roadmapGenerated ? "" : "ml-2"}>Training Assistant</span>
-        {!roadmapGenerated && (
+        {(lockMenu || !roadmapGenerated) && <span className="absolute top-1 left-1 text-xs">🔒</span>}
+        <span className={lockMenu || !roadmapGenerated ? "ml-2" : ""}>Training Assistant</span>
+        {(lockMenu || !roadmapGenerated) && (
           <div className="absolute left-0 top-full mt-1 bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] text-xs font-semibold whitespace-nowrap px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition pointer-events-none shadow-lg z-50">
-            Generate roadmap to unlock
+            {lockMenu ? "Training is locked by admin" : "Generate roadmap to unlock"}
           </div>
         )}
       </button>
 
       <button
         onClick={() => {
+          if (lockMenu) return;
           if (!roadmapGenerated) return;
           navigate("/fresher-progress", { state: { userId, companyId, deptId, companyName } });
         }}
-        className={`${getMenuButtonClass({ active: isActive("progress"), disabled: !roadmapGenerated })} relative group`}
+        className={`${getMenuButtonClass({ active: isActive("progress"), disabled: lockMenu || !roadmapGenerated })} relative group`}
       >
-        {!roadmapGenerated && <span className="absolute top-1 left-1 text-xs">🔒</span>}
-        <span className={roadmapGenerated ? "" : "ml-2"}>Progress Details</span>
-        {!roadmapGenerated && (
+        {(lockMenu || !roadmapGenerated) && <span className="absolute top-1 left-1 text-xs">🔒</span>}
+        <span className={lockMenu || !roadmapGenerated ? "ml-2" : ""}>Progress Details</span>
+        {(lockMenu || !roadmapGenerated) && (
           <div className="absolute left-0 top-full mt-1 bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] text-xs font-semibold whitespace-nowrap px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition pointer-events-none shadow-lg z-50">
-            Generate roadmap to unlock
+            {lockMenu ? "Training is locked by admin" : "Generate roadmap to unlock"}
           </div>
         )}
       </button>
 
       <button
-        onClick={() =>
-          navigate("/fresher-settings", { state: { userId, companyId, deptId, companyName } })
-        }
-        className={getMenuButtonClass({ active: isActive("settings") })}
+        onClick={() => {
+          if (lockMenu) return;
+          navigate("/fresher-settings", { state: { userId, companyId, deptId, companyName } });
+        }}
+        className={getMenuButtonClass({ active: isActive("settings"), disabled: lockMenu })}
       >
         Settings
       </button>
 
       <button
-        onClick={handleClaimCertificate}
-        className={`${getMenuButtonClass({ active: isActive("certificate"), disabled: !roadmapGenerated })} relative group`}
+        onClick={() => {
+          if (lockMenu) return;
+          handleClaimCertificate();
+        }}
+        className={`${getMenuButtonClass({ active: isActive("certificate"), disabled: lockMenu || !roadmapGenerated })} relative group`}
       >
-        {!roadmapGenerated && <span className="absolute top-1 left-1 text-xs">🔒</span>}
-        <span className={roadmapGenerated ? "" : "ml-2"}>
+        {(lockMenu || !roadmapGenerated) && <span className="absolute top-1 left-1 text-xs">🔒</span>}
+        <span className={lockMenu || !roadmapGenerated ? "ml-2" : ""}>
           {claimLoading ? "Opening Final Quiz..." : "Claim Certificate"}
         </span>
         <div className="absolute left-0 top-full mt-1 bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] text-xs font-semibold whitespace-nowrap px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition pointer-events-none shadow-lg z-50">
-          {licensePlan === "License Basic"
+          {lockMenu
+            ? "Training is locked by admin"
+            : licensePlan === "License Basic"
             ? certificateUnlocked || allModulesCompleted
               ? "Certificate unlocked"
               : "Complete all modules to unlock certificate"

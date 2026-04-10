@@ -38,7 +38,7 @@ export default function GoogleAuthCallback() {
         const response = await fetch("/api/auth/google-callback", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code }),
+          body: JSON.stringify({ code, redirectUri: window.location.origin + "/auth/google/callback" }),
         });
 
         if (!response.ok) {

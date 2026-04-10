@@ -22,7 +22,10 @@ export default function ComparePlans() {
   ).map((feature) => ({
     title: feature,
     basic: (plans.basic?.includes || []).includes(feature),
-    pro: (plans.pro?.includes || []).includes(feature),
+    // Pro inherits all Basic capabilities plus Pro-specific capabilities.
+    pro:
+      (plans.basic?.includes || []).includes(feature) ||
+      (plans.pro?.includes || []).includes(feature),
   }));
 
   useEffect(() => {
