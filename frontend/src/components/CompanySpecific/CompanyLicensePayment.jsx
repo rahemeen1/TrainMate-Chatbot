@@ -107,6 +107,8 @@ export default function CompanyLicensePayment() {
 
     setProcessing(true);
     try {
+      const billingPeriodDays = 30;
+      const renewalDate = new Date(Date.now() + billingPeriodDays * 24 * 60 * 60 * 1000);
       const cardHash = await hashString(normalizedCard);
       const paymentFingerprint = await hashString(
         `${companyId}|${normalizedCard}|${form.expiryMonth}|${form.expiryYear}`
@@ -125,6 +127,8 @@ export default function CompanyLicensePayment() {
         expiryMonth: form.expiryMonth,
         expiryYear: form.expiryYear,
         provider: "internal-demo",
+        billingPeriodDays,
+        renewalDate,
         createdAt: serverTimestamp(),
       });
 
@@ -152,6 +156,9 @@ export default function CompanyLicensePayment() {
 
       await updateDoc(doc(db, "companies", companyId), {
         licensePlan: targetLicense,
+        billingPeriodDays,
+        licenseRenewalDate: renewalDate,
+        licenseStatus: "active",
         upgradedAt: serverTimestamp(),
       });
 

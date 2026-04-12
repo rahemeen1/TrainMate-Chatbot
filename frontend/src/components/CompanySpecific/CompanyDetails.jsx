@@ -143,11 +143,16 @@ export default function CompanyDetails() {
     }
 
     // Update company info
+    const billingPeriodDays = 30;
+    const licenseRenewalDate = new Date(Date.now() + billingPeriodDays * 24 * 60 * 60 * 1000);
     await updateDoc(doc(db, "companies", companyId), {
       name: companyDetails.name,
       phone: companyDetails.phone,
       address: companyDetails.address,
-      licensePlan: onboardingAnswers[0] || "License Basic"
+      licensePlan: onboardingAnswers[0] || "License Basic",
+      billingPeriodDays,
+      licenseRenewalDate,
+      licenseStatus: "active",
     });
 
     setInitialLicense(onboardingAnswers[0] || "License Basic");

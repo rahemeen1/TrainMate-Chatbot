@@ -1,6 +1,6 @@
 //CompanyDashboard.jsx
 import { useState, useEffect, useRef } from "react";
-import { collection, getDocs, addDoc, serverTimestamp, query, orderBy, limit, getDoc } from "firebase/firestore";
+import { collection, getDocs, addDoc, serverTimestamp, query, orderBy, limit, getDoc, updateDoc } from "firebase/firestore";
 import {
   BarChart,
   Bar,
@@ -21,6 +21,7 @@ import { CreditCard, Wallet } from "lucide-react";
 import CompanySidebar from "../../components/CompanySpecific/CompanySidebar";
 import CompanyPageLoader from "../../components/CompanySpecific/CompanyPageLoader";
 import CompanyFresherChatbot from "../../components/CompanySpecific/CompanyFresherChatbot";
+import { getCompanyLicenseStatus } from "../../services/companyLicenseStatus";
 
 
 const DEPARTMENT_OPTIONS = ["HR", "SOFTWAREDEVELOPMENT", "AI", "ACCOUNTING", "MARKETING", "OPERATIONS", "DATASCIENCE","IT"];
@@ -162,6 +163,13 @@ export default function CompanyDashboard() {
   const [showCalendarPrompt, setShowCalendarPrompt] = useState(true);
   const [pendingNotificationCount, setPendingNotificationCount] = useState(0);
   const [showNotificationPrompt, setShowNotificationPrompt] = useState(false);
+  const [licenseStatus, setLicenseStatus] = useState({
+    plan: "License Basic",
+    renewalDate: null,
+    daysRemaining: null,
+    isExpired: false,
+    statusLabel: "Unknown",
+  });
   const preloadedAnalyticsKeyRef = useRef("");
 
   const selectedPlan = answers[0];
@@ -169,6 +177,23 @@ export default function CompanyDashboard() {
   const isBasicLicense = effectiveLicense === "License Basic";
   const currentPlanConfig = PLAN_OPTIONS.find((plan) => plan.value === effectiveLicense);
   const currentPlanLabel = currentPlanConfig?.title || "Pro";
+  const renewalDateLabel = licenseStatus.renewalDate
+    ? licenseStatus.renewalDate.toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      })
+    : "Not set";
+
+  const licenseCountdownLabel = (() => {
+    if (licenseStatus.daysRemaining === null) return "Renewal date unavailable";
+    if (licenseStatus.daysRemaining < 0) {
+      const overdue = Math.abs(licenseStatus.daysRemaining);
+      return `Expired ${overdue} day${overdue === 1 ? "" : "s"} ago`;
+    }
+    if (licenseStatus.daysRemaining === 0) return "Renews today";
+    return `Renews in ${licenseStatus.daysRemaining} day${licenseStatus.daysRemaining === 1 ? "" : "s"}`;
+  })();
 
   const getDepartmentsKey = (departments) => [...departments].sort().join("|");
 
@@ -326,6 +351,21 @@ useEffect(() => {
     };
 
     fetchCompanyLicense();
+  }, [companyId]);
+
+  useEffect(() => {
+    const fetchLicenseStatus = async () => {
+      if (!companyId) return;
+
+      try {
+        const status = await getCompanyLicenseStatus(companyId);
+        setLicenseStatus(status);
+      } catch (err) {
+        console.error("Error loading license status:", err);
+      }
+    };
+
+    fetchLicenseStatus();
   }, [companyId]);
 
   // Fetch company name from database if not available
@@ -797,6 +837,17 @@ const CustomXAxisTick = ({ x, y, payload }) => {
         paymentMethod: answers[5],
       });
 
+      const billingPeriodDays = 30;
+      const licenseRenewalDate = new Date(Date.now() + billingPeriodDays * 24 * 60 * 60 * 1000);
+
+      await updateDoc(doc(db, "companies", companyId), {
+        licensePlan: selectedLicense,
+        billingPeriodDays,
+        licenseRenewalDate,
+        licenseStatus: "active",
+        upgradedAt: serverTimestamp(),
+      });
+
       // Mark onboarding as done and show dashboard
       setHasDepartments(true);
       alert("Onboarding completed successfully! Please connect your Google Calendar to enhance your training experience.");
@@ -806,17 +857,14 @@ const CustomXAxisTick = ({ x, y, payload }) => {
       setSavingOnboarding(false);
     }
   };
-
- if (loading) {
-   return (
-     <div className="company-page-shell flex min-h-screen">
-       {/* Sidebar stays as it is */}
-       <CompanySidebar companyId={companyId}/>
-
-        <CompanyPageLoader message="Loading Company Dashboard..." />
-     </div>
-   );
- }
+  if (loading) {
+     return (
+       <div className="flex min-h-screen bg-[#031C3A] text-white">
+         <CompanySidebar companyId={companyId} companyName={companyName} />
+         <CompanyPageLoader message="Loading Company Dashboard..." />
+       </div>
+     );
+   }
   const progressPercent = (step / QUESTIONS.length) * 100;
 
   return (
@@ -912,6 +960,15 @@ const CustomXAxisTick = ({ x, y, payload }) => {
                       month: "short",
                       year: "numeric",
                     })}
+                  </span>
+                  <span
+                    className={`px-3 py-1 rounded-lg text-sm font-semibold border ${
+                      licenseStatus.isExpired
+                        ? "bg-[#7FA3BF]/20 text-[#FFB3B3] border-[#FF9E9E55]"
+                        : "bg-[#00FFFF]/20 text-[#00FFFF] border-[#00FFFF66]"
+                    }`}
+                  >
+                    {licenseCountdownLabel}
                   </span>
                 </div>
               )}
@@ -1290,11 +1347,26 @@ const CustomXAxisTick = ({ x, y, payload }) => {
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-4">
               <div className="company-kpi-card dash-kpi-card dash-enter dash-delay-1">
                 <h3 className="company-kpi-label">Current Plan</h3>
                 <p className="company-kpi-value text-[#E8F7FF]">{currentPlanLabel}</p>
                 <p className="text-xs text-[#7FA3BF] mt-1">{currentPlanConfig?.capacity || "Plan details available"}</p>
+              </div>
+              <div className="company-kpi-card dash-kpi-card dash-enter dash-delay-1">
+                <h3 className="company-kpi-label">License Renewal</h3>
+                <p
+                  className={`company-kpi-value ${
+                    licenseStatus.isExpired ? "text-[#FF9E9E]" : "text-[#E8F7FF]"
+                  }`}
+                >
+                  {licenseStatus.daysRemaining === null
+                    ? "N/A"
+                    : licenseStatus.daysRemaining < 0
+                      ? `${Math.abs(licenseStatus.daysRemaining)}d overdue`
+                      : `${licenseStatus.daysRemaining}d left`}
+                </p>
+                <p className="text-xs text-[#7FA3BF] mt-1">{renewalDateLabel}</p>
               </div>
               <div className="company-kpi-card dash-kpi-card dash-enter dash-delay-1">
                 <h3 className="company-kpi-label">Total Departments</h3>

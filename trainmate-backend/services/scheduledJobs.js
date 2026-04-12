@@ -2,6 +2,155 @@
 import cron from "node-cron";
 import { db } from "../config/firebase.js";
 import { handleQuizUnlock } from "./notificationService.js";
+import { sendCompanyLicenseRenewalAlertEmail } from "./emailService.js";
+
+const LICENSE_REMINDER_OFFSETS_DAYS = [2, 1, 0];
+
+function timestampToDate(value) {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  if (value?.toDate) return value.toDate();
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function getLatestByCreatedAt(docSnap) {
+  if (!docSnap || docSnap.empty) return null;
+
+  const docs = docSnap.docs.slice().sort((a, b) => {
+    const aMs = timestampToDate(a.data()?.createdAt)?.getTime() || 0;
+    const bMs = timestampToDate(b.data()?.createdAt)?.getTime() || 0;
+    return bMs - aMs;
+  });
+
+  return docs[0] || null;
+}
+
+function startOfDay(date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function deriveCompanyRenewalDate(companyData, latestBillingData) {
+  const billingRenewal =
+    timestampToDate(latestBillingData?.renewalDate) ||
+    timestampToDate(latestBillingData?.nextRenewalDate) ||
+    timestampToDate(latestBillingData?.licenseRenewalDate);
+  if (billingRenewal) return billingRenewal;
+
+  const companyRenewal =
+    timestampToDate(companyData?.licenseRenewalDate) ||
+    timestampToDate(companyData?.nextRenewalDate);
+  if (companyRenewal) return companyRenewal;
+
+  const billingCreatedAt = timestampToDate(latestBillingData?.createdAt);
+  if (!billingCreatedAt) return null;
+
+  const periodDays = Number(latestBillingData?.billingPeriodDays) || Number(companyData?.billingPeriodDays) || 30;
+  const renewalDate = new Date(billingCreatedAt);
+  renewalDate.setDate(renewalDate.getDate() + periodDays);
+  return renewalDate;
+}
+
+async function processCompanyLicenseRenewalAlerts() {
+  const today = startOfDay(new Date());
+  const companiesSnap = await db.collection("companies").get();
+
+  for (const companyDoc of companiesSnap.docs) {
+    const companyId = companyDoc.id;
+    const companyData = companyDoc.data() || {};
+
+    if (companyData.status && companyData.status !== "active") {
+      continue;
+    }
+
+    const companyEmail =
+      String(companyData.email || companyData.companyEmail || "").trim().toLowerCase();
+    if (!companyEmail) {
+      continue;
+    }
+
+    const billingSnap = await db
+      .collection("companies")
+      .doc(companyId)
+      .collection("billingPayments")
+      .get();
+
+    const latestBillingDoc = getLatestByCreatedAt(billingSnap);
+    const latestBillingData = latestBillingDoc?.data() || null;
+
+    const renewalDate = deriveCompanyRenewalDate(companyData, latestBillingData);
+    if (!renewalDate) {
+      continue;
+    }
+
+    const renewalDay = startOfDay(renewalDate);
+    const dayDiff = Math.round((renewalDay.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
+    if (!LICENSE_REMINDER_OFFSETS_DAYS.includes(dayDiff)) {
+      continue;
+    }
+
+    const reminderKey = `${renewalDay.toISOString().slice(0, 10)}-d${dayDiff}`;
+    const reminderRef = db
+      .collection("companies")
+      .doc(companyId)
+      .collection("licenseNotifications")
+      .doc(reminderKey);
+
+    const reminderSnap = await reminderRef.get();
+    if (reminderSnap.exists) {
+      continue;
+    }
+
+    const licensePlan =
+      latestBillingData?.plan || companyData.licensePlan || "License Basic";
+
+    await sendCompanyLicenseRenewalAlertEmail({
+      companyEmail,
+      companyName: companyData.name || "Company",
+      licensePlan,
+      renewalDate,
+      daysRemaining: dayDiff,
+    });
+
+    await reminderRef.set({
+      companyId,
+      companyEmail,
+      licensePlan,
+      renewalDate,
+      daysRemaining: dayDiff,
+      sentAt: new Date(),
+      sourceBillingDocId: latestBillingDoc?.id || null,
+    });
+
+    console.log(
+      `License reminder sent for company ${companyId} (${dayDiff} days remaining)`
+    );
+  }
+}
+
+export function scheduleCompanyLicenseRenewalAlerts() {
+  const cronExpression = process.env.COMPANY_LICENSE_REMINDER_CRON || "0 18 * * *";
+
+  cron.schedule(
+    cronExpression,
+    async () => {
+      console.log("\nLicense renewal reminder job started at", new Date().toLocaleString());
+      try {
+        await processCompanyLicenseRenewalAlerts();
+        console.log("License renewal reminder job completed\n");
+      } catch (error) {
+        console.error("License renewal reminder job failed:", error);
+      }
+    },
+    {
+      timezone: process.env.DEFAULT_TIMEZONE || "Asia/Karachi",
+    }
+  );
+
+  console.log(
+    `Company license reminder scheduler initialized (runs at ${cronExpression})`
+  );
+}
 
 /**
  * Check if quiz should be unlocked (70% of module time passed by default)
@@ -276,5 +425,6 @@ export function scheduleDailyModuleReminders() {
 export function initializeScheduledJobs() {
   console.log("\n🕐 Initializing scheduled jobs...");
   scheduleDailyModuleReminders();
+  scheduleCompanyLicenseRenewalAlerts();
   console.log("✅ All scheduled jobs initialized\n");
 }
