@@ -4,7 +4,7 @@ import { db } from "../config/firebase.js";
 import { handleQuizUnlock } from "./notificationService.js";
 import { sendCompanyLicenseRenewalAlertEmail } from "./emailService.js";
 
-const LICENSE_REMINDER_OFFSETS_DAYS = [2, 1, 0];
+const LICENSE_REMINDER_OFFSETS_DAYS = [3, 2, 1, 0];
 
 function timestampToDate(value) {
   if (!value) return null;
@@ -104,12 +104,18 @@ async function processCompanyLicenseRenewalAlerts() {
     const licensePlan =
       latestBillingData?.plan || companyData.licensePlan || "License Basic";
 
+    const pendingLicensePlan =
+      companyData?.pendingLicensePlan === "License Basic" || companyData?.pendingLicensePlan === "License Pro"
+        ? companyData.pendingLicensePlan
+        : null;
+
     await sendCompanyLicenseRenewalAlertEmail({
       companyEmail,
       companyName: companyData.name || "Company",
       licensePlan,
       renewalDate,
       daysRemaining: dayDiff,
+      pendingLicensePlan,
     });
 
     await reminderRef.set({
@@ -120,6 +126,7 @@ async function processCompanyLicenseRenewalAlerts() {
       daysRemaining: dayDiff,
       sentAt: new Date(),
       sourceBillingDocId: latestBillingDoc?.id || null,
+      pendingLicensePlan,
     });
 
     console.log(

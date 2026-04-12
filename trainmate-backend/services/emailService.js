@@ -1210,6 +1210,7 @@ export async function sendCompanyCredentialsEmail({
  * @param {string} params.licensePlan
  * @param {Date|string|number} params.renewalDate
  * @param {number} params.daysRemaining
+ * @param {string|null} [params.pendingLicensePlan]
  */
 export async function sendCompanyLicenseRenewalAlertEmail({
   companyEmail,
@@ -1217,6 +1218,7 @@ export async function sendCompanyLicenseRenewalAlertEmail({
   licensePlan,
   renewalDate,
   daysRemaining,
+  pendingLicensePlan = null,
 }) {
   try {
     if (!companyEmail) {
@@ -1233,6 +1235,15 @@ export async function sendCompanyLicenseRenewalAlertEmail({
           year: "numeric",
         })
       : "N/A";
+
+    const normalizedCurrentPlan =
+      licensePlan === "License Pro" || licensePlan === "License Basic"
+        ? licensePlan
+        : "License Basic";
+    const normalizedPendingPlan =
+      pendingLicensePlan === "License Pro" || pendingLicensePlan === "License Basic"
+        ? pendingLicensePlan
+        : null;
 
     let subject = `License renewal reminder - ${companyName || "TrainMate"}`;
     let headline = "License renewal reminder";
@@ -1309,7 +1320,7 @@ export async function sendCompanyLicenseRenewalAlertEmail({
                   </tr>
                   <tr>
                     <td style="padding: 10px 0; width: 38%; color: #6A7D8F;">Current Plan</td>
-                    <td style="padding: 10px 0; font-weight: 700;">${licensePlan || "License Basic"}</td>
+                    <td style="padding: 10px 0; font-weight: 700;">${normalizedCurrentPlan}</td>
                   </tr>
                   <tr>
                     <td style="padding: 10px 0; width: 38%; color: #6A7D8F;">Renewal Date</td>
@@ -1320,6 +1331,21 @@ export async function sendCompanyLicenseRenewalAlertEmail({
                     <td style="padding: 10px 0; font-weight: 700;">${daysRemaining}</td>
                   </tr>
                 </table>
+              </div>
+
+              <div style="margin-top: 14px; border: 1px solid #D7EAF5; border-radius: 14px; background: #FFFFFF; padding: 14px 16px;">
+                <p style="margin: 0 0 8px; color: #031C3A; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;">
+                  Renewal Actions
+                </p>
+                <p style="margin: 0; color: #34495E; font-size: 14px; line-height: 1.6;">
+                  • Renew now to continue with your current <strong>${normalizedCurrentPlan}</strong> plan.
+                </p>
+                <p style="margin: 8px 0 0; color: #34495E; font-size: 14px; line-height: 1.6;">
+                  • Want a different plan next cycle? Set your next-renewal plan in Company Details before payment.
+                </p>
+                ${normalizedPendingPlan
+                  ? `<p style="margin: 10px 0 0; color: #0D6246; font-size: 14px; line-height: 1.6; font-weight: 700;">Scheduled plan for next cycle: ${normalizedPendingPlan}</p>`
+                  : ""}
               </div>
 
               <div style="text-align: center; margin: 24px 0 8px;">

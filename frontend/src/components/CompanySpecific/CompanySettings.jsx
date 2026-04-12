@@ -202,11 +202,13 @@ export default function CompanySettings() {
 
   if (loading) {
   return (
-    <div className="flex min-h-screen bg-[#031C3A] text-white">
-      {/* Sidebar stays as it is */}
-      <CompanySidebar companyId={companyId} companyName={companyName} />
-
-      <CompanyPageLoader message="Loading Company Settings..." />
+    <div className="company-page-shell flex min-h-screen">
+      <div className="flex-shrink-0">
+        <CompanySidebar companyId={companyId} companyName={companyName} />
+      </div>
+      <div className="company-main-content flex-1 min-w-0 md:p-8 lg:p-10">
+        <CompanyPageLoader layout="content" message="Loading Company Settings..." />
+      </div>
     </div>
   );
 }

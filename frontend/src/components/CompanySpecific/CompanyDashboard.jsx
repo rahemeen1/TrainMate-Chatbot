@@ -859,9 +859,13 @@ const CustomXAxisTick = ({ x, y, payload }) => {
   };
   if (loading) {
      return (
-       <div className="flex min-h-screen bg-[#031C3A] text-white">
-         <CompanySidebar companyId={companyId} companyName={companyName} />
-         <CompanyPageLoader message="Loading Company Dashboard..." />
+       <div className="company-page-shell flex min-h-screen">
+         <div className="flex-shrink-0">
+           <CompanySidebar companyId={companyId} companyName={companyName} />
+         </div>
+         <div className="company-main-content flex-1 min-w-0 sm:p-6 lg:p-8">
+           <CompanyPageLoader layout="content" message="Loading Company Dashboard..." />
+         </div>
        </div>
      );
    }

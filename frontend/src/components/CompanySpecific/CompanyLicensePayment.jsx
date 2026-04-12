@@ -5,6 +5,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import {
   addDoc,
   collection,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -107,6 +108,19 @@ export default function CompanyLicensePayment() {
 
     setProcessing(true);
     try {
+      const companyDocRef = doc(db, "companies", companyId);
+      const companySnap = await getDoc(companyDocRef);
+      const companyData = companySnap.exists() ? companySnap.data() : {};
+
+      const pendingLicense =
+        companyData?.pendingLicensePlan === "License Pro" || companyData?.pendingLicensePlan === "License Basic"
+          ? companyData.pendingLicensePlan
+          : null;
+
+      const effectiveLicense = pendingLicense || targetLicense;
+      const effectivePlanKey = planKeyFromLicenseName(effectiveLicense);
+      const effectivePlan = plans[effectivePlanKey] || plans.basic;
+
       const billingPeriodDays = 30;
       const renewalDate = new Date(Date.now() + billingPeriodDays * 24 * 60 * 60 * 1000);
       const cardHash = await hashString(normalizedCard);
@@ -115,9 +129,9 @@ export default function CompanyLicensePayment() {
       );
 
       await addDoc(collection(db, "companies", companyId, "billingPayments"), {
-        plan: targetLicense,
-        amountUsd: selectedPlan.usdPrice,
-        amountInr: selectedPlan.inrPrice,
+        plan: effectiveLicense,
+        amountUsd: effectivePlan.usdPrice,
+        amountInr: effectivePlan.inrPrice,
         currency: "USD/PKR",
         status: "success",
         cardHolderName: form.cardHolderName.trim(),
@@ -149,20 +163,25 @@ export default function CompanyLicensePayment() {
         await updateDoc(onboardingDocRef, {
           answers: {
             ...prevAnswers,
-            2: targetLicense,
+            0: effectiveLicense,
+            2: effectiveLicense,
           },
         });
       }
 
-      await updateDoc(doc(db, "companies", companyId), {
-        licensePlan: targetLicense,
+      await updateDoc(companyDocRef, {
+        licensePlan: effectiveLicense,
         billingPeriodDays,
         licenseRenewalDate: renewalDate,
         licenseStatus: "active",
         upgradedAt: serverTimestamp(),
+        pendingLicensePlan: deleteField(),
+        pendingChangeRequestedAt: deleteField(),
+        pendingChangeStatus: deleteField(),
+        pendingChangeEffectiveAt: deleteField(),
       });
 
-      alert(`✅ Payment successful. Your ${targetLicense.replace("License ", "")} plan is now active.`);
+      alert(`✅ Payment successful. Your ${effectiveLicense.replace("License ", "")} plan is now active.`);
       navigate(returnTo, {
         state: { companyId, companyName },
         replace: true,
