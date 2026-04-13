@@ -29,6 +29,7 @@ const [docs, setDocs] = useState([]);
 const [uploadingDoc, setUploadingDoc] = useState(false);
 const [addingUser, setAddingUser] = useState(false);
 const [userAddedSuccess, setUserAddedSuccess] = useState(false);
+const [lastAddedUser, setLastAddedUser] = useState(null);
 const [deletingDocId, setDeletingDocId] = useState(null);
 const [companyLicense, setCompanyLicense] = useState("License Pro");
 const [totalCompanyFreshers, setTotalCompanyFreshers] = useState(0);
@@ -178,6 +179,7 @@ const isActionInProgress = uploadingDoc || addingUser;
       });
 
       setUserAddedSuccess(true);
+      setLastAddedUser(result);
       setNewUser({
         name: "",
         email: "",
@@ -431,6 +433,14 @@ const closeAddUserModal = () => {
               {isLimitReached ? "Limit Reached (🔒)" : quotaLoading ? "Loading..." : "Add User"}
             </button>
           </div>
+
+          {lastAddedUser && (
+            <div className="mb-3 rounded-lg border border-green-500/40 bg-green-600/10 p-3">
+              <p className="text-xs uppercase tracking-wide text-green-300">Recently Added</p>
+              <p className="mt-1 text-sm text-white">{lastAddedUser.name} ({lastAddedUser.userId})</p>
+              <p className="text-xs text-[#AFCBE3] mt-1">{lastAddedUser.userEmail}</p>
+            </div>
+          )}
 
           {isLimitReached && quotaStatus && (
             <div className="mb-3 p-3 rounded-lg border border-[#00FFFF30] bg-[#021B36]/60 text-sm text-[#AFCBE3]">
