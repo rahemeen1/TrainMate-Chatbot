@@ -1210,7 +1210,9 @@ RESPOND WITH: Direct educational content addressing the question, using both com
       "I’m here to help with your training module.";
 
     // Safety net in case model misses the prompt rule.
-    if (!/[?؟]\s*$/.test(botReply.trim())) {
+    // Only append when there is no question at all, to avoid duplicate end questions.
+    const plainReply = botReply.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+    if (!/[?؟]/.test(plainReply)) {
       const moduleTitle = (finalModuleData?.moduleTitle || "this module").trim();
       botReply = `${botReply.trim()}\n\nWhat would you like to learn next about ${moduleTitle}: concept, example, or a quick practice task?`;
     }
