@@ -3,6 +3,61 @@ import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth, db } from "../../firebase";
 import { collection, collectionGroup, getDoc, getDocs, doc, query, where, setDoc, deleteField } from "firebase/firestore";
 
+const toDateSafe = (value) => {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  if (value?.toDate) return value.toDate();
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+const getLatestBillingData = async (companyId) => {
+  const billingSnap = await getDocs(collection(db, "companies", companyId, "billingPayments"));
+  if (billingSnap.empty) return null;
+
+  const docs = billingSnap.docs.slice().sort((a, b) => {
+    const aMs = toDateSafe(a.data()?.createdAt)?.getTime() || 0;
+    const bMs = toDateSafe(b.data()?.createdAt)?.getTime() || 0;
+    return bMs - aMs;
+  });
+
+  return docs[0]?.data() || null;
+};
+
+const getCompanyLicenseState = async (companyId, companyData) => {
+  const latestBilling = await getLatestBillingData(companyId);
+  const billingPeriodDays =
+    Number(latestBilling?.billingPeriodDays) || Number(companyData?.billingPeriodDays) || 30;
+
+  let renewalDate =
+    toDateSafe(latestBilling?.renewalDate) ||
+    toDateSafe(latestBilling?.nextRenewalDate) ||
+    toDateSafe(latestBilling?.licenseRenewalDate) ||
+    toDateSafe(companyData?.licenseRenewalDate) ||
+    toDateSafe(companyData?.nextRenewalDate);
+
+  if (!renewalDate) {
+    const billingCreatedAt = toDateSafe(latestBilling?.createdAt);
+    if (billingCreatedAt) {
+      renewalDate = new Date(billingCreatedAt);
+      renewalDate.setDate(renewalDate.getDate() + billingPeriodDays);
+    }
+  }
+
+  if (!renewalDate) {
+    return { isExpired: false, renewalDate: null };
+  }
+
+  const today = startOfDay(new Date());
+  const renewalDay = startOfDay(renewalDate);
+  return {
+    isExpired: today > renewalDay,
+    renewalDate,
+  };
+};
+
 export const handleLogin = async ({
   userType,
   formData,
@@ -65,6 +120,15 @@ export const handleLogin = async ({
         return { error: "Your company is suspended or inactive. Contact admin." };
       }
 
+      const fresherLicenseState = await getCompanyLicenseState(companyId, companyData);
+      if (fresherLicenseState.isExpired) {
+        await auth.signOut();
+        const renewalText = fresherLicenseState.renewalDate
+          ? fresherLicenseState.renewalDate.toLocaleDateString("en-GB")
+          : "the renewal date";
+        return { error: `Company license expired on ${renewalText}. Contact your admin to renew.` };
+      }
+
       console.log("➡ Navigating to dashboard");
 
       onClose();
@@ -119,6 +183,14 @@ export const handleLogin = async ({
       if (!company) return { error: "Invalid company email" };
       if (company.status !== "active")
         return { error: "Company suspended" };
+
+      const adminLicenseState = await getCompanyLicenseState(companyId, company);
+      if (adminLicenseState.isExpired) {
+        const renewalText = adminLicenseState.renewalDate
+          ? adminLicenseState.renewalDate.toLocaleDateString("en-GB")
+          : "the renewal date";
+        return { error: `Your company license expired on ${renewalText}. Please renew your license.` };
+      }
 
       const authEmailCandidates = Array.from(
         new Set(

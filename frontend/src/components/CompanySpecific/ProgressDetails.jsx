@@ -73,7 +73,16 @@ export default function ProgressDetails() {
   }, [companyId, deptName, userId]);
 
   if (loading) {
-    return <CompanyPageLoader layout="page" message="Loading roadmap progress..." />;
+    return (
+      <div className="company-page-shell flex min-h-screen">
+        <div className="flex-shrink-0">
+          <CompanySidebar companyId={companyId} />
+        </div>
+        <div className="company-main-content flex-1 min-w-0 p-10">
+          <CompanyPageLoader layout="content" message="Loading roadmap progress..." />
+        </div>
+      </div>
+    );
   }
 
   const roadmapCreatedDate = modules[0]?.createdAt

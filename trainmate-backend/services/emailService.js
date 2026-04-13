@@ -1201,3 +1201,182 @@ export async function sendCompanyCredentialsEmail({
     throw error;
   }
 }
+
+/**
+ * Send company license renewal reminder/alert email to company admin
+ * @param {Object} params
+ * @param {string} params.companyEmail
+ * @param {string} params.companyName
+ * @param {string} params.licensePlan
+ * @param {Date|string|number} params.renewalDate
+ * @param {number} params.daysRemaining
+ * @param {string|null} [params.pendingLicensePlan]
+ */
+export async function sendCompanyLicenseRenewalAlertEmail({
+  companyEmail,
+  companyName,
+  licensePlan,
+  renewalDate,
+  daysRemaining,
+  pendingLicensePlan = null,
+}) {
+  try {
+    if (!companyEmail) {
+      throw new Error("Company email is required for license renewal alert");
+    }
+
+    const transporter = createTransporter();
+    const renewalDateObj = renewalDate instanceof Date ? renewalDate : new Date(renewalDate);
+    const safeRenewalDate = Number.isNaN(renewalDateObj.getTime()) ? null : renewalDateObj;
+    const renewalText = safeRenewalDate
+      ? safeRenewalDate.toLocaleDateString("en-GB", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        })
+      : "N/A";
+
+    const normalizedCurrentPlan =
+      licensePlan === "License Pro" || licensePlan === "License Basic"
+        ? licensePlan
+        : "License Basic";
+    const normalizedPendingPlan =
+      pendingLicensePlan === "License Pro" || pendingLicensePlan === "License Basic"
+        ? pendingLicensePlan
+        : null;
+
+    let subject = `License renewal reminder - ${companyName || "TrainMate"}`;
+    let headline = "License renewal reminder";
+    let bodyText = `Your ${licensePlan || "active"} license is approaching renewal.`;
+    let urgencyLabel = "Upcoming renewal";
+    let urgencyBackground = "#E8F4F8";
+    let urgencyBorder = "#00FFFF";
+    let urgencyText = "#031C3A";
+
+    if (daysRemaining === 0) {
+      subject = `License renewal due today - ${companyName || "TrainMate"}`;
+      headline = "License renewal is due today";
+      bodyText = "Your license renewal date is today. Please renew to keep uninterrupted access.";
+      urgencyLabel = "Due today";
+      urgencyBackground = "#FFF1E8";
+      urgencyBorder = "#FF9E9E";
+      urgencyText = "#8A1F1F";
+    } else if (daysRemaining > 0) {
+      subject = `License renews in ${daysRemaining} day${daysRemaining === 1 ? "" : "s"} - ${companyName || "TrainMate"}`;
+      headline = `License renews in ${daysRemaining} day${daysRemaining === 1 ? "" : "s"}`;
+      bodyText = "Please renew your license before the renewal date to avoid service interruption.";
+      urgencyLabel = `${daysRemaining} day${daysRemaining === 1 ? "" : "s"} left`;
+      urgencyBackground = daysRemaining <= 2 ? "#FFF7E6" : "#E8F4F8";
+      urgencyBorder = daysRemaining <= 2 ? "#FFB84D" : "#00FFFF";
+      urgencyText = daysRemaining <= 2 ? "#8A4B00" : "#031C3A";
+    } else {
+      const overdueDays = Math.abs(daysRemaining);
+      subject = `License renewal overdue - ${companyName || "TrainMate"}`;
+      headline = `License renewal overdue by ${overdueDays} day${overdueDays === 1 ? "" : "s"}`;
+      bodyText = "Your renewal date has passed. Renew your license as soon as possible.";
+      urgencyLabel = `Overdue by ${overdueDays} day${overdueDays === 1 ? "" : "s"}`;
+      urgencyBackground = "#FFECEC";
+      urgencyBorder = "#FF6B6B";
+      urgencyText = "#8A1F1F";
+    }
+
+    const mailOptions = {
+      from: {
+        name: "TrainMate Billing",
+        address: "trainmate01@gmail.com",
+      },
+      to: companyEmail,
+      subject,
+      html: `
+        <div style="background: linear-gradient(180deg, #EEF8FF 0%, #F7FBFF 100%); padding: 24px 12px; font-family: Arial, Helvetica, sans-serif;">
+          <div style="max-width: 680px; margin: 0 auto; background: #ffffff; border: 1px solid #D7EAF5; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(3, 28, 58, 0.08);">
+            <div style="background: linear-gradient(135deg, #031C3A 0%, #053A66 55%, #00A8B5 100%); padding: 28px 28px 24px; text-align: center;">
+              <div style="display: inline-block; padding: 6px 12px; border: 1px solid rgba(255,255,255,0.2); border-radius: 999px; color: #BFFBFF; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; margin-bottom: 14px;">
+                TrainMate Billing
+              </div>
+              <h1 style="margin: 0; font-size: 28px; line-height: 1.2; color: #FFFFFF;">${headline}</h1>
+              <p style="margin: 10px 0 0; font-size: 15px; line-height: 1.6; color: rgba(255,255,255,0.88);">
+                Keep your company license active without interruption.
+              </p>
+            </div>
+
+            <div style="padding: 28px;">
+              <p style="margin: 0 0 10px; color: #031C3A; font-size: 16px; line-height: 1.6;">
+                Hi ${companyName || "Team"},
+              </p>
+              <p style="margin: 0 0 18px; color: #34495E; font-size: 15px; line-height: 1.7;">
+                ${bodyText}
+              </p>
+
+              <div style="display: inline-block; padding: 8px 14px; border-radius: 999px; background: ${urgencyBackground}; border: 1px solid ${urgencyBorder}; color: ${urgencyText}; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 18px;">
+                ${urgencyLabel}
+              </div>
+
+              <div style="background: #F8FCFF; border: 1px solid #D7EAF5; border-radius: 16px; padding: 18px;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 14px; color: #1F3449;">
+                  <tr>
+                    <td style="padding: 10px 0; width: 38%; color: #6A7D8F;">Company</td>
+                    <td style="padding: 10px 0; font-weight: 700;">${companyName || "N/A"}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 10px 0; width: 38%; color: #6A7D8F;">Current Plan</td>
+                    <td style="padding: 10px 0; font-weight: 700;">${normalizedCurrentPlan}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 10px 0; width: 38%; color: #6A7D8F;">Renewal Date</td>
+                    <td style="padding: 10px 0; font-weight: 700;">${renewalText}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 10px 0; width: 38%; color: #6A7D8F;">Days Remaining</td>
+                    <td style="padding: 10px 0; font-weight: 700;">${daysRemaining}</td>
+                  </tr>
+                </table>
+              </div>
+
+              <div style="margin-top: 14px; border: 1px solid #D7EAF5; border-radius: 14px; background: #FFFFFF; padding: 14px 16px;">
+                <p style="margin: 0 0 8px; color: #031C3A; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;">
+                  Renewal Actions
+                </p>
+                <p style="margin: 0; color: #34495E; font-size: 14px; line-height: 1.6;">
+                  • Renew now to continue with your current <strong>${normalizedCurrentPlan}</strong> plan.
+                </p>
+                <p style="margin: 8px 0 0; color: #34495E; font-size: 14px; line-height: 1.6;">
+                  • Want a different plan next cycle? Set your next-renewal plan in Company Details before payment.
+                </p>
+                ${normalizedPendingPlan
+                  ? `<p style="margin: 10px 0 0; color: #0D6246; font-size: 14px; line-height: 1.6; font-weight: 700;">Scheduled plan for next cycle: ${normalizedPendingPlan}</p>`
+                  : ""}
+              </div>
+
+              <div style="text-align: center; margin: 24px 0 8px;">
+                <a href="https://trainmate.com" style="display: inline-block; background: linear-gradient(135deg, #00A8B5 0%, #0087A8 100%); color: #FFFFFF; text-decoration: none; font-weight: 700; font-size: 14px; padding: 12px 22px; border-radius: 999px; box-shadow: 0 8px 18px rgba(0, 168, 181, 0.22);">
+                  Review Renewal Status
+                </a>
+              </div>
+
+              <p style="margin: 18px 0 0; color: #5E6F80; font-size: 13px; line-height: 1.6; text-align: center;">
+                If you already renewed recently, you can ignore this message.
+              </p>
+            </div>
+
+            <div style="padding: 18px 28px 24px; text-align: center; border-top: 1px solid #E5F1F8; background: #FBFDFF;">
+              <p style="margin: 0; color: #6A7D8F; font-size: 12px; line-height: 1.6;">
+                This is an automated billing reminder. Please do not reply.
+              </p>
+              <p style="margin: 6px 0 0; color: #A0B1C0; font-size: 12px; line-height: 1.6;">
+                Regards, TrainMate Team
+              </p>
+            </div>
+          </div>
+        </div>
+      `,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log("License renewal reminder email sent:", info.messageId);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error("License renewal reminder email failed:", error);
+    throw error;
+  }
+}
