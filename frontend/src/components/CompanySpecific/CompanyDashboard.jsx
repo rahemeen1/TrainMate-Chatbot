@@ -212,6 +212,12 @@ export default function CompanyDashboard() {
       return;
     }
 
+    const trainingLevelCounts = {
+      basic: 0,
+      medium: 0,
+      hard: 0,
+    };
+
     const deptSnapshots = await Promise.all(
       departments.map(async (dept) => {
         const usersRef = collection(
@@ -227,7 +233,17 @@ export default function CompanyDashboard() {
         let activeCount = 0;
 
         snap.forEach((userDoc) => {
-          if (userDoc.data().status === "active") activeCount++;
+          const userData = userDoc.data();
+
+          if (userData.status === "active") activeCount++;
+
+          const normalizedLevel = String(userData.trainingLevel || "")
+            .trim()
+            .toLowerCase();
+
+          if (normalizedLevel === "basic" || normalizedLevel === "medium" || normalizedLevel === "hard") {
+            trainingLevelCounts[normalizedLevel] += 1;
+          }
         });
 
         return {
@@ -249,7 +265,11 @@ export default function CompanyDashboard() {
     setTotalUsers(total);
     setActiveUsers(active);
     setChartData(chart);
-    setPieData(chart.map((c) => ({ name: c.department, value: c.users })));
+    setPieData([
+      { name: "Basic", value: trainingLevelCounts.basic },
+      { name: "Medium", value: trainingLevelCounts.medium },
+      { name: "Hard", value: trainingLevelCounts.hard },
+    ]);
 
     if (rememberAsPreloaded) {
       preloadedAnalyticsKeyRef.current = getDepartmentsKey(departments);
@@ -1397,7 +1417,6 @@ const CustomXAxisTick = ({ x, y, payload }) => {
             {chartData && chartData.length > 0 && (
               <div className="company-card dash-enter dash-delay-3 max-w-5xl mx-auto mt-6 p-6 border-[#00FFFF3A] bg-[linear-gradient(180deg,rgba(2,27,54,0.92),rgba(3,28,58,0.85))]">
                 <h2 className="text-lg font-semibold text-[#00FFFF] mb-4">Department Analytics</h2>
-                <p className="text-[#AFCBE3] mb-4">View user distribution and activity across departments</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="h-[360px] p-4 rounded-xl border border-[#00FFFF40] bg-[#021B36]/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
                     <ResponsiveContainer width="100%" height="100%">
@@ -1423,7 +1442,7 @@ const CustomXAxisTick = ({ x, y, payload }) => {
                       <PieChart>
                         <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label={{ fill: '#AFCBE3' }}>
                           {pieData.map((entry, idx) => (
-                            <Cell key={`cell-${idx}`} fill={["#00FFFF", "#007BFF", "#7CFFEA", "#AFCBE3", "#FF7AB6"][idx % 5]} />
+                            <Cell key={`cell-${idx}`} fill={["#8EC5FF", "#7CFFEA", "#FF7AB6"][idx % 3]} />
                           ))}
                         </Pie>
                         <Legend wrapperStyle={{ color: '#AFCBE3' }} />
@@ -1431,6 +1450,9 @@ const CustomXAxisTick = ({ x, y, payload }) => {
                     </ResponsiveContainer>
                   </div>
                 </div>
+                <p className="mt-4 text-sm italic text-[#AFCBE3]">
+                  Bar chart shows users per department, and pie chart shows how many users are in Basic, Medium, and Hard training levels.
+                </p>
               </div>
             )}
           </div>
