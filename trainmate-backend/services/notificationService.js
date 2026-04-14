@@ -111,29 +111,9 @@ async function getUserOAuthClient(companyId, deptId, userId) {
       }
     }
 
-    // Fallback order:
-    // 1) Environment token (known-good server fallback)
-    // 2) Company admin token from Firestore
-    const envRefreshToken = process.env.GOOGLE_REFRESH_TOKEN;
-    if (envRefreshToken) {
-      try {
-        const envOAuthClient = buildOAuthClient({
-          clientId,
-          clientSecret,
-          refreshToken: envRefreshToken,
-        });
-        await validateOAuthClient(envOAuthClient, "environment fallback");
-        console.warn(`⚠️ Using environment fallback OAuth client for ${userId}`);
-        return { client: envOAuthClient, isUsingFallback: true, authSource: "env" };
-      } catch (envTokenErr) {
-        if (!isInvalidGrantError(envTokenErr)) {
-          throw envTokenErr;
-        }
-        console.warn("⚠️ Environment fallback token is invalid. Trying company admin token...");
-      }
-    }
-
-    // Fallback: Use company admin's tokens
+    // Fallback order for calendar invites:
+    // 1) Company admin token (preferred so invite appears from company account)
+    // 2) Environment token (last resort)
     console.log(`⚠️ Using company admin's OAuth client for ${userId}`);
     const companyDoc = await db.collection("companies").doc(companyId).get();
 
@@ -171,11 +151,32 @@ async function getUserOAuthClient(companyId, deptId, userId) {
           },
           { merge: true }
         );
-        throw new Error("Google Calendar authorization expired. Reconnect company admin Google Calendar.");
+        console.warn("⚠️ Company admin Google token invalid. Trying environment fallback token...");
+      } else {
+        throw companyTokenErr;
       }
-
-      throw companyTokenErr;
     }
+
+    const envRefreshToken = process.env.GOOGLE_REFRESH_TOKEN;
+    if (envRefreshToken) {
+      try {
+        const envOAuthClient = buildOAuthClient({
+          clientId,
+          clientSecret,
+          refreshToken: envRefreshToken,
+        });
+        await validateOAuthClient(envOAuthClient, "environment fallback");
+        console.warn(`⚠️ Using environment fallback OAuth client for ${userId}`);
+        return { client: envOAuthClient, isUsingFallback: true, authSource: "env" };
+      } catch (envTokenErr) {
+        if (isInvalidGrantError(envTokenErr)) {
+          throw new Error("Google Calendar authorization unavailable. Reconnect company admin Google Calendar.");
+        }
+        throw envTokenErr;
+      }
+    }
+
+    throw new Error("Google Calendar authorization unavailable. Company admin must connect Google Calendar.");
   } catch (error) {
     console.error(`❌ Failed to get OAuth client:`, error.message);
     throw error;
