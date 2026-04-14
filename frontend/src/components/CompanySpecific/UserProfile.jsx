@@ -303,6 +303,40 @@ export default function UserProfile() {
     }
   };
 
+  const handleAdminPass = async (moduleId) => {
+    try {
+      setActionLoadingForModule(moduleId, true);
+      setStatus(moduleId, "Marking module as passed...");
+
+      const shouldResolveNotification =
+        notificationIdFromQuery && (!moduleIdFromQuery || moduleIdFromQuery === moduleId);
+
+      const res = await fetch("http://localhost:5000/api/quiz/admin-pass-module", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId,
+          deptId,
+          userId,
+          moduleId,
+          notificationId: shouldResolveNotification ? notificationIdFromQuery : undefined,
+        })
+      });
+
+      const data = await parseApiResponse(res, "Failed to pass module");
+      const nextText = data?.nextModuleTitle
+        ? ` Next module unlocked: ${data.nextModuleTitle}.`
+        : "";
+
+      setStatus(moduleId, `Module marked as passed by admin.${nextText}`);
+      await fetchRoadmap();
+    } catch (err) {
+      setStatus(moduleId, err.message || "Failed to pass module");
+    } finally {
+      setActionLoadingForModule(moduleId, false);
+    }
+  };
+
   if (loading) {
   return (
     <div className="company-page-shell flex min-h-screen">
@@ -574,6 +608,20 @@ if (!user) {
                             >
                               Give Final Retry
                             </button>
+
+                            <button
+                              onClick={() => {
+                                setSelectedAction((prev) => ({ ...prev, [m.id]: "pass" }));
+                                alert("Selected: Pass module and move learner to next module");
+                              }}
+                              className={`px-3 py-2 text-xs font-semibold rounded-lg border ${
+                                selectedAction[m.id] === "pass"
+                                  ? "border-[#34D399] bg-[#34D399]/10 text-[#A7F3D0]"
+                                  : "border-[#00FFFF30] text-[#AFCBE3]"
+                              }`}
+                            >
+                              Pass Module
+                            </button>
                           </div>
 
                           {selectedAction[m.id] === "regenerate" && (
@@ -593,6 +641,16 @@ if (!user) {
                               className="company-primary-btn text-xs disabled:opacity-50"
                             >
                               Confirm Final Retry
+                            </button>
+                          )}
+
+                          {selectedAction[m.id] === "pass" && (
+                            <button
+                              onClick={() => handleAdminPass(m.id)}
+                              disabled={actionLoading[m.id]}
+                              className="company-primary-btn text-xs disabled:opacity-50"
+                            >
+                              Confirm Pass Module
                             </button>
                           )}
 
