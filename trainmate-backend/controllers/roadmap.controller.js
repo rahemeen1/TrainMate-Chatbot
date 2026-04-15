@@ -4,6 +4,7 @@ import { parseCvFromUrl } from "../services/cvParser.service.js";
 import { retrieveDeptDocsFromPinecone } from "../services/pineconeService.js";
 import { generateRoadmap } from "../services/llmService.js";
 import { extractSkillsFromText } from "../services/skillExtractor.service.js";
+import { extractSkillsAgentically } from "../services/agenticSkillExtractor.service.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { generateRoadmapPDF } from "../services/pdfService.js";
 import { handleRoadmapGenerated } from "../services/notificationService.js";
@@ -688,17 +689,12 @@ console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboa
     const structuredCv = cvParseResult?.structured || null;
 
     /* --------------------------------------------------
-       4️⃣ Extract Skills from CV
+       4️⃣ 🤖 Agentic Skill Extraction (CV + Company Docs)
     -------------------------------------------------- */
-    console.log("🧠 Extracting skills from CV...");
-    const cvSkills = extractSkillsFromText(cvText);
-    console.log("📄 Skills extracted from CV:", cvSkills);
+    console.log("🤖 Starting agentic skill extraction...");
 
-    /* --------------------------------------------------
-       5️⃣ Fetch Department Docs (base) + Learning Profile
-    -------------------------------------------------- */
-    console.log("🔎 Fetching Pinecone documents...");
-
+    // Fetch Pinecone documents for company context
+    console.log("🔎 Fetching Pinecone documents for company context...");
     const basePineconeContext = await retrieveDeptDocsFromPinecone({
       queryText: cvText,
       companyId,
@@ -713,25 +709,47 @@ console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboa
       ? basePineconeContext.map((c) => c.text || "").join("\n")
       : "";
 
-    const baseCompanySkills = extractSkillsFromText(baseDocsText);
-    const baseSkillGap = baseCompanySkills.filter((skill) => !cvSkills.includes(skill));
-    console.log(`📚 Pinecone skills for ${deptId}:`, baseCompanySkills);
-    console.log("⚡ Base skill gap identified:", baseSkillGap);
+    // Use agentic skill extraction
+    const {
+      cvSkills,
+      companySkills,
+      skillGap,
+      criticalGaps,
+      extractionDetails,
+    } = await extractSkillsAgentically({
+      cvText,
+      companyDocsText: baseDocsText,
+      expertise,
+      trainingOn,
+    });
 
-    const learningProfile = await buildLearningProfile({ userRef });
-    console.log("🧩 Learning profile loaded");
+    console.log("✅ Agentic skill extraction complete");
+    console.log("📄 Skills from CV:", cvSkills);
+    console.log("📚 Skills from company docs:", companySkills);
+    console.log("⚡ Skill gaps identified:", skillGap);
+    console.log("🔴 Critical gaps:", criticalGaps);
+    console.log("📊 Extraction details:", extractionDetails);
 
     /* --------------------------------------------------
-       6️⃣ Agentic Plan + Multi-Query Retrieval
+       5️⃣ Build Learning Profile + Generate Agentic Plan
     -------------------------------------------------- */
+    console.log("🧩 Building learning profile...");
+    const learningProfile = await buildLearningProfile({ userRef });
+    console.log("✅ Learning profile loaded");
+
+    console.log("🧭 Generating agentic roadmap plan...");
     const plan = await generateRoadmapPlan({
       trainingOn,
       cvText,
-      skillGap: baseSkillGap,
+      skillGap,
       learningProfile,
     });
-    console.log(`🧭 Roadmap plan created with ${plan.queries.length} queries`);
+    console.log(`✅ Roadmap plan created with ${plan.queries.length} queries`);
 
+    /* --------------------------------------------------
+       6️⃣ Multi-Query Retrieval for Enhanced Company Context
+    -------------------------------------------------- */
+    console.log("📚 Fetching additional company docs based on planned queries...");
     const plannedDocs = await fetchPlannedDocs({
       queries: plan.queries,
       companyId,
@@ -743,18 +761,13 @@ console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboa
       mergedDocs.map((c) => c.text || "").join("\n"),
       MAX_CONTEXT_CHARS
     );
+    console.log("✅ Merged and contextualized company documentation");
 
     /* --------------------------------------------------
-       7️⃣ Extract Company Skills + Skill Gap (refined)
+       7️⃣ Generate Roadmap via Agentic AI
+       (Skills extracted by agentic agents above)
     -------------------------------------------------- */
-    const companySkills = extractSkillsFromText(companyDocsText);
-    const skillGap = companySkills.filter((skill) => !cvSkills.includes(skill));
-    console.log("⚡ Refined skill gap identified:", skillGap);
-
-    /* --------------------------------------------------
-       8️⃣ Generate Roadmap via Agentic Loop
-    -------------------------------------------------- */
-    console.log("🤖 Generating roadmap via agentic loop...");
+    console.log("🤖 Generating personalized roadmap via agentic AI...");
 
     const companyContext = `COMPANY DOCUMENTS:\n${companyDocsText || "No company documents available."}`;
     const { modules: roadmapModules, critique } = await generateRoadmapAgentic({
@@ -786,6 +799,14 @@ console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboa
           planFocusAreas: plan.focusAreas,
           critiqueScore: critique?.score || null,
           critiquePass: critique?.pass || false,
+          // 🤖 Agentic Skill Extraction Results
+          extractedSkills: {
+            cvSkills,
+            companySkills,
+            skillGap,
+            criticalGaps,
+            extractionDetails,
+          },
           learningProfile: {
             summary: learningProfile.summary,
             strugglingAreas: learningProfile.strugglingAreas,
@@ -800,9 +821,9 @@ console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboa
     }
 
      /* --------------------------------------------------
-       9️⃣ Save Roadmap to Firestore
+       8️⃣ Save Roadmap to Firestore with Extracted Skills
      -------------------------------------------------- */
-    console.log("💾 Saving roadmap to Firestore...");
+    console.log("💾 Saving roadmap with agentic skill extraction metadata to Firestore...");
 
     const roadmapCollection = userRef.collection("roadmap");
 
@@ -810,6 +831,13 @@ console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboa
       await roadmapCollection.add({
         ...roadmapModules[i],
         skillsCovered: roadmapModules[i].skillsCovered || [],
+        // Include skill extraction context
+        skillExtractionContext: {
+          cvSkillsCount: cvSkills.length,
+          companySkillsCount: companySkills.length,
+          skillGapCount: skillGap.length,
+          criticalGapsCount: criticalGaps.length,
+        },
         order: i + 1,
         completed: false, 
         status: "pending",

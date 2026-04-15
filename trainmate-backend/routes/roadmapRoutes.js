@@ -1,5 +1,6 @@
 import express from "express";
-import { generateUserRoadmap, regenerateRoadmapModule } from "../controllers/roadmap.controller.js";
+import { generateUserRoadmap } from "../controllers/roadmap.controller.orchestrator.js";
+import { regenerateRoadmapModule } from "../controllers/roadmap.controller.js";
 
 const router = express.Router();
 
