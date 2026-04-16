@@ -37,6 +37,68 @@ const FINAL_QUIZ_MAX_ATTEMPTS = 2;
 const FINAL_QUIZ_PASS_THRESHOLD = 70;
 const FINAL_QUIZ_WINDOW_DAYS = 2;
 const TRAINING_SUMMARY_NOTIFICATION_TYPE = "training_summary_report";
+const VALID_LICENSE_PLANS = new Set(["License Basic", "License Pro"]);
+
+function normalizeLicensePlan(value) {
+	if (typeof value !== "string") return null;
+	const trimmed = value.trim();
+	if (VALID_LICENSE_PLANS.has(trimmed)) return trimmed;
+
+	const normalized = trimmed.toLowerCase();
+	if (normalized === "license pro" || normalized === "pro") return "License Pro";
+	if (normalized === "license basic" || normalized === "basic") return "License Basic";
+
+	return null;
+}
+
+function toMillis(value) {
+	if (!value) return 0;
+	if (value instanceof Date) return value.getTime();
+	if (typeof value?.toDate === "function") return value.toDate().getTime();
+	const parsed = new Date(value);
+	return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+}
+
+function getLatestDocData(snapshot) {
+	if (!snapshot || snapshot.empty) return null;
+
+	const docs = snapshot.docs.slice().sort((a, b) => {
+		const aMs = toMillis(a.data()?.createdAt);
+		const bMs = toMillis(b.data()?.createdAt);
+		return bMs - aMs;
+	});
+
+	return docs[0]?.data() || null;
+}
+
+async function resolveCompanyLicensePlan(companyId, preloadedCompanySnap = null) {
+	const companyRef = db.collection("companies").doc(companyId);
+
+	try {
+		const billingSnap = await companyRef.collection("billingPayments").get();
+		const latestBilling = getLatestDocData(billingSnap);
+		const billingPlan = normalizeLicensePlan(latestBilling?.plan || latestBilling?.Plan);
+		if (billingPlan) return { plan: billingPlan, source: "billingPayments" };
+
+		const onboardingSnap = await companyRef.collection("onboardingAnswers").get();
+		const latestOnboarding = getLatestDocData(onboardingSnap);
+		const answers = latestOnboarding?.answers || {};
+		const onboardingPlan =
+			normalizeLicensePlan(answers?.[2]) ||
+			normalizeLicensePlan(answers?.["2"]) ||
+			normalizeLicensePlan(answers?.[0]) ||
+			normalizeLicensePlan(answers?.["0"]);
+		if (onboardingPlan) return { plan: onboardingPlan, source: "onboardingAnswers" };
+
+		const companySnap = preloadedCompanySnap || (await companyRef.get());
+		const companyPlan = normalizeLicensePlan(companySnap.data()?.licensePlan || companySnap.data()?.plan);
+		if (companyPlan) return { plan: companyPlan, source: "companies.licensePlan" };
+	} catch (err) {
+		console.warn("⚠️ [LICENSE] Failed to resolve company plan:", err?.message || err);
+	}
+
+	return { plan: "License Basic", source: "default" };
+}
 
 async function notifyTrainingLockForTesting({
 	companyId,
@@ -1231,7 +1293,8 @@ export const generateQuiz = async (req, res) => {
 
 		// Check license - quizzes only available on Pro plan
 		const companySnap = await db.collection("companies").doc(companyId).get();
-		const licensePlan = companySnap.data()?.licensePlan || "License Basic";
+		const { plan: licensePlan, source: planSource } = await resolveCompanyLicensePlan(companyId, companySnap);
+		console.log("[QUIZ][LICENSE] Plan resolved:", { companyId, licensePlan, planSource });
 		if (licensePlan === "License Basic") {
 			return res.status(403).json({
 				error: "Feature not available on your plan",
@@ -2236,7 +2299,8 @@ export const generateFinalQuiz = async (req, res) => {
 		]);
 
 		// Check license - final quiz only available on Pro plan
-		const licensePlan = companySnap.data()?.licensePlan || "License Basic";
+		const { plan: licensePlan, source: planSource } = await resolveCompanyLicensePlan(companyId, companySnap);
+		console.log("[FINAL-QUIZ][LICENSE] Plan resolved:", { companyId, licensePlan, planSource });
 		if (licensePlan === "License Basic") {
 			return res.status(403).json({
 				error: "Feature not available on your plan",
