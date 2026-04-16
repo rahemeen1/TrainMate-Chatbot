@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { db } from "../../firebase";
 import { doc, getDoc } from "firebase/firestore";
-import { FresherSideMenu } from "./FresherSideMenu";
+import FresherShellLayout from "./FresherShellLayout";
 import { motion } from "framer-motion";
 import TrainingLockedScreen from "./TrainingLockedScreen";
 import CompanyPageLoader from "../CompanySpecific/CompanyPageLoader";
@@ -168,24 +168,16 @@ export default function ViewModuleDetails() {
     );
 
   return (
-    <div className="flex min-h-screen bg-[#031C3A] text-white">
-      {/* ===== Sidebar ===== */}
-      <motion.div
-        className="w-64 bg-[#021B36]/90 p-4"
-        initial={{ x: -200 }}
-        animate={{ x: 0 }}
-        transition={{ duration: 0.5 }}
-      >
-        <FresherSideMenu userId={userId} companyId={companyId} deptId={deptId} companyName={companyName} roadmapGenerated={true}/>
-      </motion.div>
-
-      {/* ===== Main Content ===== */}
-      <motion.div
-        className="flex-1 p-10 space-y-8 overflow-y-auto"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.6 }}
-      >
+    <FresherShellLayout
+      userId={userId}
+      companyId={companyId}
+      deptId={deptId}
+      companyName={companyName}
+      roadmapGenerated={true}
+      headerLabel="Module Details"
+      contentClassName="p-4 md:p-10"
+    >
+      <motion.div className="space-y-8" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.6 }}>
         {/* Title */}
         <motion.div
           initial={{ y: -20, opacity: 0 }}
@@ -302,7 +294,7 @@ export default function ViewModuleDetails() {
   </motion.div>
 )}
         
-      </motion.div>
-    </div>
+              </motion.div>
+            </FresherShellLayout>
   );
 }

@@ -5,6 +5,7 @@ import { db } from "../config/firebase.js";
 
 dotenv.config();
 
+<<<<<<< HEAD
 const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY);
 const hasOpenAIKey = Boolean(process.env.OPENAI_API_KEY);
 
@@ -14,6 +15,31 @@ if (!hasGeminiKey && !hasOpenAIKey) {
 
 const genAI = hasGeminiKey ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null;
 const openAI = hasOpenAIKey ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
+=======
+let genAI = null;
+let openAI = null;
+let initialized = false;
+
+function initializeLLMs() {
+  if (initialized) return;
+  
+  const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY);
+  const hasOpenAIKey = Boolean(process.env.OPENAI_API_KEY);
+  
+  if (!hasGeminiKey && !hasOpenAIKey) {
+    throw new Error("❌ At least one LLM key is required (GEMINI_API_KEY or OPENAI_API_KEY)");
+  }
+  
+  if (hasGeminiKey) {
+    genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  }
+  if (hasOpenAIKey) {
+    openAI = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  
+  initialized = true;
+}
+>>>>>>> be9b1faefbc50f5ada55bcbf37f6bcba0c5ca0d3
 
 /**
  * AGENT ORCHESTRATOR SERVICE
@@ -31,6 +57,25 @@ export class AgentOrchestrator {
     this.maxHistorySize = 100;
   }
 
+<<<<<<< HEAD
+=======
+  isRoadmapGoal(goal) {
+    return typeof goal === "string" && goal.toLowerCase().includes("roadmap");
+  }
+
+  getRoadmapModulesFromResults(results = {}) {
+    if (!results || typeof results !== "object") return [];
+
+    const direct = results?.["generate-roadmap"]?.modules;
+    if (Array.isArray(direct)) return direct;
+
+    const candidate = Object.values(results).find(
+      (value) => Array.isArray(value?.modules) && value.modules.length > 0
+    );
+    return Array.isArray(candidate?.modules) ? candidate.modules : [];
+  }
+
+>>>>>>> be9b1faefbc50f5ada55bcbf37f6bcba0c5ca0d3
   compactForPrompt(value, maxChars = 1200) {
     const text = typeof value === "string" ? value : JSON.stringify(value);
     if (!text) return "";
@@ -245,6 +290,32 @@ export class AgentOrchestrator {
       ? plan.errorStrategy
       : "retry";
 
+<<<<<<< HEAD
+=======
+    if (this.isRoadmapGoal(goal) && availableAgents.has("generate-roadmap")) {
+      const hasRoadmapGenerator = normalizedSteps.some((s) => s.agent === "generate-roadmap");
+      if (!hasRoadmapGenerator) {
+        const deps = [];
+        if (normalizedSteps.some((s) => s.agent === "analyze-skill-gaps")) {
+          deps.push("analyze-skill-gaps");
+        }
+
+        normalizedSteps.push({
+          stepNumber: normalizedSteps.length + 1,
+          description: "Generate roadmap",
+          agent: "generate-roadmap",
+          critical: true,
+          dependencies: deps,
+          retryPolicy: {
+            maxRetries: 2,
+            backoffMs: 1000,
+          },
+        });
+        warnings.push("Planner omitted generate-roadmap; injected required roadmap step.");
+      }
+    }
+
+>>>>>>> be9b1faefbc50f5ada55bcbf37f6bcba0c5ca0d3
     return {
       plan: {
         ...plan,
@@ -263,6 +334,8 @@ export class AgentOrchestrator {
    * @returns {Promise<Object>} { finalOutput, metadata, explanation, executionLog }
    */
   async orchestrate(goal, context) {
+    initializeLLMs();
+    
     console.log("\n" + "=".repeat(70));
     console.log("🎯 AGENT ORCHESTRATOR STARTED");
     console.log(`Goal: ${goal}`);
@@ -326,6 +399,13 @@ export class AgentOrchestrator {
         }
       }
 
+      if (this.isRoadmapGoal(goal)) {
+        const generatedModules = this.getRoadmapModulesFromResults(executionResults.results);
+        if (!Array.isArray(generatedModules) || generatedModules.length === 0) {
+          throw new Error("Roadmap generation step did not produce modules");
+        }
+      }
+
       // STEP 4: Aggregate results
       console.log("\n📦 STEP 4: Aggregating results...");
       const finalOutput = await this.aggregateResults(
@@ -333,6 +413,13 @@ export class AgentOrchestrator {
         goal,
         executionLog
       );
+
+      if (this.isRoadmapGoal(goal)) {
+        const outputModules = finalOutput?.finalOutput?.modules;
+        if (!Array.isArray(outputModules) || outputModules.length === 0) {
+          throw new Error("Aggregation produced no roadmap modules");
+        }
+      }
 
       // STEP 5: Log execution
       const executionTime = Date.now() - orchestrationStart;
@@ -932,8 +1019,8 @@ Return JSON:
    */
   async validateFinalOutput(results, goal, executionLog) {
     // Deterministic readiness gate for roadmap goals
-    if (goal.toLowerCase().includes("roadmap")) {
-      const modules = results?.["generate-roadmap"]?.modules;
+    if (this.isRoadmapGoal(goal)) {
+      const modules = this.getRoadmapModulesFromResults(results);
       if (Array.isArray(modules) && modules.length > 0) {
         return {
           pass: true,
@@ -943,6 +1030,14 @@ Return JSON:
           suggestions: [],
         };
       }
+
+      return {
+        pass: false,
+        canRecover: true,
+        score: 15,
+        reason: "Roadmap generation output is missing modules",
+        suggestions: ["Ensure generate-roadmap executes and returns a non-empty modules array"],
+      };
     }
 
     const resultsSnapshot = Object.keys(results).slice(-3); // Last 3 agent outputs
@@ -997,8 +1092,8 @@ Return JSON:
    */
   async aggregateResults(results, goal, executionLog) {
     // Deterministic aggregation for roadmap goals
-    if (goal.toLowerCase().includes("roadmap")) {
-      const modules = results?.["generate-roadmap"]?.modules;
+    if (this.isRoadmapGoal(goal)) {
+      const modules = this.getRoadmapModulesFromResults(results);
       if (Array.isArray(modules) && modules.length > 0) {
         return {
           finalOutput: {

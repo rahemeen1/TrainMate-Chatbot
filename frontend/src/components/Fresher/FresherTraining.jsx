@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { db } from "../../firebase";
 import { collection, getDocs, doc, updateDoc, getDoc } from "firebase/firestore";
-import { FresherSideMenu } from "./FresherSideMenu";
+import FresherShellLayout from "./FresherShellLayout";
 import TrainingLockedScreen from "./TrainingLockedScreen";
 
 export default function FresherTraining() {
@@ -277,20 +277,16 @@ export default function FresherTraining() {
   }
 
 return (
-  <div className="flex h-screen bg-[#031C3A] text-white overflow-hidden">
-    {/* ===== Sidebar (FIXED WIDTH) ===== */}
-    <div className="w-64 h-screen flex-shrink-0 bg-[#021B36]/90 p-4">
-      <FresherSideMenu
-        userId={userId}
-        companyId={companyId}
-        deptId={deptId}
-        companyName={companyName}
-        roadmapGenerated={true}
-      />
-    </div>
-
-    {/* ===== Main Content ===== */}
-    <div className="flex-1 p-8 space-y-8 overflow-y-auto">
+    <FresherShellLayout
+      userId={userId}
+      companyId={companyId}
+      deptId={deptId}
+      companyName={companyName}
+      roadmapGenerated={true}
+      headerLabel="Training"
+      contentClassName="p-4 md:p-8 lg:p-10"
+    >
+      <div className="space-y-8">
       <h1 className="text-3xl font-bold text-[#00FFFF]">
         Module Details
       </h1>
@@ -529,7 +525,7 @@ return (
       
 
     </div>
-  </div>
+        </FresherShellLayout>
 );
   // ===============================
 }

@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useNavigate, useLocation } from "react-router-dom";
-import CompanySidebar from "./CompanySidebar";
 import CompanyPageLoader from "./CompanyPageLoader";
+import CompanyShellLayout from "./CompanyShellLayout";
 
 
 export default function ManageDepartments() {
@@ -89,38 +89,23 @@ export default function ManageDepartments() {
   // 🔹 loading / safety states
   if (!companyId) {
     return (
-      <div className="company-page-shell flex min-h-screen">
-        <div className="flex-shrink-0">
-          <CompanySidebar companyName={companyName || "Company"} />
-        </div>
-        <div className="company-main-content flex-1 min-w-0 md:p-8 lg:p-10">
+      <CompanyShellLayout companyName={companyName || "Company"} headerLabel="Departments">
           <CompanyPageLoader layout="content" message="Loading company..." />
-        </div>
-      </div>
+      </CompanyShellLayout>
     );
   }
 
   if (loading) {
     return (
-      <div className="company-page-shell flex min-h-screen">
-        <div className="flex-shrink-0">
-          <CompanySidebar companyId={companyId} companyName={companyName} />
-        </div>
-        <div className="company-main-content flex-1 min-w-0 md:p-8 lg:p-10">
+      <CompanyShellLayout companyId={companyId} companyName={companyName} headerLabel="Departments">
           <CompanyPageLoader layout="content" message="Loading Department Details..." />
-        </div>
-      </div>
+      </CompanyShellLayout>
     );
   }
 
   return (
-    <div className="company-page-shell flex min-h-screen">
-      <CompanySidebar
-        companyId={companyId}
-        companyName={companyName}
-      />
-
-      <div className="company-main-content flex-1 md:p-8 lg:p-10">
+    <CompanyShellLayout companyId={companyId} companyName={companyName} headerLabel="Departments">
+      <div>
         <div className="company-container space-y-6">
           <section className="company-card p-6 md:p-8">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -220,7 +205,7 @@ export default function ManageDepartments() {
           </section>
         </div>
       </div>
-    </div>
+    </CompanyShellLayout>
   );
 
 }

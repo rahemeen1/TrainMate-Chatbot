@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react"; 
 import { useLocation, useNavigate } from "react-router-dom";
-import CompanySidebar from "./CompanySidebar";
 import CompanyPageLoader from "./CompanyPageLoader";
+import CompanyShellLayout from "./CompanyShellLayout";
 import { collection, getDocs, query, orderBy, limit } from "firebase/firestore";
 import { db } from "../../firebase";
 
@@ -241,10 +241,8 @@ const closeAddUserModal = () => {
   }
 
   return (
-    <div className="company-page-shell flex min-h-screen">
-      <CompanySidebar companyId={companyId} companyName={companyName} />
-
-      <div className="company-main-content flex-1 md:p-8">
+    <CompanyShellLayout companyId={companyId} companyName={companyName} headerLabel="Department Details">
+      <div>
         <div className="company-container">
            <div className="company-card p-6 md:p-8 mb-6">
              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -609,6 +607,6 @@ const closeAddUserModal = () => {
           </div>
         </div>
       )}
-    </div>
+    </CompanyShellLayout>
   );
 }

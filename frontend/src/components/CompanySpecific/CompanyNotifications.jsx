@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import CompanySidebar from "./CompanySidebar";
 import CompanyPageLoader from "./CompanyPageLoader";
+import CompanyShellLayout from "./CompanyShellLayout";
 
 export default function CompanyNotifications() {
   const location = useLocation();
@@ -58,10 +58,7 @@ export default function CompanyNotifications() {
   };
 
   return (
-    <div className="company-page-shell flex min-h-screen">
-      <CompanySidebar companyId={companyId} companyName={companyName} />
-
-      <div className="company-main-content flex-1 md:p-8">
+    <CompanyShellLayout companyId={companyId} companyName={companyName} headerLabel="Notifications">
         {loading ? (
           <CompanyPageLoader message="Loading Notifications..." />
         ) : (
@@ -142,7 +139,6 @@ export default function CompanyNotifications() {
             )}
           </div>
         )}
-      </div>
-    </div>
+    </CompanyShellLayout>
   );
 }
