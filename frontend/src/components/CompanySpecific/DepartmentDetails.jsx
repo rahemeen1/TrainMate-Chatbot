@@ -244,7 +244,7 @@ const closeAddUserModal = () => {
     <CompanyShellLayout companyId={companyId} companyName={companyName} headerLabel="Department Details">
       <div>
         <div className="company-container">
-           <div className="company-card p-6 md:p-8 mb-6">
+           <div className="company-card p-5 sm:p-6 md:p-8 mb-6">
              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
                 <h1 className="company-title">{(deptName || "").toUpperCase()} Department</h1>
@@ -255,7 +255,7 @@ const closeAddUserModal = () => {
               <button
                 onClick={() => navigate(-1)}
                 disabled={isActionInProgress}
-                className={`company-outline-btn ${
+                className={`company-outline-btn w-full sm:w-auto ${
                   isActionInProgress
                     ? "bg-gray-600 text-gray-300 cursor-not-allowed"
                     : ""
@@ -267,8 +267,8 @@ const closeAddUserModal = () => {
           </div>
 
         {/* DOCUMENTS */}
-        <div className="company-card mb-8 p-5 md:p-6">
-          <div className="flex justify-between items-center mb-4">
+        <div className="company-card mb-8 p-5 sm:p-6 md:p-6">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-4">
             <h2 className="text-xl font-semibold text-[#00FFFF]">
               {(deptName || "").toUpperCase()} Documents ({docs.length})
             </h2>
@@ -278,7 +278,7 @@ const closeAddUserModal = () => {
             <input
       type="file"
       ref={fileInputRef} // attach ref here
-      className="text-sm flex-1 bg-[#031C3A]/80 border border-[#00FFFF30] rounded-lg p-2"
+      className="text-sm flex-1 bg-[#031C3A]/80 border border-[#00FFFF30] rounded-lg p-2.5"
           disabled={isActionInProgress}
       onChange={(e) => setDocFile(e.target.files[0])}
     />
@@ -313,7 +313,66 @@ const closeAddUserModal = () => {
               Loading documents...
             </div>
           ) : (
-              <div className="company-table-wrap mb-2 overflow-x-auto">
+              <>
+<div className="lg:hidden space-y-3 mb-2">
+  {docs.length === 0 ? (
+    <div className="rounded-xl border border-[#00FFFF33] bg-[#031C3A]/65 p-5 text-center text-[#AFCBE3]">
+      No documents uploaded
+    </div>
+  ) : (
+    docs.map((doc) => (
+      <div key={doc.id} className="rounded-xl border border-[#00FFFF33] bg-[#031C3A]/65 p-4">
+        <p className="text-sm font-semibold text-[#E8F7FF] break-words">{doc.name}</p>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <a
+            href={doc.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => {
+              if (isActionInProgress) e.preventDefault();
+            }}
+            className={`px-3 py-2 text-center rounded-lg text-sm font-semibold transition ${
+              isActionInProgress
+                ? "bg-green-700 cursor-not-allowed pointer-events-none opacity-60 text-white"
+                : "bg-green-600 hover:bg-green-700 text-white"
+            }`}
+          >
+            View
+          </a>
+          <button
+            onClick={async () => {
+              if (window.confirm(`Delete ${doc.name}?`)) {
+                try {
+                  setDeletingDocId(doc.id);
+                  await deleteDepartmentDoc({
+                    companyId,
+                    deptName,
+                    docId: doc.id,
+                    storagePath: doc.storagePath,
+                  });
+                  await new Promise(resolve => setTimeout(resolve, 800));
+                  setDocs(await fetchDepartmentDocs(companyId, deptId));
+                } finally {
+                  setDeletingDocId(null);
+                }
+              }
+            }}
+            className={`px-3 py-2 rounded-lg text-sm font-semibold transition text-white ${
+              deletingDocId === doc.id || isActionInProgress
+                ? "bg-red-700 cursor-not-allowed animate-pulse"
+                : "bg-red-600 hover:bg-red-700"
+            }`}
+            disabled={deletingDocId === doc.id || isActionInProgress}
+          >
+            {deletingDocId === doc.id ? "Deleting..." : "Delete"}
+          </button>
+        </div>
+      </div>
+    ))
+  )}
+</div>
+
+              <div className="company-table-wrap mb-2 overflow-x-auto hidden lg:block">
 
   <table className="w-full text-sm">
             <thead className="company-table-head-row">
@@ -396,11 +455,12 @@ const closeAddUserModal = () => {
     </tbody>
   </table>
 </div>
+              </>
           )}
         </div>
 
         {/* USERS */}
-        <div className="company-card mb-8 p-5 md:p-6">
+        <div className="company-card mb-8 p-5 sm:p-6 md:p-6">
           <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-3 mb-3">
             <div>
               <h2 className="text-xl font-semibold text-[#00FFFF]">Users ({users.length})</h2>
@@ -417,7 +477,7 @@ const closeAddUserModal = () => {
             <button
               onClick={() => setShowAddUserModal(true)}
               disabled={isLimitReached || quotaLoading || isActionInProgress}
-              className={`px-4 py-2 rounded-lg font-semibold ${
+              className={`w-full sm:w-auto px-4 py-2.5 rounded-lg font-semibold ${
                 isLimitReached || quotaLoading || isActionInProgress
                   ? "bg-gray-500 text-white cursor-not-allowed"
                   : "bg-[#00FFFF] text-[#031C3A] hover:opacity-90"
@@ -460,7 +520,38 @@ const closeAddUserModal = () => {
               Loading users...
             </div>
           ) : (
-            <div className="company-table-wrap overflow-x-auto">
+            <>
+            <div className="lg:hidden space-y-3">
+              {users.length === 0 ? (
+                <div className="rounded-xl border border-[#00FFFF33] bg-[#031C3A]/65 p-5 text-center text-[#AFCBE3]">
+                  No users found.
+                </div>
+              ) : (
+                users.map((u) => (
+                  <div key={u.id} className="rounded-xl border border-[#00FFFF33] bg-[#031C3A]/65 p-4">
+                    <h3 className="text-base font-semibold text-[#E8F7FF] leading-tight">{(u.name || "").toUpperCase()}</h3>
+                    <p className="text-xs text-[#AFCBE3] mt-1 break-all">{u.email || "—"}</p>
+
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-lg bg-[#021B36]/70 border border-[#00FFFF22] px-3 py-2">
+                        <p className="text-[#8EB6D3]">Phone</p>
+                        <p className="text-[#E8F7FF] font-medium mt-1">{u.phone || "—"}</p>
+                      </div>
+                      <div className="rounded-lg bg-[#021B36]/70 border border-[#00FFFF22] px-3 py-2">
+                        <p className="text-[#8EB6D3]">Training On</p>
+                        <p className="text-[#E8F7FF] font-medium mt-1 capitalize">{u.trainingOn || "—"}</p>
+                      </div>
+                    </div>
+
+                    <div className="mt-2 inline-flex px-2.5 py-1 rounded-full text-xs font-semibold bg-[#00FFFF1E] text-[#9DE8F2] capitalize border border-[#00FFFF33]">
+                      Level: {u.trainingLevel || "—"}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="company-table-wrap overflow-x-auto hidden lg:block">
             <table className="w-full text-sm">
               <thead className="company-table-head-row">
   <tr>
@@ -498,6 +589,7 @@ const closeAddUserModal = () => {
 
             </table>
             </div>
+            </>
           )}
         </div>
         </div>
@@ -506,7 +598,7 @@ const closeAddUserModal = () => {
       {/* ADD USER MODAL */}
       {showAddUserModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center p-4 z-50">
-          <div className="bg-[#021B36] border border-[#00FFFF30] p-6 rounded-2xl w-full max-w-md shadow-2xl">
+          <div className="bg-[#021B36] border border-[#00FFFF30] p-5 sm:p-6 rounded-2xl w-full max-w-md shadow-2xl">
             <h3 className="text-xl font-bold text-[#00FFFF] mb-4">Add Fresher</h3>
 
             <input

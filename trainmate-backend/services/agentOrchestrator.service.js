@@ -816,6 +816,32 @@ Return ONLY valid JSON (no markdown, no explanation):
       };
     }
 
+    if (step.agent === "retrieve-documents") {
+      const docs = Array.isArray(output.documents) ? output.documents : [];
+      const declaredCount = Number.isFinite(output.documentCount)
+        ? output.documentCount
+        : docs.length;
+      const countMatches = declaredCount === docs.length;
+
+      return {
+        pass: docs.length > 0,
+        score: docs.length > 0 ? 90 : 35,
+        reason:
+          docs.length > 0
+            ? countMatches
+              ? "Documents retrieved successfully"
+              : "Documents retrieved (count normalized by actual array length)"
+            : "No documents retrieved",
+        issues:
+          docs.length > 0
+            ? countMatches
+              ? []
+              : ["documentCount did not match documents.length in raw output"]
+            : ["documents array is empty"],
+        canRecover: docs.length === 0,
+      };
+    }
+
     if (step.agent === "generate-roadmap") {
       const modules = Array.isArray(output.modules) ? output.modules : [];
       const validModules = modules.filter((m) => m && typeof m === "object").length;

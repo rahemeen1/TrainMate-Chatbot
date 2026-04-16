@@ -23,9 +23,9 @@ export default function CompanyShellLayout({
   }, []);
 
   return (
-    <div className="company-page-shell min-h-screen">
+    <div className="company-page-shell min-h-screen lg:relative">
       <div className="flex min-h-screen flex-col lg:flex-row">
-        <aside className="hidden lg:block lg:w-64 lg:flex-shrink-0">
+        <aside className="hidden lg:block lg:w-64 lg:flex-shrink-0 lg:fixed lg:inset-y-0 lg:left-0 lg:overflow-hidden">
           <CompanySidebar companyId={companyId} companyName={companyName} className="min-h-screen" />
         </aside>
 
@@ -62,7 +62,7 @@ export default function CompanyShellLayout({
           </div>
         </aside>
 
-        <main className={`company-main-content flex-1 min-w-0 p-4 sm:p-6 lg:p-8 ${contentClassName}`}>
+        <main className={`company-main-content flex-1 min-w-0 p-4 sm:p-6 lg:p-8 lg:ml-64 ${contentClassName}`}>
           <div className="mb-4 flex items-center justify-between lg:hidden">
             <button
               type="button"

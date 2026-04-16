@@ -107,7 +107,7 @@ export default function ManageDepartments() {
     <CompanyShellLayout companyId={companyId} companyName={companyName} headerLabel="Departments">
       <div>
         <div className="company-container space-y-6">
-          <section className="company-card p-6 md:p-8">
+          <section className="company-card p-5 sm:p-6 md:p-8">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-[#AFCBE3]">
@@ -123,7 +123,7 @@ export default function ManageDepartments() {
 
               <button
                 onClick={() => navigate(-1)}
-                className="company-outline-btn"
+                className="company-outline-btn w-full sm:w-auto"
               >
                 ← Back
               </button>
@@ -148,7 +148,46 @@ export default function ManageDepartments() {
           </section>
 
           <section className="company-table-wrap">
-            <div className="overflow-x-auto">
+            <div className="lg:hidden space-y-3">
+              {departments.length === 0 ? (
+                <div className="rounded-xl border border-[#00FFFF33] bg-[#031C3A]/65 p-5 text-center text-[#AFCBE3]">
+                  No departments found yet.
+                </div>
+              ) : (
+                departments.map((dept) => (
+                  <div key={dept.id} className="rounded-xl border border-[#00FFFF33] bg-[#031C3A]/65 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs text-[#8EB6D3] uppercase tracking-wide">Department</p>
+                        <h3 className="text-base font-semibold text-[#E8F7FF] mt-1">{(dept.name || "").toUpperCase()}</h3>
+                      </div>
+                      <div className="rounded-lg bg-[#021B36]/70 border border-[#00FFFF22] px-3 py-2 text-center min-w-[92px]">
+                        <p className="text-xs text-[#8EB6D3]">Freshers</p>
+                        <p className="text-[#E8F7FF] font-semibold mt-1">{dept.usersCount}</p>
+                      </div>
+                    </div>
+
+                    <button
+                      className="company-outline-btn mt-4 w-full"
+                      onClick={() =>
+                        navigate(`/departments/${dept.id}`, {
+                          state: {
+                            companyId,
+                            companyName,
+                            deptId: dept.id,
+                            deptName: dept.name,
+                          },
+                        })
+                      }
+                    >
+                      View Details
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="overflow-x-auto hidden lg:block">
               <table className="w-full min-w-[620px] text-sm">
                 <thead>
                   <tr className="company-table-head-row">
