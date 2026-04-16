@@ -259,7 +259,7 @@ if (!userData) {
               <p className="text-xs uppercase tracking-[0.2em] text-[#AFCBE3] mb-2">Performance Dashboard</p>
               <h1 className="text-3xl font-bold text-[#00FFFF]">{userData.name}'s Progress</h1>
               <p className="text-[#AFCBE3] mt-1">
-                Department: {userData.deptName} | Level: {userData.onboarding?.level} | Expertise: {userData.onboarding?.expertise}
+                Department: {userData.deptName}  | Expertise: {userData.onboarding?.expertise}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
