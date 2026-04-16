@@ -5,17 +5,6 @@ import { db } from "../config/firebase.js";
 
 dotenv.config();
 
-<<<<<<< HEAD
-const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY);
-const hasOpenAIKey = Boolean(process.env.OPENAI_API_KEY);
-
-if (!hasGeminiKey && !hasOpenAIKey) {
-  throw new Error("❌ At least one LLM key is required (GEMINI_API_KEY or OPENAI_API_KEY)");
-}
-
-const genAI = hasGeminiKey ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null;
-const openAI = hasOpenAIKey ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
-=======
 let genAI = null;
 let openAI = null;
 let initialized = false;
@@ -39,7 +28,6 @@ function initializeLLMs() {
   
   initialized = true;
 }
->>>>>>> be9b1faefbc50f5ada55bcbf37f6bcba0c5ca0d3
 
 /**
  * AGENT ORCHESTRATOR SERVICE
@@ -57,8 +45,6 @@ export class AgentOrchestrator {
     this.maxHistorySize = 100;
   }
 
-<<<<<<< HEAD
-=======
   isRoadmapGoal(goal) {
     return typeof goal === "string" && goal.toLowerCase().includes("roadmap");
   }
@@ -75,7 +61,6 @@ export class AgentOrchestrator {
     return Array.isArray(candidate?.modules) ? candidate.modules : [];
   }
 
->>>>>>> be9b1faefbc50f5ada55bcbf37f6bcba0c5ca0d3
   compactForPrompt(value, maxChars = 1200) {
     const text = typeof value === "string" ? value : JSON.stringify(value);
     if (!text) return "";
@@ -290,8 +275,6 @@ export class AgentOrchestrator {
       ? plan.errorStrategy
       : "retry";
 
-<<<<<<< HEAD
-=======
     if (this.isRoadmapGoal(goal) && availableAgents.has("generate-roadmap")) {
       const hasRoadmapGenerator = normalizedSteps.some((s) => s.agent === "generate-roadmap");
       if (!hasRoadmapGenerator) {
@@ -315,7 +298,6 @@ export class AgentOrchestrator {
       }
     }
 
->>>>>>> be9b1faefbc50f5ada55bcbf37f6bcba0c5ca0d3
     return {
       plan: {
         ...plan,
