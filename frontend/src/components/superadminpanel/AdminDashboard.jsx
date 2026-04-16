@@ -222,7 +222,7 @@ export default function AdminDashboard() {
 
 
   return (
-    <div className="min-h-screen bg-[#02142B] text-white md:flex">
+    <div className="min-h-screen bg-[#02142B] text-white md:flex md:relative">
       <div className="md:hidden flex items-center justify-between px-4 py-3 border-b border-[#00FFFF30] bg-[#031C3A]">
         <h2 className="text-lg font-bold text-[#00FFFF]">Super Admin</h2>
         <button
@@ -235,7 +235,7 @@ export default function AdminDashboard() {
       </div>
 
       <div
-        className={`${isSidebarOpen ? "block" : "hidden"} md:block w-full md:w-64 bg-[#031C3A] border-r border-[#00FFFF30] shadow-lg p-6`}
+        className={`${isSidebarOpen ? "block" : "hidden"} md:block w-full md:w-64 bg-[#031C3A] border-r border-[#00FFFF30] shadow-lg p-6 md:fixed md:inset-y-0 md:left-0 md:overflow-hidden`}
       >
          {/* Logo */}
       <div className="text-center mb-6">
@@ -256,6 +256,15 @@ export default function AdminDashboard() {
 
           <li
             className={`cursor-pointer p-2 rounded-lg ${
+              activeSection === "agentHealth" ? "bg-[#00FFFF]/20" : ""
+            }`}
+            onClick={() => handleSectionChange("agentHealth")}
+          >
+            Agents Health Centre
+          </li>
+
+          <li
+            className={`cursor-pointer p-2 rounded-lg ${
               activeSection === "addCompany" ? "bg-[#00FFFF]/20" : ""
             }`}
             onClick={() => handleSectionChange("addCompany")}
@@ -263,7 +272,7 @@ export default function AdminDashboard() {
             Add New Company
           </li>
 
-          <li
+           <li
             className={`cursor-pointer p-2 rounded-lg ${
               activeSection === "viewCompanies" ? "bg-[#00FFFF]/20" : ""
             }`}
@@ -272,7 +281,7 @@ export default function AdminDashboard() {
             View Companies
           </li>
 
-           <li
+          <li
             className={`cursor-pointer p-2 rounded-lg ${
               activeSection === "manageCompanies" ? "bg-[#00FFFF]/20" : ""
             }`}
@@ -288,15 +297,6 @@ export default function AdminDashboard() {
             onClick={() => handleSectionChange("licensingPlans")}
           >
             Licensing Plans
-          </li>
-
-          <li
-            className={`cursor-pointer p-2 rounded-lg ${
-              activeSection === "agentHealth" ? "bg-[#00FFFF]/20" : ""
-            }`}
-            onClick={() => handleSectionChange("agentHealth")}
-          >
-            Agent Health
           </li>
 
           <li
@@ -317,7 +317,7 @@ export default function AdminDashboard() {
         </ul>
       </div>
 
-      <div className="flex-1 p-4 sm:p-6 lg:p-10">
+      <div className="flex-1 p-4 sm:p-6 lg:p-10 md:ml-64">
           {activeSection === "overview" }
           {activeSection === "addCompany" }
           {activeSection === "viewCompanies" }

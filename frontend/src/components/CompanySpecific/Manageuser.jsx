@@ -200,7 +200,7 @@ export default function ManageUser() {
     <CompanyShellLayout companyId={companyId} companyName={companyName} headerLabel="Manage Users">
       <div>
         <div className="company-container">
-          <div className="company-card p-6 md:p-8 mb-6">
+          <div className="company-card p-5 sm:p-6 md:p-8 mb-6">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
                 <h1 className="company-title">Manage Users</h1>
@@ -212,7 +212,7 @@ export default function ManageUser() {
               <button
                 onClick={() => navigate(-1)}
                 disabled={isDeletingAnyUser}
-                className={`company-outline-btn ${
+                className={`company-outline-btn w-full sm:w-auto ${
                   isDeletingAnyUser ? "opacity-60 cursor-not-allowed" : ""
                 }`}
               >
@@ -221,19 +221,19 @@ export default function ManageUser() {
             </div>
           </div>
 
-          <div className="company-card p-6 md:p-8">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+          <div className="company-card p-5 sm:p-6 md:p-8">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
             <h2 className="text-xl font-semibold text-[#00FFFF]">
               Users ({displayedCount})
             </h2>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 w-full md:w-auto">
               <label className="text-[#AFCBE3] font-semibold text-sm">Filter by Department:</label>
               <select
                 value={filterDept}
                 onChange={(e) => setFilterDept(e.target.value)}
                 disabled={isDeletingAnyUser}
-                className="px-4 py-2 bg-[#021B36] border border-[#00FFFF]/50 text-[#00FFFF] rounded font-semibold hover:border-[#00FFFF] transition"
+                className="w-full sm:w-auto px-4 py-2.5 bg-[#021B36] border border-[#00FFFF]/50 text-[#00FFFF] rounded-lg font-semibold hover:border-[#00FFFF] transition"
               >
                 <option value="all">All Departments</option>
                 {departmentsList.map((dept) => (
@@ -247,8 +247,8 @@ export default function ManageUser() {
 
           {/* Quota Status */}
           {quotaStatus && (
-            <div className="mb-4 p-4 bg-[#021B36] border border-[#00FFFF]/30 rounded-lg">
-              <div className="flex items-center justify-between">
+            <div className="mb-4 p-4 bg-[#021B36] border border-[#00FFFF]/30 rounded-xl">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div>
                   <p className="text-[#00FFFF] font-semibold">{quotaStatus.plan} Plan</p>
                   <p className="text-[#AFCBE3] text-sm mt-1">
@@ -260,8 +260,8 @@ export default function ManageUser() {
                     </p>
                   )}
                 </div>
-                <div className="text-right">
-                  <div className="w-32 h-2 bg-[#00FFFF]/20 rounded-full overflow-hidden">
+                <div className="text-left sm:text-right">
+                  <div className="w-full sm:w-32 h-2 bg-[#00FFFF]/20 rounded-full overflow-hidden">
                     <div 
                       className={`h-full transition-all ${quotaStatus.canAdd ? 'bg-green-500' : 'bg-red-500'}`}
                       style={{width: `${Math.min(100, (quotaStatus.totalEverAdded / quotaStatus.maxAllowed) * 100)}%`}}
@@ -308,10 +308,106 @@ export default function ManageUser() {
               No users found for department: <strong>{filterDept}</strong>
             </div>
           ) : (
-            <div className="company-table-wrap overflow-x-auto max-w-full">
-            <table className="w-full text-sm border-collapse
-                 min-w-[1040px]
-                 lg:min-w-0">
+            <>
+            <div className="lg:hidden space-y-3">
+              {sortedUsers.map((u, i) => (
+                <div key={u.id} className="rounded-xl border border-[#00FFFF33] bg-[#031C3A]/65 p-4">
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div>
+                      <p className="text-xs text-[#8EB6D3]">#{i + 1}</p>
+                      <h3 className="text-base font-semibold text-[#E8F7FF] leading-tight">{u.name || "Unnamed User"}</h3>
+                      <p className="text-xs text-[#AFCBE3] mt-1">{u.phone || "No phone"}</p>
+                    </div>
+                    <div className="flex flex-col items-end gap-2">
+                      <span className={`px-2.5 py-1 rounded-full text-[11px] font-semibold ${
+                        u.status === "active"
+                          ? "bg-green-500/20 text-green-400"
+                          : "bg-red-500/20 text-red-400"
+                      }`}>
+                        {u.status}
+                      </span>
+                      <span className={`px-2.5 py-1 rounded-full text-[11px] font-semibold ${
+                        u.trainingCompleted
+                          ? "bg-emerald-500/20 text-emerald-400"
+                          : "bg-yellow-500/20 text-yellow-400"
+                      }`}>
+                        {u.trainingCompleted ? "Completed" : "In Progress"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 mb-3 text-xs">
+                    <div className="rounded-lg bg-[#021B36]/70 border border-[#00FFFF22] px-3 py-2">
+                      <p className="text-[#8EB6D3]">Department</p>
+                      <p className="text-[#E8F7FF] font-medium mt-1">{u.deptName || "Unknown"}</p>
+                    </div>
+                    <div className="rounded-lg bg-[#021B36]/70 border border-[#00FFFF22] px-3 py-2">
+                      <p className="text-[#8EB6D3]">Progress</p>
+                      <p className="text-[#E8F7FF] font-medium mt-1">{u.progress || 0}%</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => setEditingUser(u)}
+                      disabled={isDeletingAnyUser}
+                      className={`px-3 py-2 rounded-lg text-sm font-semibold bg-yellow-400 text-black border border-yellow-500 ${
+                        isDeletingAnyUser ? "opacity-60 cursor-not-allowed" : ""
+                      }`}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDelete(u)}
+                      disabled={isDeletingAnyUser}
+                      className={`px-3 py-2 rounded-lg text-sm font-semibold border transition ${
+                        deletingUserId === u.id
+                          ? "bg-gray-500 cursor-not-allowed border-gray-600"
+                          : isDeletingAnyUser
+                          ? "bg-red-600/60 cursor-not-allowed border-red-700"
+                          : "bg-red-600 border-red-700 hover:opacity-80"
+                      }`}
+                    >
+                      {deletingUserId === u.id ? "Deleting..." : "Delete"}
+                    </button>
+                    <button
+                      onClick={() =>
+                        navigate(`/progress-details/${companyId}/${encodeURIComponent(u.deptName || "unknown")}/${u.id}`, {
+                          state: {
+                            userId: u.id,
+                            userName: u.name,
+                            userProgress: u.progress || 0,
+                            companyId,
+                            companyName,
+                            deptName: u.deptName,
+                          },
+                        })
+                      }
+                      disabled={isDeletingAnyUser}
+                      className={`px-3 py-2 rounded-lg text-sm font-semibold ${
+                        u.progress >= 100
+                          ? "bg-teal-400 text-black"
+                          : "bg-teal-400/20 text-teal-300"
+                      } ${isDeletingAnyUser ? "opacity-60 cursor-not-allowed" : ""}`}
+                    >
+                      {u.progress >= 100 ? "Completed" : `${u.progress || 0}%`}
+                    </button>
+                    <button
+                      onClick={() => navigate(`/user-profile/${companyId}/${u.deptName}/${u.id}`)}
+                      disabled={isDeletingAnyUser}
+                      className={`px-3 py-2 rounded-lg text-sm font-semibold bg-[#00FFFF] text-[#031C3A] border border-cyan-400 ${
+                        isDeletingAnyUser ? "opacity-60 cursor-not-allowed" : ""
+                      }`}
+                    >
+                      Profile
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="company-table-wrap hidden lg:block overflow-x-auto max-w-full">
+            <table className="w-full text-sm border-collapse min-w-[1040px] lg:min-w-0">
                 <thead>
               <tr className="company-table-head-row uppercase text-cyan-300">
                     <th className="py-3 px-3 lg:px-4 text-center">#</th>
@@ -433,6 +529,7 @@ export default function ManageUser() {
                 </tbody>
               </table>
             </div>
+            </>
           )}
           </div>
         </div>
@@ -441,7 +538,7 @@ export default function ManageUser() {
       {/* Edit Modal */}
       {editingUser && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center">
-          <div className="bg-[#021B36] p-6 rounded-xl w-[420px] border border-teal-400/30">
+          <div className="bg-[#021B36] p-5 sm:p-6 rounded-xl w-[92vw] max-w-[420px] border border-teal-400/30">
             <h3 className="text-2xl text-teal-400 mb-4">Edit User</h3>
 
             <input
