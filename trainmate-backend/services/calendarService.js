@@ -373,7 +373,7 @@ export async function createFresherWelcomeEvent({
 
   const event = {
     summary: `👋 Welcome to TrainMate, ${userName || "Fresher"}`,
-    description: `Welcome to your training journey!\n\n🏢 Company: ${companyName}\n🏬 Department: ${deptName || "N/A"}\n📚 Training Focus: ${trainingTopic || "General"}\n\n📝 Quiz Policy:\n- Total attempts per module quiz: ${maxQuizAttempts}\n- Quiz unlocks after ${quizUnlockPercent}% module completion time\n\n${agenticMessage ? `🤖 AI Note (${messageTone || "supportive"}): ${agenticMessage}\n\n` : ""}🔔 Keep Google Calendar notifications ON to avoid missing module reminders and quiz unlock alerts.\n\n---\nTrainMate - AI-Powered Corporate Training Platform`,
+    description: `Welcome to your training journey!\n\n🏢 Company: ${companyName}\n🏬 Department: ${deptName || "N/A"}\n📚 Training Focus: ${trainingTopic || "General"}\n\n📝 Quiz Policy:\n- Total attempts per module quiz: ${maxQuizAttempts}\n- Quiz unlocks after ${quizUnlockPercent}% module completion time\n\n🔔 Keep Google Calendar notifications ON to avoid missing module reminders and quiz unlock alerts.\n\n---\nTrainMate - AI-Powered Corporate Training Platform`,
     start: { dateTime: startDateTime.toISOString(), timeZone },
     end: { dateTime: endDateTime.toISOString(), timeZone },
     reminders: { useDefault: false, overrides: getReminderOverrides() },

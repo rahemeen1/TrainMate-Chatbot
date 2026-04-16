@@ -3,10 +3,30 @@ import { db, admin } from "../../config/firebase.js";
 export const getAllCompanies = async (req, res) => {
   try {
     const snapshot = await db.collection("companies").get();
-    const companies = snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
+
+    const companies = await Promise.all(
+      snapshot.docs.map(async (doc) => {
+        const latestBillingPaymentSnap = await db
+          .collection("companies")
+          .doc(doc.id)
+          .collection("billingPayments")
+          .orderBy("createdAt", "desc")
+          .limit(1)
+          .get();
+
+        const latestBillingPaymentDoc = latestBillingPaymentSnap.docs[0];
+        const latestBillingPaymentCreatedAt = latestBillingPaymentDoc
+          ? latestBillingPaymentDoc.data()?.createdAt || null
+          : null;
+
+        return {
+          id: doc.id,
+          ...doc.data(),
+          latestBillingPaymentCreatedAt,
+        };
+      })
+    );
+
     res.json(companies);
   } catch (err) {
     console.error("❌ /companies GET error:", err);

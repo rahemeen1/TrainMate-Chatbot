@@ -11,7 +11,7 @@ import {
   updateDoc,
   deleteDoc,
 } from "firebase/firestore";
-import CompanySidebar from "./CompanySidebar"; 
+import CompanyShellLayout from "./CompanyShellLayout";
 
 const normalizeId = (value) => {
   const normalized = String(value || "").trim();
@@ -197,12 +197,8 @@ export default function ManageUser() {
   const isDeletingAnyUser = deletingUserId !== null;
 
   return (
-    <div className="company-page-shell flex min-h-screen">
-  {/* Sidebar (fixed width, no shrink) */}
-  <div className="flex-shrink-0">
-      <CompanySidebar companyId={companyId} companyName={companyName} />
-      </div>
-      <div className="company-main-content flex-1 min-w-0 md:p-8">
+    <CompanyShellLayout companyId={companyId} companyName={companyName} headerLabel="Manage Users">
+      <div>
         <div className="company-container">
           <div className="company-card p-6 md:p-8 mb-6">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -487,6 +483,6 @@ export default function ManageUser() {
           </div>
         </div>
       )}
-    </div>
+    </CompanyShellLayout>
   );
 }

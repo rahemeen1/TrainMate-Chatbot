@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react"; 
 import { useLocation, useNavigate } from "react-router-dom";
-import CompanySidebar from "./CompanySidebar";
 import CompanyPageLoader from "./CompanyPageLoader";
+import CompanyShellLayout from "./CompanyShellLayout";
 import { collection, getDocs, query, orderBy, limit } from "firebase/firestore";
 import { db } from "../../firebase";
 
@@ -29,6 +29,7 @@ const [docs, setDocs] = useState([]);
 const [uploadingDoc, setUploadingDoc] = useState(false);
 const [addingUser, setAddingUser] = useState(false);
 const [userAddedSuccess, setUserAddedSuccess] = useState(false);
+const [lastAddedUser, setLastAddedUser] = useState(null);
 const [deletingDocId, setDeletingDocId] = useState(null);
 const [companyLicense, setCompanyLicense] = useState("License Pro");
 const [totalCompanyFreshers, setTotalCompanyFreshers] = useState(0);
@@ -178,6 +179,7 @@ const isActionInProgress = uploadingDoc || addingUser;
       });
 
       setUserAddedSuccess(true);
+      setLastAddedUser(result);
       setNewUser({
         name: "",
         email: "",
@@ -239,10 +241,8 @@ const closeAddUserModal = () => {
   }
 
   return (
-    <div className="company-page-shell flex min-h-screen">
-      <CompanySidebar companyId={companyId} companyName={companyName} />
-
-      <div className="company-main-content flex-1 md:p-8">
+    <CompanyShellLayout companyId={companyId} companyName={companyName} headerLabel="Department Details">
+      <div>
         <div className="company-container">
            <div className="company-card p-6 md:p-8 mb-6">
              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -432,6 +432,14 @@ const closeAddUserModal = () => {
             </button>
           </div>
 
+          {lastAddedUser && (
+            <div className="mb-3 rounded-lg border border-green-500/40 bg-green-600/10 p-3">
+              <p className="text-xs uppercase tracking-wide text-green-300">Recently Added</p>
+              <p className="mt-1 text-sm text-white">{lastAddedUser.name} ({lastAddedUser.userId})</p>
+              <p className="text-xs text-[#AFCBE3] mt-1">{lastAddedUser.userEmail}</p>
+            </div>
+          )}
+
           {isLimitReached && quotaStatus && (
             <div className="mb-3 p-3 rounded-lg border border-[#00FFFF30] bg-[#021B36]/60 text-sm text-[#AFCBE3]">
               {quotaStatus.message}
@@ -599,6 +607,6 @@ const closeAddUserModal = () => {
           </div>
         </div>
       )}
-    </div>
+    </CompanyShellLayout>
   );
 }

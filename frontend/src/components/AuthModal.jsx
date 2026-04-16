@@ -195,8 +195,8 @@ export default function AuthModal({ isOpen, mode: initialMode, onClose }) {
                     className="w-full pl-11 pr-4 py-2.5 bg-[#021B36]/60 border border-[#00FFFF30] text-white rounded-lg focus:border-[#00FFFF]"
                     placeholder={
                       userType === "admin"
-                        ? "company_username"
-                        : "Enter your full email (e.g. john.doe@company.com)"
+                        ? "company_email"
+                        : "Enter your full email (e.g. john.doe@gmail.com)"
                     }
                     pattern={
                       userType === "fresher"

@@ -9,12 +9,13 @@ const MENU_OPTIONS = [
   { label: "Company Details", path: "/CompanySpecific/CompanyDetails" }, 
   { label: "Settings", path: "/CompanySpecific/CompanySettings" },
   { label: "Logout", path: "/" },
-
 ];
 
-export default function CompanySidebar({ companyId, companyName }) {
+export default function CompanySidebar({ companyId, companyName, className = "", onItemClick }) {
   const navigate = useNavigate();
   const [pendingNotifications, setPendingNotifications] = useState(0);
+  const primaryMenuOptions = MENU_OPTIONS.filter((opt) => opt.label !== "Logout");
+  const logoutOption = MENU_OPTIONS.find((opt) => opt.label === "Logout");
 
   const resolvedCompanyId = useMemo(
     () => companyId || localStorage.getItem("companyId") || "",
@@ -57,16 +58,20 @@ export default function CompanySidebar({ companyId, companyName }) {
   const handleNavigation = (opt) => {
     if (opt.label === "Logout") {
       const confirmed = window.confirm("Do you really want to logout?");
-      if (confirmed) navigate("/");
+      if (confirmed) {
+        navigate("/");
+        onItemClick?.();
+      }
     } else {
       navigate(opt.path, {
         state: { companyId: resolvedCompanyId, companyName: resolvedCompanyName },
       });
+      onItemClick?.();
     }
   };
 
   return (
-    <div className="w-64 bg-[#021B36]/90 flex flex-col p-4 shadow-lg">
+    <div className={`w-full bg-[#021B36]/90 flex flex-col p-4 shadow-lg ${className}`}>
       {/* Logo */}
       <div className="text-center mb-6">
         <div className="w-16 h-16 mx-auto bg-[#00FFFF]/20 rounded-2xl flex items-center justify-center shadow-[0_0_18px_#00FFFF50] border border-[#00FFFF30]">
@@ -80,7 +85,7 @@ export default function CompanySidebar({ companyId, companyName }) {
 
       {/* Menu */}
       <div className="flex flex-col gap-2">
-        {MENU_OPTIONS.map((opt) => (
+        {primaryMenuOptions.map((opt) => (
           <button
             key={opt.path}
             onClick={() => handleNavigation(opt)}
@@ -97,6 +102,17 @@ export default function CompanySidebar({ companyId, companyName }) {
           </button>
         ))}
       </div>
+
+      {logoutOption && (
+        <div className="mt-auto pt-4">
+          <button
+            onClick={() => handleNavigation(logoutOption)}
+            className="w-full text-left px-4 py-2 rounded-lg hover:bg-[#00FFFF]/10 transition font-medium text-red-400"
+          >
+            {logoutOption.label}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db } from "../../firebase";
-import { FresherSideMenu } from "./FresherSideMenu";
+import FresherShellLayout from "./FresherShellLayout";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 export default function OnboardingPage({
@@ -165,14 +165,14 @@ export default function OnboardingPage({
   // 🔹 UI
   // =====================================================
   return (
-    <div className="flex min-h-screen bg-[#031C3A] text-white">
-      {/* SIDEBAR */}
-      <div className="w-64 bg-[#021B36]/90 p-4">
-        <FresherSideMenu companyName={companyName} />
-      </div>
-
-      {/* MAIN */}
-      <div className="flex-1 p-10">
+    <FresherShellLayout
+      userId={userId}
+      companyId={companyId}
+      deptId={deptId}
+      companyName={companyName}
+      headerLabel="Onboarding"
+    >
+      <div className="p-4 md:p-10">
         <div className="text-left mb-10">
           <h1 className="text-2xl font-bold text-[#00FFFF]">
             Welcome {userName}!
@@ -352,6 +352,6 @@ export default function OnboardingPage({
           <p className="text-[#AFCBE3] text-sm mt-1">Redirecting in a few seconds...</p>
         </div>
       </div>
-    </div>
+    </FresherShellLayout>
   );
 }

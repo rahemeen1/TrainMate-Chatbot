@@ -173,8 +173,8 @@ export default function PreviousChats() {
         {/* HEADER */}
         <div className="bg-gradient-to-r from-[#021B36] via-[#031C3A] to-[#021B36] p-5 md:p-6 border-b border-cyan-400/30 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h2 className="text-2xl md:text-3xl text-cyan-400 font-semibold">
-              TrainMate Chatbot
+            <h2 className="text-2xl md:text-3xl text-cyan-300 font-semibold">
+              Previous Learning Chats
             </h2>
             <p className="text-sm text-[#AFCBE3]">
               Review and revisit your past conversations

@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { db } from "../../firebase";
 import { collection, getDocs, doc, updateDoc, getDoc } from "firebase/firestore";
-import { FresherSideMenu } from "./FresherSideMenu";
+import FresherShellLayout from "./FresherShellLayout";
 import TrainingLockedScreen from "./TrainingLockedScreen";
 
 export default function FresherTraining() {
@@ -277,20 +277,16 @@ export default function FresherTraining() {
   }
 
 return (
-  <div className="flex h-screen bg-[#031C3A] text-white overflow-hidden">
-    {/* ===== Sidebar (FIXED WIDTH) ===== */}
-    <div className="w-64 h-screen flex-shrink-0 bg-[#021B36]/90 p-4">
-      <FresherSideMenu
-        userId={userId}
-        companyId={companyId}
-        deptId={deptId}
-        companyName={companyName}
-        roadmapGenerated={true}
-      />
-    </div>
-
-    {/* ===== Main Content ===== */}
-    <div className="flex-1 p-8 space-y-8 overflow-y-auto">
+    <FresherShellLayout
+      userId={userId}
+      companyId={companyId}
+      deptId={deptId}
+      companyName={companyName}
+      roadmapGenerated={true}
+      headerLabel="Training"
+      contentClassName="p-4 md:p-8 lg:p-10"
+    >
+      <div className="space-y-8">
       <h1 className="text-3xl font-bold text-[#00FFFF]">
         Module Details
       </h1>
@@ -440,26 +436,29 @@ return (
       
       {/* ===== Quiz Confirmation Modal ===== */}
       {showQuizConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-[#021B36] border border-[#00FFFF] rounded-lg p-8 max-w-md shadow-xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#01050C]/75 backdrop-blur-sm px-4">
+          <div className="w-full max-w-lg rounded-2xl border border-[#00FFFF40] bg-[linear-gradient(160deg,rgba(2,27,54,0.96),rgba(3,28,58,0.94))] p-7 shadow-[0_20px_60px_rgba(0,255,255,0.14)]">
             {quizModalType === "confirm" ? (
               <>
-                <h3 className="text-2xl font-bold text-[#00FFFF] mb-4">
-                  📝 Take Quiz
+                <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#00FFFF40] bg-[#00FFFF12] px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#7FFAFF]">
+                  Completion Check
+                </div>
+                <h3 className="mb-3 text-2xl font-bold text-[#00FFFF]">
+                  Complete Quiz to Finish Module
                 </h3>
-                <p className="text-[#AFCBE3] mb-4">
-                  To mark this module as <span className="font-semibold text-white">completed</span>, you need to take and pass the quiz.
+                <p className="mb-3 text-[#D0E8F6] leading-relaxed">
+                  To mark this module as <span className="font-semibold text-white">completed</span>, you need to complete and pass the quiz first.
                 </p>
-                <p className="text-[#AFCBE3] mb-4">
-                  Do you want me to redirect you to the quiz page?
+                <p className="mb-4 text-[#AFCBE3]">
+                  Ready now? I can take you directly to the quiz.
                 </p>
 
                 {/* 🤖 AI-Powered Assessment Info */}
-                <div className="mb-6 p-3 bg-purple-500/10 border border-purple-500/30 rounded-lg">
+                <div className="mb-6 rounded-xl border border-[#00FFFF30] bg-[#00FFFF0F] p-4">
                   <div className="flex items-start gap-2">
-                    <span className="text-purple-400 text-xl">🤖</span>
+                    <span className="text-[#7FFAFF] text-xl">🤖</span>
                     <div className="text-xs text-[#AFCBE3]">
-                      <p className="font-semibold text-purple-300 mb-1">AI-Powered Assessment</p>
+                      <p className="mb-1 font-semibold text-[#7FFAFF]">AI-Powered Assessment</p>
                       <p>AI will analyze your performance and dynamically allocate retry attempts (1-3) based on your learning progress.</p>
                     </div>
                   </div>
@@ -467,14 +466,24 @@ return (
               </>
             ) : (
               <>
-                <h3 className="text-2xl font-bold text-yellow-300 mb-4">
+                <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#00FFFF50] bg-[#00FFFF14] px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#7FFAFF]">
+                  Not Yet Available
+                </div>
+                <h3 className="text-2xl font-bold text-[#00FFFF] mb-3">
                   🔒 Quiz Locked
                 </h3>
-                <p className="text-[#AFCBE3] mb-4">
-                  Quiz locked until {quizUnlockInfo?.unlockPercent || DEFAULT_QUIZ_UNLOCK_PERCENT}% module time is completed.
+                <p className="text-[#D0E8F6] mb-3 leading-relaxed">
+                  You need to complete the quiz to mark this module as completed.
                 </p>
+                <p className="text-[#AFCBE3] mb-4">
+                  Your quiz will unlock after {quizUnlockInfo?.unlockPercent || DEFAULT_QUIZ_UNLOCK_PERCENT}% module time is completed.
+                </p>
+                <div className="mb-4 rounded-xl border border-[#007BFF55] bg-[linear-gradient(120deg,rgba(0,255,255,0.10),rgba(0,123,255,0.14))] p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7FFAFF] mb-1">Quick Tip</p>
+                  <p className="text-sm text-[#D0E8F6]">Use the chatbot to revise weak concepts while your quiz timer unlocks.</p>
+                </div>
                 {quizUnlockInfo?.remainingTime && (
-                  <p className="text-sm text-yellow-300 mb-6">
+                  <p className="text-sm text-[#7FFAFF] mb-6 font-semibold">
                     Time remaining: {quizUnlockInfo.remainingTime}
                   </p>
                 )}
@@ -485,15 +494,27 @@ return (
               {quizModalType === "confirm" && (
                 <button
                   onClick={confirmQuiz}
-                  className="flex-1 px-4 py-2 bg-[#00FFFF] text-[#031C3A] 
-                    rounded font-semibold hover:bg-[#00FFFF]/90 transition"
+                  className="flex-1 rounded-lg bg-[#00FFFF] px-4 py-2 font-semibold text-[#031C3A] transition hover:bg-[#00FFFF]/90"
                 >
-                  Yes, Take Quiz
+                  Go to Quiz
+                </button>
+              )}
+              {quizModalType === "locked" && (
+                <button
+                  onClick={() => {
+                    setShowQuizConfirm(false);
+                    navigate("/chatbot", {
+                      state: { userId, companyId, deptId, companyName },
+                    });
+                  }}
+                  className="flex-1 rounded-lg bg-gradient-to-r from-[#00FFFF] to-[#007BFF] px-4 py-2 font-semibold text-[#031C3A] transition hover:opacity-90"
+                >
+                  Go to Chatbot
                 </button>
               )}
               <button
                 onClick={cancelQuiz}
-                className={`${quizModalType === "confirm" ? "flex-1" : "w-full"} px-4 py-2 border border-[#00FFFF] text-[#00FFFF] rounded font-semibold hover:bg-[#00FFFF]/10 transition`}
+                className="flex-1 rounded-lg border border-[#00FFFF] px-4 py-2 font-semibold text-[#00FFFF] transition hover:bg-[#00FFFF]/10"
               >
                 {quizModalType === "confirm" ? "Cancel" : "OK"}
               </button>
@@ -504,7 +525,7 @@ return (
       
 
     </div>
-  </div>
+        </FresherShellLayout>
 );
   // ===============================
 }

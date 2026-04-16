@@ -12,8 +12,14 @@ export default function CompanyPageLoader({
     </div>
   );
 
+  const isContentLayout = layout === "content";
+
   return (
-    <div className="min-h-screen w-full bg-[#031C3A] text-white flex items-center justify-center p-10">
+    <div
+      className={`${
+        isContentLayout ? "min-h-[calc(100vh-4rem)]" : "min-h-screen"
+      } w-full bg-[#031C3A] text-white flex items-center justify-center p-10`}
+    >
       {loader}
     </div>
   );

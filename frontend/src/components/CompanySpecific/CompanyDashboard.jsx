@@ -1,6 +1,6 @@
 //CompanyDashboard.jsx
 import { useState, useEffect, useRef } from "react";
-import { collection, getDocs, addDoc, serverTimestamp, query, orderBy, limit, getDoc } from "firebase/firestore";
+import { collection, getDocs, addDoc, serverTimestamp, query, orderBy, limit, getDoc, updateDoc } from "firebase/firestore";
 import {
   BarChart,
   Bar,
@@ -17,10 +17,11 @@ import {
 import { db } from "../../firebase";
 import { useNavigate, useLocation } from "react-router-dom";
 import { doc, setDoc } from "firebase/firestore";
-import { CreditCard, Wallet } from "lucide-react";
+import { CreditCard, Menu, X, Wallet } from "lucide-react";
 import CompanySidebar from "../../components/CompanySpecific/CompanySidebar";
 import CompanyPageLoader from "../../components/CompanySpecific/CompanyPageLoader";
 import CompanyFresherChatbot from "../../components/CompanySpecific/CompanyFresherChatbot";
+import { getCompanyLicenseStatus } from "../../services/companyLicenseStatus";
 
 
 const DEPARTMENT_OPTIONS = ["HR", "SOFTWAREDEVELOPMENT", "AI", "ACCOUNTING", "MARKETING", "OPERATIONS", "DATASCIENCE","IT"];
@@ -38,9 +39,9 @@ const PLAN_OPTIONS = [
     facilities: [
       "Customized roadmap",
       "Email updates",
-      "Google Calendar integration",
-      "Basic completion certificate",
-      "Admin progress view",
+      "Google Calendar Integration",
+      "Admin Progress View",
+      "Certification based on completion of all modules",
       "10 to 15 freshers",
       "Up to 3 different departments/plans",
     ],
@@ -54,13 +55,14 @@ const PLAN_OPTIONS = [
     usdPrice: "$199/month",
     inrPrice: "PKR 52,500/month",
     facilities: [
-      "Full quiz suite",
-      "Agentic emails",
-      "Google Calendar automation",
-      "Weak-area roadmap",
-      "Agentic scores",
-      "Final unlock quiz",
-      "Admin chatbot",
+      "Module Quizzes with performance-based progression and recommendations",
+      "Regular Email Updates",
+      "Google Calendar Automation",
+      "Regeneration of roadmap based on weak areas",
+      "Agentic Quiz Scoring and Feedback",
+      "Certification with skill tagging based on performance",  
+      "Final Quiz after completion of all modules",
+      "Admin chatbot assistant",
       "20 to 40 freshers",
       "5+ different departments/plans",
     ],
@@ -153,6 +155,7 @@ export default function CompanyDashboard() {
   const [pieData, setPieData] = useState([]);
   const [completedFreshers, setCompletedFreshers] = useState(0);
   const [showChatbot, setShowChatbot] = useState(false);
+  const [showMobileSidebar, setShowMobileSidebar] = useState(false);
   const [companyLicense, setCompanyLicense] = useState("License Pro");
   const [showUpgradeNotice, setShowUpgradeNotice] = useState(false);
   const [savingOnboarding, setSavingOnboarding] = useState(false);
@@ -162,6 +165,13 @@ export default function CompanyDashboard() {
   const [showCalendarPrompt, setShowCalendarPrompt] = useState(true);
   const [pendingNotificationCount, setPendingNotificationCount] = useState(0);
   const [showNotificationPrompt, setShowNotificationPrompt] = useState(false);
+  const [licenseStatus, setLicenseStatus] = useState({
+    plan: "License Basic",
+    renewalDate: null,
+    daysRemaining: null,
+    isExpired: false,
+    statusLabel: "Unknown",
+  });
   const preloadedAnalyticsKeyRef = useRef("");
 
   const selectedPlan = answers[0];
@@ -169,8 +179,36 @@ export default function CompanyDashboard() {
   const isBasicLicense = effectiveLicense === "License Basic";
   const currentPlanConfig = PLAN_OPTIONS.find((plan) => plan.value === effectiveLicense);
   const currentPlanLabel = currentPlanConfig?.title || "Pro";
+  const renewalDateLabel = licenseStatus.renewalDate
+    ? licenseStatus.renewalDate.toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      })
+    : "Not set";
+
+  const licenseCountdownLabel = (() => {
+    if (licenseStatus.daysRemaining === null) return "Renewal date unavailable";
+    if (licenseStatus.daysRemaining < 0) {
+      const overdue = Math.abs(licenseStatus.daysRemaining);
+      return `Expired ${overdue} day${overdue === 1 ? "" : "s"} ago`;
+    }
+    if (licenseStatus.daysRemaining === 0) return "Renews today";
+    return `Renews in ${licenseStatus.daysRemaining} day${licenseStatus.daysRemaining === 1 ? "" : "s"}`;
+  })();
 
   const getDepartmentsKey = (departments) => [...departments].sort().join("|");
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth >= 1024) {
+        setShowMobileSidebar(false);
+      }
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   const fetchAnalyticsForDepartments = async (departments, options = {}) => {
     const { rememberAsPreloaded = false } = options;
@@ -185,6 +223,12 @@ export default function CompanyDashboard() {
       if (rememberAsPreloaded) preloadedAnalyticsKeyRef.current = "";
       return;
     }
+
+    const trainingLevelCounts = {
+      basic: 0,
+      medium: 0,
+      hard: 0,
+    };
 
     const deptSnapshots = await Promise.all(
       departments.map(async (dept) => {
@@ -201,7 +245,17 @@ export default function CompanyDashboard() {
         let activeCount = 0;
 
         snap.forEach((userDoc) => {
-          if (userDoc.data().status === "active") activeCount++;
+          const userData = userDoc.data();
+
+          if (userData.status === "active") activeCount++;
+
+          const normalizedLevel = String(userData.trainingLevel || "")
+            .trim()
+            .toLowerCase();
+
+          if (normalizedLevel === "basic" || normalizedLevel === "medium" || normalizedLevel === "hard") {
+            trainingLevelCounts[normalizedLevel] += 1;
+          }
         });
 
         return {
@@ -223,7 +277,11 @@ export default function CompanyDashboard() {
     setTotalUsers(total);
     setActiveUsers(active);
     setChartData(chart);
-    setPieData(chart.map((c) => ({ name: c.department, value: c.users })));
+    setPieData([
+      { name: "Basic", value: trainingLevelCounts.basic },
+      { name: "Medium", value: trainingLevelCounts.medium },
+      { name: "Hard", value: trainingLevelCounts.hard },
+    ]);
 
     if (rememberAsPreloaded) {
       preloadedAnalyticsKeyRef.current = getDepartmentsKey(departments);
@@ -326,6 +384,21 @@ useEffect(() => {
     };
 
     fetchCompanyLicense();
+  }, [companyId]);
+
+  useEffect(() => {
+    const fetchLicenseStatus = async () => {
+      if (!companyId) return;
+
+      try {
+        const status = await getCompanyLicenseStatus(companyId);
+        setLicenseStatus(status);
+      } catch (err) {
+        console.error("Error loading license status:", err);
+      }
+    };
+
+    fetchLicenseStatus();
   }, [companyId]);
 
   // Fetch company name from database if not available
@@ -797,6 +870,17 @@ const CustomXAxisTick = ({ x, y, payload }) => {
         paymentMethod: answers[5],
       });
 
+      const billingPeriodDays = 30;
+      const licenseRenewalDate = new Date(Date.now() + billingPeriodDays * 24 * 60 * 60 * 1000);
+
+      await updateDoc(doc(db, "companies", companyId), {
+        licensePlan: selectedLicense,
+        billingPeriodDays,
+        licenseRenewalDate,
+        licenseStatus: "active",
+        upgradedAt: serverTimestamp(),
+      });
+
       // Mark onboarding as done and show dashboard
       setHasDepartments(true);
       alert("Onboarding completed successfully! Please connect your Google Calendar to enhance your training experience.");
@@ -806,26 +890,77 @@ const CustomXAxisTick = ({ x, y, payload }) => {
       setSavingOnboarding(false);
     }
   };
-
- if (loading) {
-   return (
-     <div className="company-page-shell flex min-h-screen">
-       {/* Sidebar stays as it is */}
-       <CompanySidebar companyId={companyId}/>
-
-        <CompanyPageLoader message="Loading Company Dashboard..." />
-     </div>
-   );
- }
+  if (loading) {
+     return (
+       <div className="company-page-shell min-h-screen">
+         <div className="flex min-h-screen flex-col lg:flex-row">
+           <aside className="hidden lg:block lg:w-64 lg:flex-shrink-0">
+             <CompanySidebar companyId={companyId} companyName={companyName} className="min-h-screen" />
+           </aside>
+         <div className="company-main-content flex-1 min-w-0 p-4 sm:p-6 lg:p-8">
+           <CompanyPageLoader layout="content" message="Loading Company Dashboard..." />
+         </div>
+         </div>
+       </div>
+     );
+   }
   const progressPercent = (step / QUESTIONS.length) * 100;
 
   return (
-    <div className="company-page-shell flex min-h-screen">
-      {/* Sidebar */}
-      <CompanySidebar companyId={companyId} companyName={companyName} />
+    <div className="company-page-shell min-h-screen">
+      <div className="flex min-h-screen flex-col lg:flex-row">
+      {/* Desktop Sidebar */}
+      <aside className="hidden lg:block lg:w-64 lg:flex-shrink-0">
+        <CompanySidebar companyId={companyId} companyName={companyName} className="min-h-screen" />
+      </aside>
+
+      {/* Mobile Sidebar Drawer */}
+      <div
+        className={`fixed inset-0 z-[70] bg-black/50 transition-opacity duration-300 lg:hidden ${
+          showMobileSidebar ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+        }`}
+        onClick={() => setShowMobileSidebar(false)}
+      />
+      <aside
+        className={`fixed top-0 left-0 z-[75] h-screen w-72 max-w-[85vw] transform transition-transform duration-300 lg:hidden ${
+          showMobileSidebar ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <div className="h-full bg-[#021B36] shadow-2xl border-r border-[#00FFFF2A]">
+          <div className="flex items-center justify-between px-4 pt-4 pb-2 border-b border-[#00FFFF1E]">
+            <span className="text-sm font-semibold tracking-wide text-[#AFCBE3] uppercase">Menu</span>
+            <button
+              type="button"
+              onClick={() => setShowMobileSidebar(false)}
+              className="p-2 rounded-lg text-[#AFCBE3] hover:bg-[#00FFFF1A]"
+              aria-label="Close menu"
+            >
+              <X size={18} />
+            </button>
+          </div>
+          <CompanySidebar
+            companyId={companyId}
+            companyName={companyName}
+            className="h-[calc(100vh-57px)] overflow-y-auto"
+            onItemClick={() => setShowMobileSidebar(false)}
+          />
+        </div>
+      </aside>
 
       {/* Main Content */}
-      <div className="company-main-content flex-1 sm:p-6 lg:p-8">
+      <div className="company-main-content flex-1 min-w-0 p-4 sm:p-6 lg:p-8">
+        <div className="mb-4 flex items-center justify-between lg:hidden">
+          <button
+            type="button"
+            onClick={() => setShowMobileSidebar(true)}
+            className="inline-flex items-center gap-2 rounded-lg border border-[#00FFFF3A] bg-[#021B36]/85 px-3 py-2 text-[#AFCBE3] shadow-sm"
+            aria-label="Open menu"
+          >
+            <Menu size={18} />
+            <span className="text-sm font-semibold">Menu</span>
+          </button>
+          <span className="text-xs uppercase tracking-[0.14em] text-[#8EB6D3]">Company Dashboard</span>
+        </div>
         <style>{`
           @keyframes dashFadeUp {
             0% { opacity: 0; transform: translateY(14px); }
@@ -912,6 +1047,15 @@ const CustomXAxisTick = ({ x, y, payload }) => {
                       month: "short",
                       year: "numeric",
                     })}
+                  </span>
+                  <span
+                    className={`px-3 py-1 rounded-lg text-sm font-semibold border ${
+                      licenseStatus.isExpired
+                        ? "bg-[#7FA3BF]/20 text-[#FFB3B3] border-[#FF9E9E55]"
+                        : "bg-[#00FFFF]/20 text-[#00FFFF] border-[#00FFFF66]"
+                    }`}
+                  >
+                    {licenseCountdownLabel}
                   </span>
                 </div>
               )}
@@ -1290,11 +1434,26 @@ const CustomXAxisTick = ({ x, y, payload }) => {
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-4">
               <div className="company-kpi-card dash-kpi-card dash-enter dash-delay-1">
                 <h3 className="company-kpi-label">Current Plan</h3>
                 <p className="company-kpi-value text-[#E8F7FF]">{currentPlanLabel}</p>
                 <p className="text-xs text-[#7FA3BF] mt-1">{currentPlanConfig?.capacity || "Plan details available"}</p>
+              </div>
+              <div className="company-kpi-card dash-kpi-card dash-enter dash-delay-1">
+                <h3 className="company-kpi-label">License Renewal</h3>
+                <p
+                  className={`company-kpi-value ${
+                    licenseStatus.isExpired ? "text-[#FF9E9E]" : "text-[#E8F7FF]"
+                  }`}
+                >
+                  {licenseStatus.daysRemaining === null
+                    ? "N/A"
+                    : licenseStatus.daysRemaining < 0
+                      ? `${Math.abs(licenseStatus.daysRemaining)}d overdue`
+                      : `${licenseStatus.daysRemaining}d left`}
+                </p>
+                <p className="text-xs text-[#7FA3BF] mt-1">{renewalDateLabel}</p>
               </div>
               <div className="company-kpi-card dash-kpi-card dash-enter dash-delay-1">
                 <h3 className="company-kpi-label">Total Departments</h3>
@@ -1320,7 +1479,6 @@ const CustomXAxisTick = ({ x, y, payload }) => {
             {chartData && chartData.length > 0 && (
               <div className="company-card dash-enter dash-delay-3 max-w-5xl mx-auto mt-6 p-6 border-[#00FFFF3A] bg-[linear-gradient(180deg,rgba(2,27,54,0.92),rgba(3,28,58,0.85))]">
                 <h2 className="text-lg font-semibold text-[#00FFFF] mb-4">Department Analytics</h2>
-                <p className="text-[#AFCBE3] mb-4">View user distribution and activity across departments</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="h-[360px] p-4 rounded-xl border border-[#00FFFF40] bg-[#021B36]/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
                     <ResponsiveContainer width="100%" height="100%">
@@ -1346,7 +1504,7 @@ const CustomXAxisTick = ({ x, y, payload }) => {
                       <PieChart>
                         <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label={{ fill: '#AFCBE3' }}>
                           {pieData.map((entry, idx) => (
-                            <Cell key={`cell-${idx}`} fill={["#00FFFF", "#007BFF", "#7CFFEA", "#AFCBE3", "#FF7AB6"][idx % 5]} />
+                            <Cell key={`cell-${idx}`} fill={["#8EC5FF", "#7CFFEA", "#FF7AB6"][idx % 3]} />
                           ))}
                         </Pie>
                         <Legend wrapperStyle={{ color: '#AFCBE3' }} />
@@ -1354,6 +1512,9 @@ const CustomXAxisTick = ({ x, y, payload }) => {
                     </ResponsiveContainer>
                   </div>
                 </div>
+                <p className="mt-4 text-sm italic text-[#AFCBE3]">
+                  Bar chart shows users per department, and pie chart shows how many users are in Basic, Medium, and Hard training levels.
+                </p>
               </div>
             )}
           </div>
@@ -1460,6 +1621,7 @@ const CustomXAxisTick = ({ x, y, payload }) => {
             onClick={() => setShowChatbot(false)}
           ></div>
         )}
+      </div>
       </div>
     </div>
   );

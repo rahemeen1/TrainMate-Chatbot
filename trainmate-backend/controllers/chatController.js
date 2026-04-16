@@ -122,6 +122,8 @@ function calculateTrainingProgress(moduleData, startDateOverride) {
 }
 
 const DEFAULT_TIMEZONE = process.env.DEFAULT_TIMEZONE || "Asia/Karachi";
+const FEEDBACK_PROMPT_INTERVAL = 5;
+const MAX_FEEDBACK_ENTRIES = 30;
 
 function getDateKey(date, timeZone = DEFAULT_TIMEZONE) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -843,6 +845,21 @@ export const chatController = async (req, res) => {
 
     const userSnap = await userRef.get();
     const userData = userSnap.exists ? userSnap.data() : {};
+    const feedbackEntries = Array.isArray(userData?.chatbotFeedback?.entries)
+      ? userData.chatbotFeedback.entries
+      : [];
+    const recentFeedback = feedbackEntries
+      .slice(-3)
+      .map((entry) => {
+        const rating = Number(entry?.rating) || 0;
+        const comment = String(entry?.comment || "").trim();
+        if (rating && comment) return `- ${rating}/5: ${comment}`;
+        if (rating) return `- ${rating}/5`;
+        if (comment) return `- ${comment}`;
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n");
 
     /* ---------- COMPANY INFORMATION ---------- */
     let companyInfo = "";
@@ -911,6 +928,9 @@ About: ${description}
       .doc(today);
 
     const chatSessionSnap = await chatSessionRef.get();
+    const existingMessages = chatSessionSnap.exists
+      ? chatSessionSnap.data()?.messages || []
+      : [];
     const isFirstMessageToday = !chatSessionSnap.exists;
     
     if (isFirstMessageToday) {
@@ -962,7 +982,15 @@ In the meantime, let me know if you have questions about the current module cont
         ),
       });
 
-      return res.json({ reply: unlockResponse });
+      const botRepliesToday =
+        existingMessages.filter((message) => message?.from === "bot").length + 1;
+      const askForFeedback = botRepliesToday % FEEDBACK_PROMPT_INTERVAL === 0;
+
+      return res.json({
+        reply: unlockResponse,
+        askForFeedback,
+        botRepliesToday,
+      });
     }
 
     /* ---------- WEAKNESS ANALYSIS FOR WELCOME MESSAGE ---------- */
@@ -1113,6 +1141,7 @@ LEARNING MEMORY (Topics & Patterns):
 ${agentMemory}
 ${strugglingAreas.length > 0 ? `\nUser needs help with: ${strugglingAreas.slice(0, 3).join(", ")}` : ''}
 ${masteredTopics.length > 0 ? `\nUser has learned: ${masteredTopics.slice(0, 3).join(", ")}` : ''}
+${recentFeedback ? `\nRECENT USER FEEDBACK:\n${recentFeedback}` : "\nRECENT USER FEEDBACK:\nNo recent feedback yet."}
 
 USER PROFILE:
 Name: ${userData.name || "User"}
@@ -1137,11 +1166,13 @@ Skills Still to Cover: ${finalModuleData.skillsCovered ? finalModuleData.skillsC
 
 AGENTIC GUIDELINES:
 - You have access to company training materials AND external sources (MDN, StackOverflow, Dev.to)
+- Adapt style based on recent user feedback (pace, clarity, and depth)
 - Prioritize company training materials for module-specific content
 - Use external sources for general programming concepts, best practices, or when depth is needed
 - Adjust explanation depth based on Training Level: "easy" = simple terms, "medium" = moderate depth, "hard" = advanced/in-depth
 - When external source is highly relevant, cite it: "<b>Source: MDN / StackOverflow / Dev.to</b>"
 - Combine company knowledge with external expertise for richer answers
+- In every response, end with one short context-aware question to keep the learner engaged and continue the conversation.
 ${weaknessWelcome ? '\n- Start this conversation by welcoming the user and acknowledging their quiz struggles\n- Explain you will help them master the weak concepts identified\n- Be encouraging and supportive about starting fresh with regenerated roadmap\n' : ''}
 
 STRICT RULES:
@@ -1174,9 +1205,17 @@ RESPOND WITH: Direct educational content addressing the question, using both com
 
     /* ---------- LLM ---------- */
     const completion = await initializeChatModel().generateContent(finalPrompt);
-    const botReply =
+    let botReply =
       completion?.response?.text() ||
       "I’m here to help with your training module.";
+
+    // Safety net in case model misses the prompt rule.
+    // Only append when there is no question at all, to avoid duplicate end questions.
+    const plainReply = botReply.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+    if (!/[?؟]/.test(plainReply)) {
+      const moduleTitle = (finalModuleData?.moduleTitle || "this module").trim();
+      botReply = `${botReply.trim()}\n\nWhat would you like to learn next about ${moduleTitle}: concept, example, or a quick practice task?`;
+    }
 
     /* ---------- SAVE CHAT ---------- */
     await chatSessionRef.update({
@@ -1185,6 +1224,10 @@ RESPOND WITH: Direct educational content addressing the question, using both com
         { from: "bot", text: botReply, timestamp: new Date() }
       ),
     });
+
+    const botRepliesToday =
+      existingMessages.filter((message) => message?.from === "bot").length + 1;
+    const askForFeedback = botRepliesToday % FEEDBACK_PROMPT_INTERVAL === 0;
 
     /* ---------- UPDATE MEMORY (ASYNC) ---------- */
     // Update memory in background without blocking response
@@ -1200,11 +1243,93 @@ RESPOND WITH: Direct educational content addressing the question, using both com
     return res.json({
       reply: botReply,
       sourceUsed: relevantDocs.length > 0,
+      askForFeedback,
+      botRepliesToday,
     });
 
   } catch (err) {
     console.error("❌ chatController FULL ERROR:", err);
     return res.json({ reply: "⚠️ Something went wrong." });
+  }
+};
+
+export const submitChatFeedback = async (req, res) => {
+  try {
+    const { userId, companyId, deptId, moduleId, rating, feedbackText } = req.body;
+
+    if (!userId || !companyId || !deptId) {
+      return res.status(400).json({ success: false, error: "Missing required identifiers" });
+    }
+
+    const normalizedRating = Math.max(1, Math.min(5, Number(rating) || 0));
+    const comment = String(feedbackText || "").trim().slice(0, 500);
+
+    if (!normalizedRating && !comment) {
+      return res.status(400).json({ success: false, error: "Feedback cannot be empty" });
+    }
+
+    const userRef = db
+      .collection("freshers")
+      .doc(companyId)
+      .collection("departments")
+      .doc(deptId)
+      .collection("users")
+      .doc(userId);
+
+    const todayKey = getDateKey(new Date());
+    const feedbackPayload = {
+      date: todayKey,
+      rating: normalizedRating || null,
+      comment,
+      createdAt: new Date(),
+      moduleId: moduleId || null,
+    };
+
+    if (moduleId) {
+      const chatSessionRef = userRef
+        .collection("roadmap")
+        .doc(moduleId)
+        .collection("chatSessions")
+        .doc(todayKey);
+
+      const chatSessionSnap = await chatSessionRef.get();
+      if (!chatSessionSnap.exists) {
+        await chatSessionRef.set({ startedAt: new Date(), messages: [] });
+      }
+
+      await chatSessionRef.set(
+        {
+          feedbackLog: admin.firestore.FieldValue.arrayUnion(feedbackPayload),
+          lastFeedbackAt: new Date(),
+        },
+        { merge: true }
+      );
+    }
+
+    const userSnap = await userRef.get();
+    const existingEntries = Array.isArray(userSnap.data()?.chatbotFeedback?.entries)
+      ? userSnap.data().chatbotFeedback.entries
+      : [];
+    const updatedEntries = [...existingEntries, feedbackPayload].slice(-MAX_FEEDBACK_ENTRIES);
+
+    await userRef.set(
+      {
+        chatbotFeedback: {
+          entries: updatedEntries,
+          lastUpdatedAt: new Date(),
+        },
+      },
+      { merge: true }
+    );
+
+    return res.json({
+      success: true,
+      acknowledgement:
+        "Thanks for the feedback. I will adapt my responses to better match your preferred learning style.",
+    });
+  } catch (err) {
+    console.error("❌ submitChatFeedback error:", err);
+    return res.status(500).json({ success: false, error: "Failed to save feedback" });
   }
 };
 

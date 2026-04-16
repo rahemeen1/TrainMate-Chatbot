@@ -9,6 +9,7 @@ import ViewCompanies from "./ViewCompanies";
 import ManageCompanies from "./ManageCompanies";
 import SuperAdminAnalytics from "./SuperAdminAnalytics";
 import ManageLicensingPlans from "./ManageLicensingPlans";
+import SuperAdminAgentHealth from "./SuperAdminAgentHealth";
 
 
 export default function AdminDashboard() {
@@ -291,6 +292,15 @@ export default function AdminDashboard() {
 
           <li
             className={`cursor-pointer p-2 rounded-lg ${
+              activeSection === "agentHealth" ? "bg-[#00FFFF]/20" : ""
+            }`}
+            onClick={() => handleSectionChange("agentHealth")}
+          >
+            Agent Health
+          </li>
+
+          <li
+            className={`cursor-pointer p-2 rounded-lg ${
               activeSection === "manageAdmins" ? "bg-[#00FFFF]/20" : ""
             }`}
             onClick={() => handleSectionChange("manageAdmins")}
@@ -312,6 +322,7 @@ export default function AdminDashboard() {
           {activeSection === "addCompany" }
           {activeSection === "viewCompanies" }
           {activeSection === "manageCompanies" }
+          {activeSection === "agentHealth" }
           {activeSection === "manageAdmins" }
           {activeSection === "licensingPlans" }
 
@@ -350,6 +361,7 @@ export default function AdminDashboard() {
         {activeSection === "manageAdmins" && <SuperAdminSettings />}
         {activeSection === "viewCompanies" && <ViewCompanies />}
         {activeSection === "manageCompanies" && <ManageCompanies />}
+        {activeSection === "agentHealth" && <SuperAdminAgentHealth />}
         {activeSection === "licensingPlans" && <ManageLicensingPlans />}
       </div>
     </div>

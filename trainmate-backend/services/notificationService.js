@@ -111,29 +111,9 @@ async function getUserOAuthClient(companyId, deptId, userId) {
       }
     }
 
-    // Fallback order:
-    // 1) Environment token (known-good server fallback)
-    // 2) Company admin token from Firestore
-    const envRefreshToken = process.env.GOOGLE_REFRESH_TOKEN;
-    if (envRefreshToken) {
-      try {
-        const envOAuthClient = buildOAuthClient({
-          clientId,
-          clientSecret,
-          refreshToken: envRefreshToken,
-        });
-        await validateOAuthClient(envOAuthClient, "environment fallback");
-        console.warn(`⚠️ Using environment fallback OAuth client for ${userId}`);
-        return { client: envOAuthClient, isUsingFallback: true, authSource: "env" };
-      } catch (envTokenErr) {
-        if (!isInvalidGrantError(envTokenErr)) {
-          throw envTokenErr;
-        }
-        console.warn("⚠️ Environment fallback token is invalid. Trying company admin token...");
-      }
-    }
-
-    // Fallback: Use company admin's tokens
+    // Fallback order for calendar invites:
+    // 1) Company admin token (preferred so invite appears from company account)
+    // 2) Environment token (last resort)
     console.log(`⚠️ Using company admin's OAuth client for ${userId}`);
     const companyDoc = await db.collection("companies").doc(companyId).get();
 
@@ -171,11 +151,32 @@ async function getUserOAuthClient(companyId, deptId, userId) {
           },
           { merge: true }
         );
-        throw new Error("Google Calendar authorization expired. Reconnect company admin Google Calendar.");
+        console.warn("⚠️ Company admin Google token invalid. Trying environment fallback token...");
+      } else {
+        throw companyTokenErr;
       }
-
-      throw companyTokenErr;
     }
+
+    const envRefreshToken = process.env.GOOGLE_REFRESH_TOKEN;
+    if (envRefreshToken) {
+      try {
+        const envOAuthClient = buildOAuthClient({
+          clientId,
+          clientSecret,
+          refreshToken: envRefreshToken,
+        });
+        await validateOAuthClient(envOAuthClient, "environment fallback");
+        console.warn(`⚠️ Using environment fallback OAuth client for ${userId}`);
+        return { client: envOAuthClient, isUsingFallback: true, authSource: "env" };
+      } catch (envTokenErr) {
+        if (isInvalidGrantError(envTokenErr)) {
+          throw new Error("Google Calendar authorization unavailable. Reconnect company admin Google Calendar.");
+        }
+        throw envTokenErr;
+      }
+    }
+
+    throw new Error("Google Calendar authorization unavailable. Company admin must connect Google Calendar.");
   } catch (error) {
     console.error(`❌ Failed to get OAuth client:`, error.message);
     throw error;
@@ -261,16 +262,17 @@ export async function createRoadmapDailyReminderEvent({
 
     const startDateTime = buildDateTime(startDate, DEFAULT_REMINDER_TIME);
     const endDateTime = new Date(startDateTime.getTime() + 60 * 60 * 1000); // 1 hour duration
+    const recurrenceDays = Math.max(1, Number(estimatedDays) || 1);
 
-    // Create ONE event that recurs daily
+    // Create one reminder event that lasts for current module duration only.
     const event = {
       summary: `🎓 Daily Learning: ${activeModuleTitle}`,
       description: `Hi ${userName}!\n\nYour active training module:\n📚 ${activeModuleTitle}\n🏢 ${companyName}\n\nLog in to TrainMate to continue learning!\n\n`,
       start: { dateTime: startDateTime.toISOString(), timeZone },
       end: { dateTime: endDateTime.toISOString(), timeZone },
-      // SINGLE recurrence rule - no count limit, continues indefinitely
+      // Recurrence is capped to module duration (e.g., 6-day module => 6 reminders).
       recurrence: [
-        `RRULE:FREQ=DAILY`,
+        `RRULE:FREQ=DAILY;COUNT=${recurrenceDays}`,
       ],
       reminders: { useDefault: false, overrides: getReminderOverrides() },
       colorId: "9", // Light blue
@@ -307,6 +309,7 @@ export async function createRoadmapDailyReminderEvent({
     console.log(`✅ Daily reminder event created: ${response.data.id}`);
     console.log(`   User: ${userEmail}`);
     console.log(`   Module: ${activeModuleTitle}`);
+    console.log(`   Recurrence days: ${recurrenceDays}`);
     console.log(`   Auth source: ${authSource}`);
     console.log(`   Time: ${DEFAULT_REMINDER_TIME} daily`);
 
@@ -330,6 +333,7 @@ export async function updateReminderEventForNewModule({
   userName,
   companyName,
   newActiveModuleTitle,
+  newEstimatedDays = 1,
 }) {
   try {
     console.log(`📝 Updating reminder event description for new module: ${newActiveModuleTitle}`);
@@ -355,6 +359,7 @@ export async function updateReminderEventForNewModule({
         userName,
         companyName,
         activeModuleTitle: newActiveModuleTitle,
+        estimatedDays: newEstimatedDays,
       });
       return;
     }
@@ -368,11 +373,18 @@ export async function updateReminderEventForNewModule({
       eventId: eventId,
     });
 
-    // Update only the description and summary
+    const recurrenceDays = Math.max(1, Number(newEstimatedDays) || 1);
+    const startDateTime = buildDateTime(new Date(), DEFAULT_REMINDER_TIME);
+    const endDateTime = new Date(startDateTime.getTime() + 60 * 60 * 1000);
+
+    // Update module content and reset recurrence window for the new module.
     const updatedEvent = {
       ...event.data,
       summary: `🎓 Daily Learning: ${newActiveModuleTitle}`,
       description: `Hi ${userName}!\n\nYour active training module:\n📚 ${newActiveModuleTitle}\n🏢 ${companyName}\n\nLog in to TrainMate to continue learning!\n\n`,
+      start: { dateTime: startDateTime.toISOString(), timeZone: DEFAULT_TIMEZONE },
+      end: { dateTime: endDateTime.toISOString(), timeZone: DEFAULT_TIMEZONE },
+      recurrence: [`RRULE:FREQ=DAILY;COUNT=${recurrenceDays}`],
     };
 
     await calendar.events.update({
@@ -382,7 +394,7 @@ export async function updateReminderEventForNewModule({
       sendUpdates: "none", // Don't send update email
     });
 
-    console.log(`✅ Reminder event updated for new module: ${newActiveModuleTitle}`);
+    console.log(`✅ Reminder event updated for new module: ${newActiveModuleTitle} (${recurrenceDays} days)`);
   } catch (error) {
     console.error(`❌ Failed to update reminder event:`, error.message);
     // Non-critical failure - don't throw
@@ -586,6 +598,7 @@ export async function handleActiveModuleChange({
   userEmail,
   userName,
   newActiveModuleTitle,
+  newEstimatedDays = 1,
   companyName,
   sendNotification = true,
 }) {
@@ -606,6 +619,7 @@ export async function handleActiveModuleChange({
       userName,
       companyName,
       newActiveModuleTitle,
+      newEstimatedDays,
     });
 
     // Optionally send email notification

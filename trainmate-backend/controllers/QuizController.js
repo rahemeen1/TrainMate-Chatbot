@@ -2637,6 +2637,111 @@ export const adminUnlockModule = async (req, res) => {
 		return res.status(500).json({ error: "Failed to unlock module", details: err.message });
 	}
 };
+
+/**
+ * Admin Pass Module - Mark module as completed/passed without requiring quiz
+ * Used when admin wants to allow fresher to move to next module
+ */
+export const adminPassModule = async (req, res) => {
+	try {
+		const { companyId, deptId, userId, moduleId, notificationId } = req.body;
+		if (!companyId || !deptId || !userId || !moduleId) {
+			return res.status(400).json({ error: "Missing required IDs" });
+		}
+
+		const userRef = db
+			.collection("freshers")
+			.doc(companyId)
+			.collection("departments")
+			.doc(deptId)
+			.collection("users")
+			.doc(userId);
+
+		const moduleRef = userRef.collection("roadmap").doc(moduleId);
+		const moduleSnap = await moduleRef.get();
+		if (!moduleSnap.exists) {
+			return res.status(404).json({ error: "Module not found" });
+		}
+
+		const moduleData = moduleSnap.data() || {};
+		const currentModuleOrder = moduleData.order || 0;
+
+		// 1. Mark current module as completed and passed
+		await moduleRef.set(
+			{
+				completed: true,
+				status: "completed",
+				quizPassed: true,
+				quizLocked: false,
+				moduleLocked: false,
+				requiresAdminContact: false,
+				adminPassedAt: admin.firestore.FieldValue.serverTimestamp(),
+				adminPassReason: "Module passed by admin override",
+			},
+			{ merge: true }
+		);
+
+		// 2. Unlock user training
+		await userRef.set(
+			{
+				trainingLocked: false,
+				trainingLockedAt: admin.firestore.FieldValue.delete(),
+				trainingLockedReason: admin.firestore.FieldValue.delete(),
+				requiresAdminContact: false,
+			},
+			{ merge: true }
+		);
+
+		// 3. Unlock the next module
+		const roadmapSnap = await userRef.collection("roadmap").orderBy("order").get();
+		const modules = roadmapSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+		const nextModule = modules
+			.filter((mod) => (mod.order || 0) > currentModuleOrder && !mod.completed)
+			.sort((a, b) => (a.order || 0) - (b.order || 0))[0];
+
+		let nextModuleTitle = null;
+		if (nextModule) {
+			await userRef.collection("roadmap").doc(nextModule.id).set(
+				{
+					status: "in-progress",
+					moduleLocked: false,
+					startedAt: admin.firestore.FieldValue.serverTimestamp(),
+				},
+				{ merge: true }
+			);
+			nextModuleTitle = nextModule.moduleTitle || "Next Module";
+		}
+
+		// 4. Update the notification if provided
+		if (notificationId) {
+			const notificationRef = db
+				.collection("companies")
+				.doc(companyId)
+				.collection("adminNotifications")
+				.doc(notificationId);
+
+			await notificationRef.set(
+				{
+					status: "approved",
+					resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
+					adminAction: "passed_module",
+				},
+				{ merge: true }
+			);
+		}
+
+		return res.json({
+			success: true,
+			moduleId,
+			modulePassed: true,
+			nextModuleTitle,
+			message: `Module passed by admin. ${nextModule ? "Next module unlocked." : "All modules completed."}`,
+		});
+	} catch (err) {
+		console.error("Admin pass module error:", err);
+		return res.status(500).json({ error: "Failed to pass module", details: err.message });
+	}
+};
 export const reportProctoringViolation = async (req, res) => {
 	try {
 		const {

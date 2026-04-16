@@ -3,8 +3,8 @@ import { useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { doc, getDoc, setDoc, deleteField, collection, getDocs, query, where } from "firebase/firestore";
 import { db, auth } from "../../firebase";
-import CompanySidebar from "../../components/CompanySpecific/CompanySidebar";
 import CompanyPageLoader from "../../components/CompanySpecific/CompanyPageLoader";
+import CompanyShellLayout from "../../components/CompanySpecific/CompanyShellLayout";
 import { PencilIcon, CheckIcon } from "@heroicons/react/24/solid";
 import {
   reauthenticateWithCredential,
@@ -202,22 +202,17 @@ export default function CompanySettings() {
 
   if (loading) {
   return (
-    <div className="flex min-h-screen bg-[#031C3A] text-white">
-      {/* Sidebar stays as it is */}
-      <CompanySidebar companyId={companyId} companyName={companyName} />
-
-      <CompanyPageLoader message="Loading Company Settings..." />
-    </div>
+    <CompanyShellLayout companyId={companyId} companyName={companyName} headerLabel="Settings">
+        <CompanyPageLoader layout="content" message="Loading Company Settings..." />
+    </CompanyShellLayout>
   );
 }
 
 
 
   return (
-    <div className="company-page-shell flex min-h-screen">
-      <CompanySidebar companyId={companyId} companyName={companyName} />
-
-      <div className="company-main-content flex-1 md:p-8 lg:p-10">
+    <CompanyShellLayout companyId={companyId} companyName={companyName} headerLabel="Settings">
+      <div>
         <div className="company-container space-y-6">
           <div className="company-card p-6 md:p-8">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -350,6 +345,6 @@ export default function CompanySettings() {
           </div>
         </div>
       </div>
-    </div>
+    </CompanyShellLayout>
   );
 }

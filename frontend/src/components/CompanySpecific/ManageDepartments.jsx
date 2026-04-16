@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useNavigate, useLocation } from "react-router-dom";
-import CompanySidebar from "./CompanySidebar";
 import CompanyPageLoader from "./CompanyPageLoader";
+import CompanyShellLayout from "./CompanyShellLayout";
 
 
 export default function ManageDepartments() {
@@ -88,28 +88,24 @@ export default function ManageDepartments() {
 
   // 🔹 loading / safety states
   if (!companyId) {
-    return <CompanyPageLoader layout="page" message="Loading company..." />;
+    return (
+      <CompanyShellLayout companyName={companyName || "Company"} headerLabel="Departments">
+          <CompanyPageLoader layout="content" message="Loading company..." />
+      </CompanyShellLayout>
+    );
   }
 
   if (loading) {
     return (
-      <div className="flex min-h-screen bg-[#031C3A] text-white">
-        {/* Sidebar stays as it is */}
-        <CompanySidebar companyId={companyId}/>
-
-        <CompanyPageLoader message="Loading Department Details..." />
-      </div>
+      <CompanyShellLayout companyId={companyId} companyName={companyName} headerLabel="Departments">
+          <CompanyPageLoader layout="content" message="Loading Department Details..." />
+      </CompanyShellLayout>
     );
   }
 
   return (
-    <div className="company-page-shell flex min-h-screen">
-      <CompanySidebar
-        companyId={companyId}
-        companyName={companyName}
-      />
-
-      <div className="company-main-content flex-1 md:p-8 lg:p-10">
+    <CompanyShellLayout companyId={companyId} companyName={companyName} headerLabel="Departments">
+      <div>
         <div className="company-container space-y-6">
           <section className="company-card p-6 md:p-8">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -209,7 +205,7 @@ export default function ManageDepartments() {
           </section>
         </div>
       </div>
-    </div>
+    </CompanyShellLayout>
   );
 
 }

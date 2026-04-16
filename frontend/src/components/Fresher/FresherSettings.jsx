@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db, auth } from "../../firebase";
 import { jsPDF } from "jspdf";
-import { FresherSideMenu } from "./FresherSideMenu";
+import FresherShellLayout from "./FresherShellLayout";
 import CompanyPageLoader from "../CompanySpecific/CompanyPageLoader";
 import { PencilIcon, CheckIcon } from "@heroicons/react/24/solid";
 import { reauthenticateWithCredential, EmailAuthProvider, updatePassword, updateEmail } from "firebase/auth";
@@ -136,16 +136,19 @@ const isValidPhone = (value) => {
 
 
   return (
-    <div className="relative flex min-h-screen bg-[#031C3A] text-white overflow-hidden">
+    <FresherShellLayout
+      userId={userId}
+      companyId={companyId}
+      deptId={deptId}
+      companyName={companyName}
+      roadmapGenerated={true}
+      headerLabel="Settings"
+      contentClassName="relative overflow-hidden"
+    >
+      <div>
       <div className="pointer-events-none absolute -top-24 -left-24 w-72 h-72 rounded-full bg-[#00FFFF]/10 blur-3xl" />
       <div className="pointer-events-none absolute top-1/3 -right-20 w-72 h-72 rounded-full bg-[#00FFC2]/10 blur-3xl" />
-      {/* Side Menu */}
-      <div className="w-64 bg-[#021B36]/90 p-4 relative z-10">
-        <FresherSideMenu userId={userId} companyId={companyId} deptId={deptId} companyName={companyName} roadmapGenerated={true} />
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 p-10 relative z-10">
+      <div className="relative z-10 p-4 md:p-10">
         <div className="mb-6 backdrop-blur-xl bg-[#021B36]/50 border border-[#00FFFF25] rounded-2xl p-6 shadow-[0_15px_50px_rgba(0,255,255,0.08)]">
           <p className="text-xs uppercase tracking-[0.2em] text-[#AFCBE3] mb-2">Account Preferences</p>
           <h1 className="text-3xl text-[#00FFFF] font-bold">Fresher Settings</h1>
@@ -282,6 +285,7 @@ const isValidPhone = (value) => {
           {error && <p className="text-red-500">{error}</p>}
         </div>
       </div>
-    </div>
+      </div>
+    </FresherShellLayout>
   );
 }

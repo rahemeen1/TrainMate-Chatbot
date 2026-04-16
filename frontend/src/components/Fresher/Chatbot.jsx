@@ -1,7 +1,7 @@
 //chatbot.jsx
 import { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { FresherSideMenu } from "./FresherSideMenu";
+import FresherShellLayout from "./FresherShellLayout";
 import { db } from "../../firebase";
 import { collection, doc, getDoc, getDocs, setDoc } from "firebase/firestore";
 import { PaperAirplaneIcon, ArrowLeftIcon } from "@heroicons/react/24/solid";
@@ -15,7 +15,7 @@ export default function FresherChatbot() {
   const navigate = useNavigate();
   const location = useLocation();
   const state = location.state || {};
-  const chatEndRef = useRef(null);
+  const messagesScrollRef = useRef(null);
 
   const userId = state.userId || localStorage.getItem("userId");
   const companyId = state.companyId || localStorage.getItem("companyId");
@@ -26,6 +26,10 @@ export default function FresherChatbot() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [feedbackRating, setFeedbackRating] = useState(0);
+  const [feedbackText, setFeedbackText] = useState("");
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
 
   const [activeModuleId, setActiveModuleId] = useState(null);
   const [availableDates, setAvailableDates] = useState([]);
@@ -302,6 +306,10 @@ useEffect(() => {
 
       const data = await res.json();
       setMessages(prev => [...prev, { from: "bot", text: data.reply }]);
+
+      if (data?.askForFeedback) {
+        setShowFeedbackModal(true);
+      }
     } catch (err) {
       setMessages(prev => [
         ...prev,
@@ -320,9 +328,50 @@ useEffect(() => {
     }
   };
 
+  const handleSubmitFeedback = async () => {
+    if (feedbackSubmitting || (!feedbackRating && !feedbackText.trim())) return;
+
+    try {
+      setFeedbackSubmitting(true);
+      const res = await fetch("http://localhost:5000/api/chat/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          companyId,
+          deptId,
+          moduleId: activeModuleId,
+          rating: feedbackRating,
+          feedbackText,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data?.acknowledgement) {
+        setMessages((prev) => [...prev, { from: "bot", text: data.acknowledgement }]);
+      }
+    } catch (err) {
+      setMessages((prev) => [
+        ...prev,
+        { from: "bot", text: "I could not save feedback right now, but I will keep helping you." },
+      ]);
+    } finally {
+      setFeedbackSubmitting(false);
+      setShowFeedbackModal(false);
+      setFeedbackRating(0);
+      setFeedbackText("");
+    }
+  };
+
   useEffect(() => {
-  chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-}, [messages, typing]);
+    const panel = messagesScrollRef.current;
+    if (!panel) return;
+
+    panel.scrollTo({
+      top: panel.scrollHeight,
+      behavior: "smooth",
+    });
+  }, [messages, typing]);
 
   if (licenseCheckLoading) {
     return <CompanyPageLoader message="Verifying chatbot access..." layout="page" />;
@@ -350,7 +399,16 @@ useEffect(() => {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#031C3A] text-white">
+    <FresherShellLayout
+      userId={userId}
+      companyId={companyId}
+      deptId={deptId}
+      companyName={companyName}
+      roadmapGenerated={true}
+      headerLabel="Training Assistant"
+      contentClassName="p-0 overflow-hidden"
+    >
+    <div className="h-[calc(100vh-72px)] lg:h-screen bg-[#031C3A] text-white overflow-hidden">
       
       {/* Add CSS for proper HTML rendering in chat */}
       <style>
@@ -441,20 +499,8 @@ useEffect(() => {
         `}
       </style>
 
-      {/* SIDEBAR */}
-     <div className="w-64 bg-[#021B36]/90 p-4 flex-none">
-  <FresherSideMenu
-    userId={userId}
-    companyId={companyId}
-    deptId={deptId}
-    companyName={companyName}
-    roadmapGenerated={true}
-  />
-</div>
-
-
       {/* MAIN */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="h-full min-h-0 flex flex-col overflow-hidden">
 
         {/* HEADER */}
         <div className="bg-gradient-to-r from-[#021B36]/95 via-[#031C3A]/90 to-[#021B36]/95 p-5 border-b border-[#00FFFF40] flex justify-between items-center flex-none">
@@ -514,10 +560,10 @@ useEffect(() => {
       
      
 {/* CHAT CONTAINER */}
-<div className="flex-1 flex flex-col overflow-hidden">
+<div className="flex-1 min-h-0 flex flex-col overflow-hidden">
 
   {/* CHAT MESSAGES - SCROLLABLE */}
-  <div className="flex-1 overflow-y-auto scroll-smooth px-8 py-8">
+  <div ref={messagesScrollRef} className="flex-1 min-h-0 overflow-y-auto scroll-smooth px-8 py-8">
    {messages.map((msg, i) => (
   <div key={i} className="mb-6">
     <div className={`flex items-start gap-3 ${msg.from === "user" ? "justify-end" : "justify-start"}`}>
@@ -564,9 +610,8 @@ useEffect(() => {
       </div>
     </div>
   </div>
-)}
+) }
 
-          <div ref={chatEndRef} />
         </div>
 
         {/* INPUT */}
@@ -599,6 +644,62 @@ useEffect(() => {
 
       </div>
     </div>
+
+    {showFeedbackModal && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
+        <div className="w-full max-w-md rounded-2xl border border-cyan-400/40 bg-[#021B36] p-6 shadow-2xl">
+          <h3 className="text-xl font-bold text-cyan-300 mb-2">Quick Feedback Check-in</h3>
+          <p className="text-sm text-[#AFCBE3] mb-4">
+            I want to improve daily. How helpful were the last few responses?
+          </p>
+
+          <div className="flex gap-2 mb-4">
+            {[1, 2, 3, 4, 5].map((value) => (
+              <button
+                key={value}
+                onClick={() => setFeedbackRating(value)}
+                className={`h-10 w-10 rounded-full border font-semibold transition ${
+                  feedbackRating >= value
+                    ? "border-cyan-300 bg-cyan-400/20 text-cyan-200"
+                    : "border-cyan-400/30 text-[#AFCBE3] hover:bg-cyan-400/10"
+                }`}
+              >
+                {value}
+              </button>
+            ))}
+          </div>
+
+          <textarea
+            value={feedbackText}
+            onChange={(e) => setFeedbackText(e.target.value)}
+            rows={3}
+            placeholder="Optional: tell me how I should improve (clarity, pace, depth, examples)..."
+            className="w-full rounded-lg border border-cyan-400/30 bg-[#031C3A] px-3 py-2 text-sm text-white placeholder:text-[#8EB2CA]"
+          />
+
+          <div className="mt-4 flex gap-3">
+            <button
+              onClick={() => {
+                setShowFeedbackModal(false);
+                setFeedbackRating(0);
+                setFeedbackText("");
+              }}
+              className="flex-1 rounded-lg border border-cyan-400/40 px-4 py-2 text-cyan-200 hover:bg-cyan-400/10"
+            >
+              Skip
+            </button>
+            <button
+              onClick={handleSubmitFeedback}
+              disabled={feedbackSubmitting || (!feedbackRating && !feedbackText.trim())}
+              className="flex-1 rounded-lg bg-cyan-300 px-4 py-2 font-semibold text-[#031C3A] disabled:opacity-50"
+            >
+              {feedbackSubmitting ? "Saving..." : "Submit"}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     </div>
+    </FresherShellLayout>
   );
 }

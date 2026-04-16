@@ -1,9 +1,20 @@
 import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { db } from "../../firebase";
-import { doc, getDoc, collection, getDocs, updateDoc, query, orderBy, limit } from "firebase/firestore";
-import CompanySidebar from "../../components/CompanySpecific/CompanySidebar";
+import {
+  doc,
+  getDoc,
+  collection,
+  getDocs,
+  updateDoc,
+  query,
+  orderBy,
+  limit,
+  serverTimestamp,
+  deleteField,
+} from "firebase/firestore";
 import CompanyPageLoader from "../../components/CompanySpecific/CompanyPageLoader";
+import CompanyShellLayout from "../../components/CompanySpecific/CompanyShellLayout";
 import { DEFAULT_LICENSING_PLANS, getLicensingPlans } from "../../services/licensingConfig";
 
 const LICENSE_PLAN_OPTIONS = ["License Basic", "License Pro"];
@@ -24,6 +35,7 @@ export default function CompanyDetails() {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [onboardingDocId, setOnboardingDocId] = useState("");
   const [licensingPlans, setLicensingPlans] = useState(DEFAULT_LICENSING_PLANS);
+  const [scheduledPlan, setScheduledPlan] = useState("License Basic");
 
 
   // Fetch company and onboarding details
@@ -34,7 +46,13 @@ export default function CompanyDetails() {
       try {
         // 1️⃣ Company info
         const companyDoc = await getDoc(doc(db, "companies", companyId));
-        if (companyDoc.exists()) setCompanyDetails(companyDoc.data());
+        if (companyDoc.exists()) {
+          const companyData = companyDoc.data();
+          setCompanyDetails(companyData);
+          setScheduledPlan(
+            companyData.pendingLicensePlan || companyData.licensePlan || "License Basic"
+          );
+        }
 
         // 2️⃣ Fetch the latest onboardingAnswers dynamically
         const answersRef = collection(db, "companies", companyId, "onboardingAnswers");
@@ -119,18 +137,6 @@ export default function CompanyDetails() {
   const saveChanges = async () => {
   setSaving(true); // Change button text
   try {
-    if (initialLicense !== "License Pro" && onboardingAnswers[0] === "License Pro") {
-      navigate("/company-license-payment", {
-        state: {
-          companyId,
-          companyName: companyDetails.name || companyName,
-          targetLicense: "License Pro",
-          onboardingDocId,
-        },
-      });
-      return;
-    }
-
     // Update latest onboardingAnswers
     const answersRef = collection(db, "companies", companyId, "onboardingAnswers");
     const q = query(answersRef, orderBy("createdAt", "desc"), limit(1));
@@ -142,17 +148,45 @@ export default function CompanyDetails() {
       });
     }
 
+    const currentPlan = companyDetails.licensePlan || initialLicense || "License Basic";
+    const normalizedScheduledPlan = scheduledPlan || currentPlan;
+
+    const planUpdatePayload =
+      normalizedScheduledPlan !== currentPlan
+        ? {
+            pendingLicensePlan: normalizedScheduledPlan,
+            pendingChangeRequestedAt: serverTimestamp(),
+            pendingChangeStatus: "scheduled",
+          }
+        : {
+            pendingLicensePlan: deleteField(),
+            pendingChangeRequestedAt: deleteField(),
+            pendingChangeStatus: deleteField(),
+          };
+
     // Update company info
     await updateDoc(doc(db, "companies", companyId), {
       name: companyDetails.name,
       phone: companyDetails.phone,
       address: companyDetails.address,
-      licensePlan: onboardingAnswers[0] || "License Basic"
+      ...planUpdatePayload,
     });
 
-    setInitialLicense(onboardingAnswers[0] || "License Basic");
+    setInitialLicense(currentPlan);
+    setCompanyDetails((prev) => ({
+      ...prev,
+      name: companyDetails.name,
+      phone: companyDetails.phone,
+      address: companyDetails.address,
+      pendingLicensePlan:
+        normalizedScheduledPlan !== currentPlan ? normalizedScheduledPlan : undefined,
+    }));
 
-    alert("Changes saved successfully!");
+    alert(
+      normalizedScheduledPlan !== currentPlan
+        ? `Changes saved. Plan switch to ${normalizedScheduledPlan.replace("License ", "")} is scheduled for your next renewal.`
+        : "Changes saved successfully!"
+    );
   } catch (err) {
     console.error("Error saving changes:", err);
     alert("Failed to save changes.");
@@ -164,17 +198,15 @@ export default function CompanyDetails() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen bg-[#031C3A] text-white">
-        <CompanySidebar companyId={companyId} companyName={companyName} />
-        <CompanyPageLoader message="Loading company details..." />
-      </div>
+      <CompanyShellLayout companyId={companyId} companyName={companyName} headerLabel="Company Details">
+          <CompanyPageLoader layout="content" message="Loading company details..." />
+      </CompanyShellLayout>
     );
   }
 
   return (
-    <div className="flex min-h-screen bg-[#031C3A] text-white">
-      <CompanySidebar companyId={companyId} companyName={companyName} />
-      <div className="flex-1 p-6 md:p-8">
+    <CompanyShellLayout companyId={companyId} companyName={companyName} headerLabel="Company Details" contentClassName="text-white">
+      <div>
         <div className="max-w-6xl mx-auto space-y-6">
           <div className="rounded-2xl border border-[#00FFFF30] bg-[#021B36]/80 shadow-lg px-6 py-5 md:px-8 md:py-6">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -223,11 +255,11 @@ export default function CompanyDetails() {
                 <label className="text-[#AFCBE3] font-semibold mb-3 block">Current Plan</label>
                 <div className="space-y-2">
                   <span className={`px-3 py-1.5 rounded-lg text-sm font-semibold border border-[#00FFFF] text-center block ${
-                    onboardingAnswers[0] === "License Pro"
+                    (companyDetails.licensePlan || onboardingAnswers[0] || "License Basic") === "License Pro"
                       ? "bg-[#00FFFF]/20 text-[#00FFFF]"
                       : "bg-[#7FA3BF]/20 text-[#D8ECFF]"
                   }`}>
-                    {(onboardingAnswers[0] || "License Basic").replace("License ", "")} License
+                    {(companyDetails.licensePlan || onboardingAnswers[0] || "License Basic").replace("License ", "")} License
                   </span>
                   <p className="text-xs text-[#AFCBE3] italic">
                     Valid till {new Date(new Date().setMonth(new Date().getMonth() + 1)).toLocaleDateString("en-GB", {
@@ -236,9 +268,12 @@ export default function CompanyDetails() {
                       year: "numeric",
                     })}
                   </p>
-                  <p className="text-xs text-[#00FFFF]/80 mt-2">
-                    You can update license after current subscription expires.
-                  </p>
+                  <p className="text-xs text-[#00FFFF]/80 mt-2">Renew current plan or schedule a different plan for next renewal.</p>
+                  {companyDetails.pendingLicensePlan && (
+                    <p className="text-xs text-[#9BE9C7] mt-1">
+                      Scheduled next cycle plan: {companyDetails.pendingLicensePlan.replace("License ", "")}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -257,6 +292,22 @@ export default function CompanyDetails() {
             {/* Row 2: Departments and Batch Size */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
               <div className="p-4 rounded-xl bg-[#031C3A]/70 border border-[#00FFFF30]">
+                <label className="text-[#AFCBE3] font-semibold mb-2 block">Next Renewal Plan</label>
+                <select
+                  value={scheduledPlan}
+                  onChange={(e) => setScheduledPlan(e.target.value)}
+                  className="w-full p-2 rounded border border-[#00FFFF30] bg-[#021B36]/60 text-white focus:outline-none"
+                >
+                  {LICENSE_PLAN_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option.replace("License ", "")}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-sm text-[#AFCBE3] mt-1">This plan will apply automatically after successful renewal payment.</p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-[#031C3A]/70 border border-[#00FFFF30]">
                 <label className="text-[#AFCBE3] font-semibold mb-2 block">Selected Departments</label>
                 <div className="flex flex-wrap gap-2 p-2 rounded border border-[#00FFFF30] bg-[#021B36]/60 min-h-[40px]">
                   {selectedDepts.length > 0 ? (
@@ -272,7 +323,7 @@ export default function CompanyDetails() {
                 <p className="text-sm text-[#AFCBE3] mt-1">Cannot be changed</p>
               </div>
 
-              <div className="p-4 rounded-xl bg-[#031C3A]/70 border border-[#00FFFF30]">
+              <div className="p-4 rounded-xl bg-[#031C3A]/70 border border-[#00FFFF30] md:col-span-2">
                 <label className="text-[#AFCBE3] font-semibold mb-2 block">Batch Size</label>
                 <input
                   type="text"
@@ -378,6 +429,6 @@ export default function CompanyDetails() {
           </div>
         </div>
       )}
-    </div>
+    </CompanyShellLayout>
   );
 }
