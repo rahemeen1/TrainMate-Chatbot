@@ -32,7 +32,16 @@
 }
 
 @layer base {
+  html,
+  body,
+  #root {
+    min-height: 100%;
+    background: #02142B;
+  }
+
   body {
+    margin: 0;
+    overflow-x: hidden;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
   }
 }

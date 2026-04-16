@@ -15,14 +15,21 @@ export const getAllCompanies = async (req, res) => {
           .get();
 
         const latestBillingPaymentDoc = latestBillingPaymentSnap.docs[0];
+        const latestBillingPaymentData = latestBillingPaymentDoc
+          ? latestBillingPaymentDoc.data() || {}
+          : null;
         const latestBillingPaymentCreatedAt = latestBillingPaymentDoc
-          ? latestBillingPaymentDoc.data()?.createdAt || null
+          ? latestBillingPaymentData?.createdAt || null
+          : null;
+        const latestBillingPaymentPlan = latestBillingPaymentDoc
+          ? latestBillingPaymentData?.plan || latestBillingPaymentData?.Plan || null
           : null;
 
         return {
           id: doc.id,
           ...doc.data(),
           latestBillingPaymentCreatedAt,
+          latestBillingPaymentPlan,
         };
       })
     );
