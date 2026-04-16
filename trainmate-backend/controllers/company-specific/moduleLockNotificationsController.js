@@ -158,7 +158,7 @@ export const getCompanyAdminNotifications = async (req, res) => {
   try {
     const { companyId } = req.params;
     const status = String(req.query.status || "pending").toLowerCase();
-    const requestedTypes = String(req.query.types || "module_lock,training_completion")
+    const requestedTypes = String(req.query.types || "module_lock,training_completion,training_summary_report")
       .split(",")
       .map((t) => t.trim().toLowerCase())
       .filter(Boolean);
@@ -167,9 +167,9 @@ export const getCompanyAdminNotifications = async (req, res) => {
       return res.status(400).json({ error: "companyId is required" });
     }
 
-    const allowedTypes = new Set(["module_lock", "training_completion"]);
+    const allowedTypes = new Set(["module_lock", "training_completion", "training_summary_report"]);
     const types = requestedTypes.filter((t) => allowedTypes.has(t));
-    const effectiveTypes = types.length ? types : ["module_lock", "training_completion"];
+    const effectiveTypes = types.length ? types : ["module_lock", "training_completion", "training_summary_report"];
 
     if ((status === "pending" || status === "all") && effectiveTypes.includes("module_lock")) {
       await ensurePendingNotificationsForLockedUsers(companyId);

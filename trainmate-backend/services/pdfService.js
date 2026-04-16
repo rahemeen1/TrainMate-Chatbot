@@ -256,3 +256,134 @@ export async function generateUserCredentialsPDF({
     }
   });
 }
+
+/**
+ * Generate a PDF with completed training summary report for company admin
+ * @param {Object} report - Report payload
+ * @returns {Promise<Buffer>}
+ */
+export async function generateTrainingSummaryPDF(report = {}) {
+  return new Promise((resolve, reject) => {
+    try {
+      const doc = new PDFDocument({ margin: 44, size: "A4" });
+      const buffers = [];
+
+      doc.on("data", buffers.push.bind(buffers));
+      doc.on("end", () => resolve(Buffer.concat(buffers)));
+      doc.on("error", reject);
+
+      const palette = {
+        bg: "#031C3A",
+        accent: "#00FFFF",
+        text: "#F0FAFF",
+        muted: "#B9D9EA",
+        line: "#1A4A74",
+      };
+
+      const addBackground = () => {
+        doc.save();
+        doc.rect(0, 0, doc.page.width, doc.page.height).fill(palette.bg);
+        doc.restore();
+      };
+
+      const dateText = report.generatedAt
+        ? new Date(report.generatedAt).toLocaleString("en-US", {
+            year: "numeric",
+            month: "short",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+          })
+        : new Date().toLocaleString("en-US");
+
+      const ensureSpace = (heightNeeded = 80) => {
+        if (doc.y + heightNeeded > 770) {
+          doc.addPage();
+          addBackground();
+          doc.y = 46;
+          doc.x = 44;
+        }
+      };
+
+      const writeKV = (label, value, valueColor = palette.text) => {
+        doc.fontSize(10).fillColor(palette.muted).text(label, { continued: true });
+        doc.fontSize(10).fillColor(valueColor).text(` ${value ?? "N/A"}`);
+      };
+
+      addBackground();
+      doc.y = 46;
+      doc.x = 44;
+
+      doc.fontSize(24).fillColor("#FFFFFF").text("TrainMate");
+      doc.fontSize(15).fillColor(palette.accent).text("Completed Training Summary Report");
+      doc.moveDown(0.5);
+      doc.fontSize(10).fillColor(palette.muted).text(`Generated: ${dateText}`);
+
+      doc.moveDown(1);
+      doc.strokeColor(palette.line).lineWidth(1).moveTo(44, doc.y).lineTo(550, doc.y).stroke();
+      doc.moveDown(1);
+
+      doc.fontSize(13).fillColor(palette.accent).text("Learner Profile");
+      writeKV("Name:", report.userName || "N/A");
+      writeKV("Email:", report.userEmail || "N/A");
+      writeKV("Phone:", report.userPhone || "N/A");
+      writeKV("Company:", report.companyName || "N/A");
+      writeKV("Department:", report.departmentId || "N/A");
+      writeKV("Training Topic:", report.trainingOn || "N/A");
+      writeKV("Training Level:", report.trainingLevel || "N/A");
+      writeKV("Profile Status:", report.profileStatus || "N/A");
+
+      doc.moveDown(0.8);
+      doc.fontSize(13).fillColor(palette.accent).text("Performance Summary");
+      writeKV("Progress:", `${Number(report.progressPercent) || 0}%`, palette.accent);
+      writeKV("Modules Completed:", `${report.completedModules || 0}/${report.totalModules || 0}`, palette.accent);
+      writeKV("Total Quiz Attempts:", Number(report.totalQuizAttempts) || 0, palette.accent);
+      writeKV("Average Attempts/Module:", Number(report.avgAttemptsPerModule) || 0, palette.accent);
+      writeKV("Estimated Training Days:", Number(report.totalEstimatedDays) || 0);
+      writeKV("Final Quiz Status:", report.finalQuizStatus || "N/A");
+      writeKV("Final Quiz Score:", typeof report.finalScore === "number" ? `${report.finalScore}%` : "N/A", palette.accent);
+      writeKV("Certificate:", report.certificateUnlocked ? "Unlocked" : "Locked");
+      writeKV("Certificate Title:", report.certificateTitle || "N/A");
+
+      doc.moveDown(0.8);
+      doc.fontSize(13).fillColor(palette.accent).text("Training Activity Stats");
+      writeKV("Active Days:", Number(report.activeDays) || 0);
+      writeKV("Current Streak:", Number(report.currentStreak) || 0);
+      writeKV("Missed Days:", Number(report.missedDays) || 0);
+      writeKV("Expected Days:", Number(report.totalExpectedDays) || 0);
+
+      doc.moveDown(1);
+      doc.fontSize(13).fillColor(palette.accent).text("Module-wise Breakdown");
+      doc.moveDown(0.4);
+
+      const modules = Array.isArray(report.modules) ? report.modules : [];
+      if (modules.length === 0) {
+        doc.fontSize(10).fillColor(palette.muted).text("No modules found in report.");
+      } else {
+        modules.forEach((mod) => {
+          ensureSpace(66);
+          doc.fontSize(11).fillColor("#FFFFFF").text(`Module ${mod.order || mod.index || "-"}: ${mod.title || "Untitled"}`);
+          doc.fontSize(9).fillColor(palette.muted).text(
+            `Status: ${String(mod.status || "unknown")} | Completed: ${mod.completed ? "Yes" : "No"} | Quiz Passed: ${mod.quizPassed ? "Yes" : "No"}`
+          );
+          doc.fontSize(9).fillColor(palette.muted).text(
+            `Estimated Days: ${Number(mod.estimatedDays) || 0} | Attempts: ${Number(mod.quizAttempts) || 0}`
+          );
+          doc.moveDown(0.4);
+          doc.strokeColor(palette.line).lineWidth(0.5).moveTo(44, doc.y).lineTo(550, doc.y).stroke();
+          doc.moveDown(0.6);
+        });
+      }
+
+      ensureSpace(42);
+      doc.moveDown(0.8);
+      doc.fontSize(9).fillColor(palette.muted).text("This report is automatically generated by TrainMate after module completion milestones.", {
+        align: "center",
+      });
+
+      doc.end();
+    } catch (error) {
+      reject(error);
+    }
+  });
+}

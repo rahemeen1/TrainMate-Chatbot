@@ -416,6 +416,93 @@ export async function sendTrainingCompletedEmail({
 }
 
 /**
+ * Send completed training summary report with PDF attachment to company admin
+ * @param {Object} params
+ * @param {string} params.companyEmail
+ * @param {string} params.companyName
+ * @param {string} params.userName
+ * @param {string} params.userEmail
+ * @param {string} params.deptId
+ * @param {number|null} params.finalScore
+ * @param {number} params.completedModules
+ * @param {number} params.totalModules
+ * @param {number} params.totalQuizAttempts
+ * @param {Buffer} params.pdfBuffer
+ */
+export async function sendTrainingSummaryReportEmail({
+  companyEmail,
+  companyName,
+  userName,
+  userEmail,
+  deptId,
+  finalScore,
+  completedModules,
+  totalModules,
+  totalQuizAttempts,
+  pdfBuffer,
+}) {
+  try {
+    console.log("Email service: preparing training summary report email...");
+    const transporter = createTransporter();
+
+    const recipientEmail = companyEmail;
+    const safeUserName = String(userName || "Learner").replace(/\s+/g, "_");
+
+    const mailOptions = {
+      from: {
+        name: "TrainMate",
+        address: "trainmate01@gmail.com",
+      },
+      to: recipientEmail,
+      subject: `Completed Training Summary Report - ${companyName}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 20px; background-color: #f4f4f4;">
+          <div style="background-color: #031C3A; padding: 24px; text-align: center; border-radius: 10px 10px 0 0;">
+            <h1 style="color: #00FFFF; margin: 0; font-size: 24px;">TrainMate</h1>
+          </div>
+          <div style="background-color: white; padding: 24px; border-radius: 0 0 10px 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+            <h2 style="color: #031C3A; margin-top: 0;">Completed Training Summary Report</h2>
+            <p style="color: #333; font-size: 15px; line-height: 1.6;">
+              ${userName || "A learner"} has completed all training modules. The summarized report is attached as PDF.
+            </p>
+            <div style="background-color: #E8F4F8; padding: 16px; border-left: 4px solid #00FFFF; margin: 16px 0;">
+              <p style="margin: 6px 0; color: #333;"><strong>Company:</strong> ${companyName || "TrainMate"}</p>
+              <p style="margin: 6px 0; color: #333;"><strong>User:</strong> ${userName || "Unknown"}</p>
+              <p style="margin: 6px 0; color: #333;"><strong>User Email:</strong> ${userEmail || "Unknown"}</p>
+              <p style="margin: 6px 0; color: #333;"><strong>Department:</strong> ${deptId || "Unknown"}</p>
+              <p style="margin: 6px 0; color: #333;"><strong>Modules Completed:</strong> ${Number(completedModules) || 0}/${Number(totalModules) || 0}</p>
+              <p style="margin: 6px 0; color: #333;"><strong>Total Quiz Attempts:</strong> ${Number(totalQuizAttempts) || 0}</p>
+              <p style="margin: 6px 0; color: #333;"><strong>Final Score:</strong> ${typeof finalScore === "number" ? `${finalScore}%` : "N/A"}</p>
+            </div>
+            <p style="color: #666; font-size: 13px; line-height: 1.6; margin-top: 20px;">
+              Regards,<br>
+              <strong style="color: #031C3A;">TrainMate Team</strong>
+            </p>
+          </div>
+          <div style="text-align: center; padding: 16px; color: #666; font-size: 12px;">
+            <p>This is an automated message. Please do not reply.</p>
+          </div>
+        </div>
+      `,
+      attachments: [
+        {
+          filename: `Completed_Training_Summary_${safeUserName}.pdf`,
+          content: pdfBuffer,
+          contentType: "application/pdf",
+        },
+      ],
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log("Training summary report email sent:", info.messageId);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error("Training summary report email failed:", error);
+    throw error;
+  }
+}
+
+/**
  * Send final quiz failed notification to company admin email
  * @param {Object} params
  * @param {string} params.companyEmail

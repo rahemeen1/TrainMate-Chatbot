@@ -9,6 +9,7 @@ import {
     openFinalQuiz,
     generateFinalQuiz,
     submitFinalQuiz,
+    downloadTrainingSummaryReport,
 } from "../controllers/QuizController.js";
 const router = express.Router();
 
@@ -21,5 +22,6 @@ router.post("/quiz/proctoring-violation", reportProctoringViolation);
 router.post("/quiz/final/open", openFinalQuiz);
 router.post("/quiz/final/generate", generateFinalQuiz);
 router.post("/quiz/final/submit", submitFinalQuiz);
+router.get("/quiz/final/report/:companyId/:deptId/:userId", downloadTrainingSummaryReport);
 
 export default router;

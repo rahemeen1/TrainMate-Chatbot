@@ -7,7 +7,8 @@ import { updateMemoryAfterQuiz } from "../services/memoryService.js";
 import { evaluateCode } from "../services/codeEvaluator.service.js";
 import { policyEngine } from "../services/policy/policyEngine.service.js";
 import { createDailyModuleReminder, createQuizUnlockReminder } from "../services/calendarService.js";
-import { sendTrainingLockedEmail, sendQuizSecurityAlertEmail, sendFinalQuizOpenedEmail, sendTrainingCompletedEmail, sendFinalQuizFailedEmail } from "../services/emailService.js";
+import { sendTrainingLockedEmail, sendQuizSecurityAlertEmail, sendFinalQuizOpenedEmail, sendTrainingCompletedEmail, sendFinalQuizFailedEmail, sendTrainingSummaryReportEmail } from "../services/emailService.js";
+import { generateTrainingSummaryPDF } from "../services/pdfService.js";
 
 let primaryModel = null;
 let fallbackModel = null;
@@ -35,6 +36,7 @@ const TRAINING_LOCK_TEST_EMAIL = "trainmate01@gmail.com";
 const FINAL_QUIZ_MAX_ATTEMPTS = 2;
 const FINAL_QUIZ_PASS_THRESHOLD = 70;
 const FINAL_QUIZ_WINDOW_DAYS = 2;
+const TRAINING_SUMMARY_NOTIFICATION_TYPE = "training_summary_report";
 
 async function notifyTrainingLockForTesting({
 	companyId,
@@ -298,8 +300,177 @@ function areAllModulesCompleted(modules = []) {
 	});
 }
 
+function toIsoDateOrNull(value) {
+	const date = toDateSafe(value);
+	return date ? date.toISOString() : null;
+}
+
+async function maybeGenerateCompletionSummaryReport({
+	companyId,
+	deptId,
+	userId,
+	userRef,
+	userData = {},
+	companyData = {},
+	triggerSource = "final_assessment_open",
+}) {
+	try {
+		const roadmapSnap = await userRef.collection("roadmap").orderBy("order").get();
+		const modules = roadmapSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+
+		if (!areAllModulesCompleted(modules)) {
+			return { created: false, reason: "NOT_ALL_MODULES_COMPLETED" };
+		}
+
+		const existingSummary = userData?.trainingSummaryReport || {};
+		if (existingSummary?.notificationId || existingSummary?.generatedAt) {
+			return { created: false, reason: "ALREADY_GENERATED", notificationId: existingSummary?.notificationId || null };
+		}
+
+		const moduleRows = modules
+			.sort((a, b) => (a.order || 0) - (b.order || 0))
+			.map((m, idx) => ({
+				index: idx + 1,
+				order: m.order || idx + 1,
+				title: m.moduleTitle || "Untitled Module",
+				estimatedDays: Number(m.estimatedDays) || 0,
+				quizAttempts: Number(m.quizAttempts) || 0,
+				quizPassed: !!m.quizPassed,
+				status: String(m.status || "").toLowerCase() || (m.completed ? "completed" : "unknown"),
+				completed: !!m.completed || String(m.status || "").toLowerCase() === "completed",
+			}));
+
+		const completedModules = moduleRows.filter((m) => m.completed).length;
+		const totalModules = moduleRows.length;
+		const totalQuizAttempts = moduleRows.reduce((sum, m) => sum + (Number(m.quizAttempts) || 0), 0);
+		const avgAttemptsPerModule = totalModules ? Number((totalQuizAttempts / totalModules).toFixed(2)) : 0;
+		const totalEstimatedDays = moduleRows.reduce((sum, m) => sum + (Number(m.estimatedDays) || 0), 0);
+		const finalAssessment = userData?.finalAssessment || {};
+		const finalScore = typeof userData?.certificateFinalQuizScore === "number"
+			? userData.certificateFinalQuizScore
+			: (typeof finalAssessment?.lastScore === "number" ? finalAssessment.lastScore : null);
+
+		const reportPayload = {
+			userName: userData?.name || "Learner",
+			userEmail: userData?.email || "",
+			userPhone: userData?.phone || "",
+			companyName: companyData?.name || "TrainMate",
+			departmentId: deptId,
+			trainingOn: userData?.trainingOn || "N/A",
+			trainingLevel: userData?.trainingLevel || "N/A",
+			profileStatus: userData?.status || "active",
+			certificateUnlocked: !!userData?.certificateUnlocked,
+			certificateTitle: userData?.certificateFinalQuizTitle || "N/A",
+			finalScore,
+			progressPercent: Number(userData?.progress) || 0,
+			completedModules,
+			totalModules,
+			totalQuizAttempts,
+			avgAttemptsPerModule,
+			totalEstimatedDays,
+			activeDays: Number(userData?.trainingStats?.activeDays) || 0,
+			currentStreak: Number(userData?.trainingStats?.currentStreak) || 0,
+			missedDays: Number(userData?.trainingStats?.missedDays) || 0,
+			totalExpectedDays: Number(userData?.trainingStats?.totalExpectedDays) || 0,
+			finalQuizStatus: finalAssessment?.status || "open",
+			finalQuizAttemptsUsed: Number(finalAssessment?.attemptsUsed) || 0,
+			finalQuizMaxAttempts: Number(finalAssessment?.maxAttempts) || FINAL_QUIZ_MAX_ATTEMPTS,
+			finalQuizDeadline: toIsoDateOrNull(finalAssessment?.deadlineAt),
+			generatedAt: new Date().toISOString(),
+			modules: moduleRows,
+		};
+
+		const pdfBuffer = await generateTrainingSummaryPDF(reportPayload);
+		const reportId = `training-summary-${deptId}-${userId}`;
+		const reportDownloadUrl = `http://localhost:5000/api/quiz/final/report/${companyId}/${deptId}/${userId}`;
+
+		const notificationRef = db
+			.collection("companies")
+			.doc(companyId)
+			.collection("adminNotifications")
+			.doc(reportId);
+
+		await notificationRef.set(
+			{
+				type: TRAINING_SUMMARY_NOTIFICATION_TYPE,
+				status: "pending",
+				companyId,
+				deptId,
+				userId,
+				userName: userData?.name || "",
+				userEmail: userData?.email || "",
+				score: typeof finalScore === "number" ? finalScore : null,
+				reportId,
+				reportDownloadUrl,
+				triggerSource,
+				summary: {
+					progressPercent: reportPayload.progressPercent,
+					completedModules,
+					totalModules,
+					totalQuizAttempts,
+					trainingLevel: reportPayload.trainingLevel,
+				},
+				message: `${userData?.name || "This user"} has completed all modules. This is the summarized report.`,
+				createdAt: admin.firestore.FieldValue.serverTimestamp(),
+				resolvedAt: null,
+			},
+			{ merge: true }
+		);
+
+		await userRef.set(
+			{
+				trainingSummaryReport: {
+					reportId,
+					notificationId: reportId,
+					triggerSource,
+					reportDownloadUrl,
+					generatedAt: new Date(),
+					lastGeneratedAt: new Date(),
+					completedModules,
+					totalModules,
+					totalQuizAttempts,
+					finalScore,
+				},
+			},
+			{ merge: true }
+		);
+
+		const companyEmail = companyData?.email || companyData?.companyEmail || null;
+		if (companyEmail) {
+			try {
+				await sendTrainingSummaryReportEmail({
+					companyEmail,
+					companyName: companyData?.name || "TrainMate",
+					userName: userData?.name || "Learner",
+					userEmail: userData?.email || "",
+					deptId,
+					finalScore,
+					completedModules,
+					totalModules,
+					totalQuizAttempts,
+					pdfBuffer,
+				});
+				console.log("🧪 [FINAL-QUIZ] Training summary report email sent to company admin.");
+			} catch (emailErr) {
+				console.warn("⚠️ [FINAL-QUIZ] Failed to send training summary report email:", emailErr.message);
+			}
+		} else {
+			console.warn("⚠️ [FINAL-QUIZ] Company email not found. Summary report notification created without email.");
+		}
+
+		return { created: true, reportId, reportDownloadUrl };
+	} catch (err) {
+		console.warn("⚠️ [FINAL-QUIZ] Summary report generation failed (non-blocking):", err.message);
+		return { created: false, reason: "ERROR", error: err.message };
+	}
+}
+
 async function maybeOpenFinalAssessment({ userRef, userData = {}, companyName = "TrainMate" }) {
 	console.log("🧪 [FINAL-QUIZ] Checking eligibility to open final assessment...");
+	const userPathSegments = userRef.path.split("/");
+	const companyId = userPathSegments[1] || "";
+	const deptId = userPathSegments[3] || "";
+	const userId = userPathSegments[5] || "";
 	const roadmapSnap = await userRef.collection("roadmap").orderBy("order").get();
 	const modules = roadmapSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
 
@@ -383,6 +554,28 @@ async function maybeOpenFinalAssessment({ userRef, userData = {}, companyName = 
 		deadlineAt: deadline.toISOString(),
 		maxAttempts: FINAL_QUIZ_MAX_ATTEMPTS,
 		passThreshold: FINAL_QUIZ_PASS_THRESHOLD,
+	});
+
+	let companyData = { name: companyName };
+	if (companyId) {
+		try {
+			const companySnap = await db.collection("companies").doc(companyId).get();
+			if (companySnap.exists) {
+				companyData = companySnap.data() || companyData;
+			}
+		} catch (companyErr) {
+			console.warn("⚠️ [FINAL-QUIZ] Failed to load company data for summary report:", companyErr.message);
+		}
+	}
+
+	await maybeGenerateCompletionSummaryReport({
+		companyId,
+		deptId,
+		userId,
+		userRef,
+		userData,
+		companyData,
+		triggerSource: "final_quiz_open",
 	});
 
 	if (!current.emailSentAt && userData?.email) {
@@ -2477,6 +2670,101 @@ export const submitFinalQuiz = async (req, res) => {
 	} catch (err) {
 		console.error("Final quiz submission error:", err);
 		return res.status(500).json({ error: "Final quiz submission failed", details: err.message });
+	}
+};
+
+export const downloadTrainingSummaryReport = async (req, res) => {
+	try {
+		const { companyId, deptId, userId } = req.params || {};
+		if (!companyId || !deptId || !userId) {
+			return res.status(400).json({ error: "Missing required IDs" });
+		}
+
+		const userRef = db
+			.collection("freshers")
+			.doc(companyId)
+			.collection("departments")
+			.doc(deptId)
+			.collection("users")
+			.doc(userId);
+
+		const [userSnap, companySnap, roadmapSnap] = await Promise.all([
+			userRef.get(),
+			db.collection("companies").doc(companyId).get(),
+			userRef.collection("roadmap").orderBy("order").get(),
+		]);
+
+		if (!userSnap.exists) {
+			return res.status(404).json({ error: "User not found" });
+		}
+
+		const userData = userSnap.data() || {};
+		const companyData = companySnap.exists ? (companySnap.data() || {}) : {};
+		const modules = roadmapSnap.docs.map((docSnap, idx) => {
+			const moduleData = docSnap.data() || {};
+			return {
+				index: idx + 1,
+				order: moduleData.order || idx + 1,
+				title: moduleData.moduleTitle || "Untitled Module",
+				estimatedDays: Number(moduleData.estimatedDays) || 0,
+				quizAttempts: Number(moduleData.quizAttempts) || 0,
+				quizPassed: !!moduleData.quizPassed,
+				status: String(moduleData.status || "").toLowerCase() || (moduleData.completed ? "completed" : "unknown"),
+				completed: !!moduleData.completed || String(moduleData.status || "").toLowerCase() === "completed",
+			};
+		});
+
+		if (!areAllModulesCompleted(modules)) {
+			return res.status(403).json({ error: "Report not available until all modules are completed" });
+		}
+
+		const completedModules = modules.filter((m) => m.completed).length;
+		const totalModules = modules.length;
+		const totalQuizAttempts = modules.reduce((sum, m) => sum + (Number(m.quizAttempts) || 0), 0);
+		const avgAttemptsPerModule = totalModules ? Number((totalQuizAttempts / totalModules).toFixed(2)) : 0;
+		const totalEstimatedDays = modules.reduce((sum, m) => sum + (Number(m.estimatedDays) || 0), 0);
+		const finalAssessment = userData?.finalAssessment || {};
+		const finalScore = typeof userData?.certificateFinalQuizScore === "number"
+			? userData.certificateFinalQuizScore
+			: (typeof finalAssessment?.lastScore === "number" ? finalAssessment.lastScore : null);
+
+		const pdfBuffer = await generateTrainingSummaryPDF({
+			userName: userData?.name || "Learner",
+			userEmail: userData?.email || "",
+			userPhone: userData?.phone || "",
+			companyName: companyData?.name || "TrainMate",
+			departmentId: deptId,
+			trainingOn: userData?.trainingOn || "N/A",
+			trainingLevel: userData?.trainingLevel || "N/A",
+			profileStatus: userData?.status || "active",
+			certificateUnlocked: !!userData?.certificateUnlocked,
+			certificateTitle: userData?.certificateFinalQuizTitle || "N/A",
+			finalScore,
+			progressPercent: Number(userData?.progress) || 0,
+			completedModules,
+			totalModules,
+			totalQuizAttempts,
+			avgAttemptsPerModule,
+			totalEstimatedDays,
+			activeDays: Number(userData?.trainingStats?.activeDays) || 0,
+			currentStreak: Number(userData?.trainingStats?.currentStreak) || 0,
+			missedDays: Number(userData?.trainingStats?.missedDays) || 0,
+			totalExpectedDays: Number(userData?.trainingStats?.totalExpectedDays) || 0,
+			finalQuizStatus: finalAssessment?.status || "open",
+			finalQuizAttemptsUsed: Number(finalAssessment?.attemptsUsed) || 0,
+			finalQuizMaxAttempts: Number(finalAssessment?.maxAttempts) || FINAL_QUIZ_MAX_ATTEMPTS,
+			finalQuizDeadline: toIsoDateOrNull(finalAssessment?.deadlineAt),
+			generatedAt: new Date().toISOString(),
+			modules,
+		});
+
+		const safeUserName = String(userData?.name || "learner").replace(/[^a-zA-Z0-9-_]/g, "_");
+		res.setHeader("Content-Type", "application/pdf");
+		res.setHeader("Content-Disposition", `attachment; filename=Training_Summary_${safeUserName}.pdf`);
+		return res.send(pdfBuffer);
+	} catch (err) {
+		console.error("Training summary report download error:", err);
+		return res.status(500).json({ error: "Failed to generate training summary report", details: err.message });
 	}
 };
 
