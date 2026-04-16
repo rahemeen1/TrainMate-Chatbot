@@ -5,6 +5,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { CohereClient } from "cohere-ai";
 import { updateMemoryAfterQuiz } from "../services/memoryService.js";
 import { evaluateCode } from "../services/codeEvaluator.service.js";
+import { policyEngine } from "../services/policy/policyEngine.service.js";
 import { createDailyModuleReminder, createQuizUnlockReminder } from "../services/calendarService.js";
 import { sendTrainingLockedEmail, sendQuizSecurityAlertEmail, sendFinalQuizOpenedEmail, sendTrainingCompletedEmail, sendFinalQuizFailedEmail } from "../services/emailService.js";
 
@@ -650,101 +651,22 @@ async function makeAgenticDecision({
 	previousAttempts = [],
 	maxAttempts = MAX_QUIZ_ATTEMPTS
 }) {
-	const { primaryModel } = initializeQuizModels();
-	
-	const attemptsHistory = previousAttempts.map((att, idx) => 
-		`Attempt ${idx + 1}: Score ${att.score}%`
-	).join(", ");
-	
-	const prompt = `
-You are an intelligent learning assessment agent. Analyze this learner's quiz performance and make strategic decisions.
+	const decision = await policyEngine.decide("quizOutcome", {
+		score,
+		attemptNumber,
+		mcqScore,
+		oneLinerScore,
+		codingScore,
+		weakAreas,
+		moduleTitle,
+		timeRemaining,
+		previousAttempts,
+		maxAttempts,
+		quizPassThreshold: QUIZ_PASS_THRESHOLD,
+	});
 
-MODULE: "${moduleTitle}"
-CURRENT ATTEMPT: ${attemptNumber}
-CURRENT SCORE: ${score}%
-PASS THRESHOLD: ${QUIZ_PASS_THRESHOLD}%
-
-SCORE BREAKDOWN:
-- MCQ Score: ${mcqScore}%
-- One-liner Score: ${oneLinerScore}%
-${codingScore !== null ? `- Coding Score: ${codingScore}%` : ''}
-
-${attemptsHistory ? `PREVIOUS ATTEMPTS: ${attemptsHistory}` : 'This is the first attempt'}
-
-${weakAreas.length > 0 ? `WEAK AREAS: ${weakAreas.join(", ")}` : ''}
-
-${timeRemaining ? `TIME REMAINING IN MODULE: ${timeRemaining}` : 'No time constraint'}
-
-ANALYZE AND DECIDE:
-
-1. **Retry Strategy**: Based on the score gap (${QUIZ_PASS_THRESHOLD - score}%), learning trajectory, and improvement potential:
-   - If score is close to passing (60-69%): Recommend 1-2 more attempts
-   - If score shows learning gaps (40-59%): May need roadmap adjustment + retries
-   - If score is very low (<40%): Consider intensive intervention
-   
-2. **Roadmap Regeneration**: Determine if learner needs adjusted learning path:
-   - YES if there are significant knowledge gaps
-   - NO if just minor review needed
-   
-3. **Resource Allocation**: What should be unlocked for continued learning?
-
-4. **Personalized Message**: Provide encouraging, specific feedback
-
-Return JSON only:
-{
-  "allowRetry": true|false,
-  "retriesGranted": 1-2,
-  "requiresRoadmapRegeneration": true|false,
-  "unlockResources": ["quiz", "module", "chatbot"],
-  "lockModule": true|false,
-  "contactAdmin": true|false,
-  "message": "Personalized message",
-  "recommendations": ["specific action items"],
-  "reasoning": "Brief explanation of decision"
-}
-
-CONSTRAINTS:
-- Maximum ${maxAttempts} total attempts allowed
-- Be encouraging but realistic
-- Focus on learner's growth and improvement
-- Consider time constraints if provided
-`;
-
-	try {
-		const result = await primaryModel.generateContent(prompt);
-		const text = result?.response?.text()?.trim() || "";
-		const parsed = safeParseJson(text);
-		
-		if (parsed && typeof parsed.allowRetry === "boolean") {
-			console.log("🤖 Agentic Decision:", parsed.reasoning || "Decision made");
-			return parsed;
-		}
-	} catch (err) {
-		console.warn("⚠️ Agentic decision failed, using fallback logic:", err.message);
-	}
-	
-	// Fallback logic if AI fails
-	const scoreGap = QUIZ_PASS_THRESHOLD - score;
-	const allowRetry = attemptNumber < maxAttempts && scoreGap < 30;
-	const needsRegeneration = scoreGap > 20 && attemptNumber < maxAttempts;
-	
-	return {
-		allowRetry,
-		retriesGranted: allowRetry ? 1 : 0,
-		requiresRoadmapRegeneration: needsRegeneration,
-		unlockResources: allowRetry ? ["quiz"] : [],
-		lockModule: !allowRetry && attemptNumber >= maxAttempts,
-		contactAdmin: !allowRetry,
-		message: allowRetry 
-			? `You scored ${score}%. Review the materials and try again - you're getting closer!`
-			: `After ${attemptNumber} attempts, please contact your admin for additional support.`,
-		recommendations: [
-			"Review weak areas identified in the results",
-			"Use the chatbot for clarification",
-			"Take notes on key concepts"
-		],
-		reasoning: "Fallback decision logic applied"
-	};
+	console.log("🤖 Agentic Decision:", decision.reasoning || "Decision made");
+	return decision;
 }
 
 function buildQuizPrompt({ title, context, critiqueIssues, allowCoding = false, moduleDescription = "", companyName = "", deptName = "" }) {

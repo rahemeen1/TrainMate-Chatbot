@@ -197,11 +197,15 @@ export const generateUserRoadmap = async (req, res) => {
 
         // Will be populated by agents
         companyDocsText: '', // Retrieved during orchestration
-        constraints: [
-          `Duration: ${finalTrainingDuration}`,
-          `Expertise: ${level}`,
-          'Max 6 modules recommended',
-        ],
+        constraints: {
+          maxLatency: 2000,
+          costSensitivity: "medium",
+          guidance: [
+            `Duration: ${finalTrainingDuration}`,
+            `Expertise: ${level}`,
+            "Max 6 modules recommended",
+          ],
+        },
       }
     );
 
