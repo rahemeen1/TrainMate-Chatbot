@@ -1,13 +1,33 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import OpenAI from "openai";
 import dotenv from "dotenv";
+import { db } from "../config/firebase.js";
 
 dotenv.config();
 
-if (!process.env.GEMINI_API_KEY) {
-  throw new Error("❌ GEMINI_API_KEY missing");
-}
+let genAI = null;
+let openAI = null;
+let initialized = false;
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+function initializeLLMs() {
+  if (initialized) return;
+  
+  const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY);
+  const hasOpenAIKey = Boolean(process.env.OPENAI_API_KEY);
+  
+  if (!hasGeminiKey && !hasOpenAIKey) {
+    throw new Error("❌ At least one LLM key is required (GEMINI_API_KEY or OPENAI_API_KEY)");
+  }
+  
+  if (hasGeminiKey) {
+    genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  }
+  if (hasOpenAIKey) {
+    openAI = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  
+  initialized = true;
+}
 
 /**
  * AGENT ORCHESTRATOR SERVICE
@@ -25,6 +45,269 @@ export class AgentOrchestrator {
     this.maxHistorySize = 100;
   }
 
+  isRoadmapGoal(goal) {
+    return typeof goal === "string" && goal.toLowerCase().includes("roadmap");
+  }
+
+  getRoadmapModulesFromResults(results = {}) {
+    if (!results || typeof results !== "object") return [];
+
+    const direct = results?.["generate-roadmap"]?.modules;
+    if (Array.isArray(direct)) return direct;
+
+    const candidate = Object.values(results).find(
+      (value) => Array.isArray(value?.modules) && value.modules.length > 0
+    );
+    return Array.isArray(candidate?.modules) ? candidate.modules : [];
+  }
+
+  compactForPrompt(value, maxChars = 1200) {
+    const text = typeof value === "string" ? value : JSON.stringify(value);
+    if (!text) return "";
+    if (text.length <= maxChars) return text;
+
+    const headChars = Math.floor(maxChars * 0.65);
+    const tailChars = Math.max(0, maxChars - headChars - 32);
+    const head = text.substring(0, headChars);
+    const tail = tailChars > 0 ? text.substring(text.length - tailChars) : "";
+    const removed = text.length - (head.length + tail.length);
+
+    return `${head}\n... [${removed} chars omitted] ...\n${tail}`;
+  }
+
+  extractJsonFromText(text) {
+    if (!text || typeof text !== "string") return null;
+
+    const objectMatch = text.match(/\{[\s\S]*\}/);
+    if (objectMatch) return objectMatch[0];
+
+    const arrayMatch = text.match(/\[[\s\S]*\]/);
+    if (arrayMatch) return arrayMatch[0];
+
+    return null;
+  }
+
+  async generateJsonWithFallback(prompt, options = {}) {
+    const { systemInstruction = null, purpose = "orchestration task" } = options;
+
+    const geminiModels = ["gemini-2.5-flash", "gemini-2.5-pro"];
+    if (genAI) {
+      for (const modelName of geminiModels) {
+        try {
+          const model = genAI.getGenerativeModel({
+            model: modelName,
+            generationConfig: { responseMimeType: "application/json" },
+            ...(systemInstruction ? { systemInstruction } : {}),
+          });
+
+          const result = await model.generateContent(prompt);
+          const responseText = await result.response.text();
+          const jsonText = this.extractJsonFromText(responseText);
+
+          if (!jsonText) {
+            throw new Error(`No JSON found in ${modelName} response`);
+          }
+
+          return JSON.parse(jsonText);
+        } catch (error) {
+          console.warn(`⚠️  ${modelName} failed for ${purpose}:`, error.message);
+        }
+      }
+    }
+
+    if (openAI) {
+      try {
+        const completion = await openAI.chat.completions.create({
+          model: "gpt-4o-mini",
+          response_format: { type: "json_object" },
+          messages: [
+            ...(systemInstruction ? [{ role: "system", content: systemInstruction }] : []),
+            { role: "user", content: prompt },
+          ],
+          temperature: 0.2,
+        });
+
+        const responseText = completion.choices?.[0]?.message?.content || "";
+        const jsonText = this.extractJsonFromText(responseText);
+        if (!jsonText) {
+          throw new Error("No JSON found in OpenAI response");
+        }
+
+        return JSON.parse(jsonText);
+      } catch (error) {
+        console.warn(`⚠️  OpenAI fallback failed for ${purpose}:`, error.message);
+      }
+    }
+
+    return null;
+  }
+
+  getMemoryDocRef(context = {}) {
+    const { companyId, deptId, userId } = context;
+    if (!companyId || !deptId || !userId) {
+      return null;
+    }
+
+    return db
+      .collection("freshers")
+      .doc(companyId)
+      .collection("departments")
+      .doc(deptId)
+      .collection("users")
+      .doc(userId)
+      .collection("agentMemory")
+      .doc("orchestrator");
+  }
+
+  async loadLongTermMemory(context = {}) {
+    const memoryRef = this.getMemoryDocRef(context);
+    if (!memoryRef) {
+      return null;
+    }
+
+    try {
+      const snap = await memoryRef.get();
+      return snap.exists ? snap.data() : null;
+    } catch (error) {
+      console.warn("⚠️  Failed to load orchestrator memory:", error.message);
+      return null;
+    }
+  }
+
+  async saveLongTermMemory(context = {}, update = {}) {
+    const memoryRef = this.getMemoryDocRef(context);
+    if (!memoryRef) {
+      return;
+    }
+
+    try {
+      const snap = await memoryRef.get();
+      const existing = snap.exists ? snap.data() : {};
+      const recentRuns = Array.isArray(existing.recentRuns) ? existing.recentRuns : [];
+
+      const nextRecentRuns = [
+        ...recentRuns,
+        {
+          goal: update.goal || "unknown",
+          success: Boolean(update.success),
+          error: update.error || null,
+          agentsUsed: update.agentsUsed || [],
+          validationScore: update.validationScore ?? null,
+          executionTimeMs: update.executionTimeMs ?? null,
+          timestamp: new Date(),
+        },
+      ].slice(-10);
+
+      await memoryRef.set(
+        {
+          lastGoal: update.goal || existing.lastGoal || null,
+          lastSuccess: Boolean(update.success),
+          lastError: update.error || null,
+          lastAgentsUsed: update.agentsUsed || [],
+          lastValidationScore: update.validationScore ?? null,
+          lastExecutionTimeMs: update.executionTimeMs ?? null,
+          lastUpdatedAt: new Date(),
+          recentRuns: nextRecentRuns,
+        },
+        { merge: true }
+      );
+    } catch (error) {
+      console.warn("⚠️  Failed to save orchestrator memory:", error.message);
+    }
+  }
+
+  normalizePlan(plan, goal) {
+    const availableAgents = new Set(this.agents.keys());
+    const fallbackPlan = this.generateFallbackPlan(goal, Array.from(availableAgents));
+
+    if (!plan || !Array.isArray(plan.steps)) {
+      return {
+        plan: fallbackPlan,
+        warnings: ["Planner returned an invalid plan shape; using fallback."],
+      };
+    }
+
+    const warnings = [];
+    const normalizedSteps = [];
+
+    for (const rawStep of plan.steps) {
+      const rawAgent = typeof rawStep?.agent === "string" ? rawStep.agent.trim() : "";
+      if (!rawAgent || !availableAgents.has(rawAgent)) {
+        warnings.push(`Planner proposed unknown agent: ${rawAgent || "<empty>"}`);
+        continue;
+      }
+
+      normalizedSteps.push({
+        stepNumber: normalizedSteps.length + 1,
+        description: rawStep?.description || `Execute ${rawAgent}`,
+        agent: rawAgent,
+        critical: rawStep?.critical !== false,
+        dependencies: Array.isArray(rawStep?.dependencies)
+          ? rawStep.dependencies.filter((d) => typeof d === "string" && d.trim())
+          : [],
+        retryPolicy: {
+          maxRetries: Math.max(1, Number(rawStep?.retryPolicy?.maxRetries) || 1),
+          backoffMs: Math.max(0, Number(rawStep?.retryPolicy?.backoffMs) || 1000),
+        },
+      });
+    }
+
+    if (normalizedSteps.length === 0) {
+      return {
+        plan: fallbackPlan,
+        warnings: [...warnings, "No valid planned steps remained; using fallback."],
+      };
+    }
+
+    const plannedAgentSet = new Set(normalizedSteps.map((s) => s.agent));
+    for (const step of normalizedSteps) {
+      step.dependencies = step.dependencies.filter((dep) => {
+        const exists = plannedAgentSet.has(dep);
+        if (!exists) {
+          warnings.push(`Removed invalid dependency '${dep}' from agent '${step.agent}'.`);
+        }
+        return exists;
+      });
+    }
+
+    const allowedStrategies = new Set(["fail_fast", "retry", "skip_non_critical", "pivot"]);
+    const errorStrategy = allowedStrategies.has(plan.errorStrategy)
+      ? plan.errorStrategy
+      : "retry";
+
+    if (this.isRoadmapGoal(goal) && availableAgents.has("generate-roadmap")) {
+      const hasRoadmapGenerator = normalizedSteps.some((s) => s.agent === "generate-roadmap");
+      if (!hasRoadmapGenerator) {
+        const deps = [];
+        if (normalizedSteps.some((s) => s.agent === "analyze-skill-gaps")) {
+          deps.push("analyze-skill-gaps");
+        }
+
+        normalizedSteps.push({
+          stepNumber: normalizedSteps.length + 1,
+          description: "Generate roadmap",
+          agent: "generate-roadmap",
+          critical: true,
+          dependencies: deps,
+          retryPolicy: {
+            maxRetries: 2,
+            backoffMs: 1000,
+          },
+        });
+        warnings.push("Planner omitted generate-roadmap; injected required roadmap step.");
+      }
+    }
+
+    return {
+      plan: {
+        ...plan,
+        steps: normalizedSteps,
+        errorStrategy,
+      },
+      warnings,
+    };
+  }
+
   /**
    * 🎯 Main orchestration entry point
    * 
@@ -33,6 +316,8 @@ export class AgentOrchestrator {
    * @returns {Promise<Object>} { finalOutput, metadata, explanation, executionLog }
    */
   async orchestrate(goal, context) {
+    initializeLLMs();
+    
     console.log("\n" + "=".repeat(70));
     console.log("🎯 AGENT ORCHESTRATOR STARTED");
     console.log(`Goal: ${goal}`);
@@ -42,21 +327,34 @@ export class AgentOrchestrator {
     const executionLog = [];
 
     try {
+      const longTermMemory = await this.loadLongTermMemory(context);
+      const runContext = {
+        ...context,
+        orchestrationMemory: longTermMemory,
+      };
+
       // STEP 1: Generate execution plan
       console.log("\n📋 STEP 1: Generating execution plan...");
-      const plan = await this.generatePlan(goal, context);
+      const rawPlan = await this.generatePlan(goal, runContext);
+      const { plan, warnings } = this.normalizePlan(rawPlan, goal);
+
+      if (warnings.length > 0) {
+        console.warn("⚠️  Plan sanitization warnings:", warnings);
+      }
+
       executionLog.push({
         stage: "planning",
         status: "success",
         detail: `Generated plan with ${plan.steps.length} steps`,
         steps: plan.steps.map((s) => s.agent),
         errorStrategy: plan.errorStrategy,
+        warnings,
       });
       console.log(`✅ Plan generated: ${plan.steps.length} steps, strategy: ${plan.errorStrategy}`);
 
       // STEP 2: Execute plan
       console.log("\n⚙️  STEP 2: Executing plan...");
-      const executionResults = await this.executePlan(plan, context, executionLog);
+      const executionResults = await this.executePlan(plan, runContext, executionLog);
       console.log(`✅ Execution complete: ${Object.keys(executionResults.results).length} results`);
 
       // STEP 3: Validate final output
@@ -73,12 +371,20 @@ export class AgentOrchestrator {
         const recoveryResult = await this.attemptRecovery(
           executionResults,
           validation,
-          context,
-          executionLog
+          runContext,
+          executionLog,
+          plan
         );
         if (recoveryResult.success) {
           executionResults.results = recoveryResult.results;
           console.log("✅ Recovery successful");
+        }
+      }
+
+      if (this.isRoadmapGoal(goal)) {
+        const generatedModules = this.getRoadmapModulesFromResults(executionResults.results);
+        if (!Array.isArray(generatedModules) || generatedModules.length === 0) {
+          throw new Error("Roadmap generation step did not produce modules");
         }
       }
 
@@ -90,6 +396,13 @@ export class AgentOrchestrator {
         executionLog
       );
 
+      if (this.isRoadmapGoal(goal)) {
+        const outputModules = finalOutput?.finalOutput?.modules;
+        if (!Array.isArray(outputModules) || outputModules.length === 0) {
+          throw new Error("Aggregation produced no roadmap modules");
+        }
+      }
+
       // STEP 5: Log execution
       const executionTime = Date.now() - orchestrationStart;
       this.logExecution({
@@ -100,6 +413,14 @@ export class AgentOrchestrator {
         validation,
         executionTime,
         executionLog,
+      });
+
+      await this.saveLongTermMemory(context, {
+        goal,
+        success: true,
+        agentsUsed: plan.steps.map((s) => s.agent),
+        validationScore: validation.score,
+        executionTimeMs: executionTime,
       });
 
       console.log("\n" + "=".repeat(70));
@@ -126,6 +447,12 @@ export class AgentOrchestrator {
         error: error.message,
         executionLog,
         timestamp: new Date(),
+      });
+
+      await this.saveLongTermMemory(context, {
+        goal,
+        success: false,
+        error: error.message,
       });
 
       return {
@@ -181,23 +508,12 @@ Return ONLY valid JSON (no markdown, no explanation):
 }`;
 
     try {
-      const model = genAI.getGenerativeModel({
-        model: "gemini-2.5-flash",
-        generationConfig: {
-          responseMimeType: "application/json",
-        },
+      const plan = await this.generateJsonWithFallback(plannerPrompt, {
+        purpose: "plan generation",
       });
-
-      const result = await model.generateContent(plannerPrompt);
-      const responseText = await result.response.text();
-
-      // Extract JSON from response
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        throw new Error("No JSON found in planner response");
+      if (!plan) {
+        throw new Error("No valid planner JSON from any LLM");
       }
-
-      const plan = JSON.parse(jsonMatch[0]);
       return plan;
     } catch (error) {
       console.warn("⚠️  Planner agent failed:", error.message);
@@ -257,118 +573,190 @@ Return ONLY valid JSON (no markdown, no explanation):
   /**
    * ⚙️ Execute the generated plan with monitoring
    */
-  async executePlan(plan, context, executionLog) {
-    const results = {};
-    const stepExecutionLog = [];
-    const stepOrderMap = {}; // For dependency resolution
+  async executeStepWithRetries(step, context, results, stepOrderMap) {
+    const stepStart = Date.now();
 
-    for (const step of plan.steps) {
-      const stepStart = Date.now();
+    try {
+      console.log(`\n  ⚙️  Step ${step.stepNumber}: ${step.description}`);
+      console.log(`      Agent: ${step.agent} | Critical: ${step.critical}`);
 
-      try {
-        console.log(`\n  ⚙️  Step ${step.stepNumber}: ${step.description}`);
-        console.log(`      Agent: ${step.agent} | Critical: ${step.critical}`);
+      const missingDependencies = (step.dependencies || []).filter(
+        (dep) => !results[dep]
+      );
+      if (missingDependencies.length > 0) {
+        throw new Error(
+          `Missing dependencies for ${step.agent}: ${missingDependencies.join(", ")}`
+        );
+      }
 
-        // Get agent from registry
-        const agent = this.agents.get(step.agent);
-        if (!agent) {
-          throw new Error(`Agent not found in registry: ${step.agent}`);
-        }
+      const agent = this.agents.get(step.agent);
+      if (!agent) {
+        throw new Error(`Agent not found in registry: ${step.agent}`);
+      }
 
-        // Prepare input including previous results
-        const stepInput = {
-          ...step.input,
-          previousResults: results,
-          context,
-        };
+      const stepInput = {
+        ...step.input,
+        previousResults: { ...results },
+        context,
+      };
 
-        // Execute with retry logic
-        let output;
-        let attempts = 0;
-        const maxRetries = step.retryPolicy?.maxRetries || 1;
-        let lastError;
+      let output;
+      let attempts = 0;
+      const maxRetries = step.retryPolicy?.maxRetries || 1;
+      let lastError;
 
-        while (attempts < maxRetries) {
-          try {
-            output = await agent(stepInput);
+      while (attempts < maxRetries) {
+        try {
+          output = await agent(stepInput);
+          const validation = await this.validateOutput(output, step);
 
-            // 🤖 VALIDATOR - Check output quality
-            const validation = await this.validateOutput(output, step);
+          if (validation.pass) {
+            results[step.agent] = output;
+            stepOrderMap[step.agent] = step.stepNumber;
 
-            if (validation.pass) {
-              results[step.agent] = output;
-              stepOrderMap[step.agent] = step.stepNumber;
-
-              stepExecutionLog.push({
-                stepNumber: step.stepNumber,
-                agent: step.agent,
-                status: "SUCCESS",
-                duration: Date.now() - stepStart,
-                validation: {
-                  score: validation.score,
-                  issues: validation.issues,
-                },
-              });
-
-              console.log(
-                `      ✅ Success (validation: ${validation.score}/100)`
-              );
-              break;
-            } else {
-              lastError = new Error(`Validation failed: ${validation.reason}`);
-              attempts++;
-              console.warn(`      ⚠️  Validation issue: ${validation.reason}`);
-
-              if (attempts < maxRetries) {
-                await this.sleep(step.retryPolicy?.backoffMs || 1000);
-              }
-            }
-          } catch (error) {
-            lastError = error;
-            attempts++;
-            console.warn(`      ⚠️  Attempt ${attempts}/${maxRetries} failed:`, error.message);
-
-            if (attempts < maxRetries) {
-              await this.sleep(step.retryPolicy?.backoffMs || 1000);
-            }
-          }
-        }
-
-        // Handle final failure
-        if (!results[step.agent] && lastError) {
-          if (step.critical) {
-            throw lastError; // Critical step cannot fail
-          } else {
-            console.log(`      ⏭️  Skipped (non-critical)`);
-            stepExecutionLog.push({
+            const stepLog = {
               stepNumber: step.stepNumber,
               agent: step.agent,
-              status: "SKIPPED",
-              reason: lastError.message,
+              status: "SUCCESS",
               duration: Date.now() - stepStart,
-            });
+              validation: {
+                score: validation.score,
+                issues: validation.issues,
+              },
+            };
+
+            console.log(`      ✅ Success (validation: ${validation.score}/100)`);
+            return { success: true, log: stepLog, output };
+          }
+
+          lastError = new Error(`Validation failed: ${validation.reason}`);
+          attempts++;
+          console.warn(`      ⚠️  Validation issue: ${validation.reason}`);
+
+          if (attempts < maxRetries) {
+            await this.sleep(step.retryPolicy?.backoffMs || 1000);
+          }
+        } catch (error) {
+          lastError = error;
+          attempts++;
+          console.warn(`      ⚠️  Attempt ${attempts}/${maxRetries} failed:`, error.message);
+
+          if (attempts < maxRetries) {
+            await this.sleep(step.retryPolicy?.backoffMs || 1000);
           }
         }
-      } catch (error) {
-        console.error(`      🔥 Step ${step.stepNumber} failed:`, error.message);
+      }
 
-        const stepLog = {
+      if (lastError) {
+        throw lastError;
+      }
+
+      throw new Error(`Step ${step.agent} failed without explicit error`);
+    } catch (error) {
+      console.error(`      🔥 Step ${step.stepNumber} failed:`, error.message);
+      return {
+        success: false,
+        error,
+        log: {
           stepNumber: step.stepNumber,
           agent: step.agent,
           status: "FAILED",
           reason: error.message,
           duration: Date.now() - stepStart,
-        };
+        },
+      };
+    }
+  }
 
-        if (step.critical && plan.errorStrategy === "fail_fast") {
+  async executePlan(plan, context, executionLog) {
+    const results = {};
+    const stepExecutionLog = [];
+    const stepOrderMap = {}; // For dependency resolution
+    const pendingSteps = new Map(plan.steps.map((step) => [step.agent, step]));
+    const failedAgents = new Set();
+
+    while (pendingSteps.size > 0) {
+      const readySteps = [];
+      const blockedAgents = [];
+
+      for (const step of pendingSteps.values()) {
+        const deps = step.dependencies || [];
+        const blockedByFailed = deps.some((dep) => failedAgents.has(dep));
+        if (blockedByFailed) {
+          blockedAgents.push(step.agent);
+          continue;
+        }
+
+        const depsSatisfied = deps.every((dep) => results[dep]);
+        if (depsSatisfied) {
+          readySteps.push(step);
+        }
+      }
+
+      if (readySteps.length === 0) {
+        for (const step of pendingSteps.values()) {
+          const deps = step.dependencies || [];
+          const unresolvedDeps = deps.filter((dep) => !results[dep]);
+          const reason = `Unresolvable dependencies for ${step.agent}: ${unresolvedDeps.join(", ")}`;
+          const stepLog = {
+            stepNumber: step.stepNumber,
+            agent: step.agent,
+            status: "FAILED",
+            reason,
+            duration: 0,
+          };
           stepExecutionLog.push(stepLog);
-          throw error;
-        } else {
-          stepExecutionLog.push(stepLog);
-          if (plan.errorStrategy === "skip_non_critical") {
-            continue;
+          failedAgents.add(step.agent);
+
+          if (step.critical && plan.errorStrategy === "fail_fast") {
+            throw new Error(reason);
           }
         }
+        break;
+      }
+
+      const batchOutcomes = await Promise.all(
+        readySteps.map((step) => this.executeStepWithRetries(step, context, results, stepOrderMap))
+      );
+
+      for (let i = 0; i < batchOutcomes.length; i++) {
+        const step = readySteps[i];
+        const outcome = batchOutcomes[i];
+        pendingSteps.delete(step.agent);
+
+        if (outcome.success) {
+          stepExecutionLog.push(outcome.log);
+          continue;
+        }
+
+        failedAgents.add(step.agent);
+        stepExecutionLog.push(outcome.log);
+
+        if (step.critical && plan.errorStrategy === "fail_fast") {
+          throw outcome.error;
+        }
+
+        if (plan.errorStrategy === "skip_non_critical") {
+          continue;
+        }
+      }
+
+      for (const blockedAgent of blockedAgents) {
+        const step = pendingSteps.get(blockedAgent);
+        if (!step) continue;
+
+        const deps = step.dependencies || [];
+        if (!deps.some((dep) => failedAgents.has(dep))) continue;
+
+        const reason = `Skipped due to failed dependency for ${step.agent}`;
+        stepExecutionLog.push({
+          stepNumber: step.stepNumber,
+          agent: step.agent,
+          status: "SKIPPED",
+          reason,
+          duration: 0,
+        });
+        pendingSteps.delete(step.agent);
       }
     }
 
@@ -376,6 +764,7 @@ Return ONLY valid JSON (no markdown, no explanation):
       results,
       executionLog: stepExecutionLog,
       stepOrderMap,
+      failedAgents: Array.from(failedAgents),
     };
   }
 
@@ -456,7 +845,7 @@ STEP: ${step.description}
 AGENT: ${step.agent}
 
 OUTPUT:
-${typeof output === "string" ? output : JSON.stringify(output).slice(0, 1000)}
+${this.compactForPrompt(output, 1400)}
 
 VALIDATION CRITERIA:
 1. Is the output in expected format?
@@ -474,19 +863,10 @@ Return ONLY valid JSON:
 }`;
 
     try {
-      const model = genAI.getGenerativeModel({
-        model: "gemini-2.5-flash",
-        generationConfig: {
-          responseMimeType: "application/json",
-        },
+      const validation = await this.generateJsonWithFallback(validatorPrompt, {
+        purpose: "step output validation",
       });
-
-      const result = await model.generateContent(validatorPrompt);
-      const responseText = await result.response.text();
-
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const validation = JSON.parse(jsonMatch[0]);
+      if (validation) {
         return {
           pass: validation.score >= 60,
           ...validation,
@@ -508,20 +888,36 @@ Return ONLY valid JSON:
   /**
    * 🤖 RECOVERY AGENT - Attempt to fix failures
    */
-  async attemptRecovery(executionResults, validation, context, executionLog) {
+  async attemptRecovery(executionResults, validation, context, executionLog, plan) {
     console.log("🔧 Recovery Agent: Analyzing failure...");
 
     const issues = Array.isArray(validation?.issues) ? validation.issues : [];
-    const latestKey = Object.keys(executionResults.results).pop();
+    const latestKey = Object.keys(executionResults.results || {}).pop();
     const latestOutput = latestKey ? executionResults.results[latestKey] : null;
+    const failedSteps = (executionResults.executionLog || []).filter(
+      (s) => s.status === "FAILED" || s.status === "SKIPPED"
+    );
+    const lastFailedStep = failedSteps[failedSteps.length - 1] || null;
+    const criticalMissingStep = (plan?.steps || []).find(
+      (s) => s.critical && !executionResults.results?.[s.agent]
+    );
+    const targetAgent =
+      criticalMissingStep?.agent ||
+      lastFailedStep?.agent ||
+      latestKey ||
+      null;
+    const targetStep = (plan?.steps || []).find((s) => s.agent === targetAgent) || null;
 
     const recoveryPrompt = `An agent failed validation. Suggest recovery strategy.
 
 FAILED OUTPUT:
-${JSON.stringify(latestOutput || {}).slice(0, 500)}
+${this.compactForPrompt(latestOutput || {}, 700)}
 
 VALIDATION ISSUES:
 ${issues.join("\n") || "No issues provided"}
+
+TARGET AGENT:
+${targetAgent || "unknown"}
 
 AVAILABLE OPTIONS:
 1. Retry the agent with modified input
@@ -538,26 +934,61 @@ Return JSON:
 }`;
 
     try {
-      const model = genAI.getGenerativeModel({
-        model: "gemini-2.5-flash",
-        generationConfig: {
-          responseMimeType: "application/json",
-        },
+      const strategy = await this.generateJsonWithFallback(recoveryPrompt, {
+        purpose: "recovery strategy",
       });
 
-      const result = await model.generateContent(recoveryPrompt);
-      const responseText = await result.response.text();
+      if (!strategy) {
+        return { success: false };
+      }
 
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const strategy = JSON.parse(jsonMatch[0]);
-        console.log(`   Strategy: ${strategy.strategy}`);
+      console.log(`   Strategy: ${strategy.strategy}`);
+
+      if (strategy.strategy === "retry" && targetStep) {
+        const retriedStep = {
+          ...targetStep,
+          input: {
+            ...(targetStep.input || {}),
+            ...(strategy.modifiedInput || {}),
+          },
+        };
+
+        const retryResult = await this.executeStepWithRetries(
+          retriedStep,
+          context,
+          executionResults.results,
+          executionResults.stepOrderMap || {}
+        );
+
+        executionResults.executionLog.push(retryResult.log);
+        executionLog.push({
+          stage: "recovery",
+          status: retryResult.success ? "success" : "failed",
+          targetAgent: retriedStep.agent,
+          strategy: strategy.strategy,
+          reason: retryResult.success ? "Step re-run succeeded" : retryResult.log.reason,
+        });
+
         return {
-          success: true,
+          success: retryResult.success,
           strategy: strategy.strategy,
           results: executionResults.results,
         };
       }
+
+      executionLog.push({
+        stage: "recovery",
+        status: "skipped",
+        targetAgent,
+        strategy: strategy.strategy || "unknown",
+        reason: "Recovery strategy did not execute step re-run",
+      });
+
+      return {
+        success: strategy.strategy === "skip" || strategy.strategy === "fallback",
+        strategy: strategy.strategy,
+        results: executionResults.results,
+      };
     } catch (error) {
       console.warn("   Recovery failed:", error.message);
     }
@@ -570,8 +1001,8 @@ Return JSON:
    */
   async validateFinalOutput(results, goal, executionLog) {
     // Deterministic readiness gate for roadmap goals
-    if (goal.toLowerCase().includes("roadmap")) {
-      const modules = results?.["generate-roadmap"]?.modules;
+    if (this.isRoadmapGoal(goal)) {
+      const modules = this.getRoadmapModulesFromResults(results);
       if (Array.isArray(modules) && modules.length > 0) {
         return {
           pass: true,
@@ -581,6 +1012,14 @@ Return JSON:
           suggestions: [],
         };
       }
+
+      return {
+        pass: false,
+        canRecover: true,
+        score: 15,
+        reason: "Roadmap generation output is missing modules",
+        suggestions: ["Ensure generate-roadmap executes and returns a non-empty modules array"],
+      };
     }
 
     const resultsSnapshot = Object.keys(results).slice(-3); // Last 3 agent outputs
@@ -591,11 +1030,10 @@ GOAL: ${goal}
 COMPLETED AGENTS: ${resultsSnapshot.join(", ")}
 
 SAMPLE OUTPUTS:
-${JSON.stringify(
-  Object.fromEntries(
-    resultsSnapshot.map((k) => [k, JSON.stringify(results[k]).slice(0, 200)])
-  )
-).slice(0, 1000)}
+${this.compactForPrompt(
+  Object.fromEntries(resultsSnapshot.map((k) => [k, results[k]])),
+  1200
+)}
 
 READINESS CHECK:
 1. Do outputs align with goal?
@@ -613,19 +1051,11 @@ Return JSON:
 }`;
 
     try {
-      const model = genAI.getGenerativeModel({
-        model: "gemini-2.5-flash",
-        generationConfig: {
-          responseMimeType: "application/json",
-        },
+      const finalValidation = await this.generateJsonWithFallback(finalValidatorPrompt, {
+        purpose: "final output validation",
       });
-
-      const result = await model.generateContent(finalValidatorPrompt);
-      const responseText = await result.response.text();
-
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
+      if (finalValidation) {
+        return finalValidation;
       }
     } catch {
       // Fallback validation
@@ -644,8 +1074,8 @@ Return JSON:
    */
   async aggregateResults(results, goal, executionLog) {
     // Deterministic aggregation for roadmap goals
-    if (goal.toLowerCase().includes("roadmap")) {
-      const modules = results?.["generate-roadmap"]?.modules;
+    if (this.isRoadmapGoal(goal)) {
+      const modules = this.getRoadmapModulesFromResults(results);
       if (Array.isArray(modules) && modules.length > 0) {
         return {
           finalOutput: {
@@ -666,14 +1096,12 @@ Return JSON:
 GOAL: ${goal}
 
 AGENT OUTPUTS:
-${JSON.stringify(
+${this.compactForPrompt(
   Object.entries(results)
-    .slice(0, 5) // Limit for token count
-    .map(([agent, output]) => ({
-      agent,
-      output: typeof output === "string" ? output.slice(0, 300) : JSON.stringify(output).slice(0, 300),
-    }))
-).slice(0, 2000)}
+    .slice(0, 8)
+    .map(([agent, output]) => ({ agent, output })),
+  2400
+)}
 
 AGGREGATION TASK:
 1. Combine outputs intelligently
@@ -690,19 +1118,11 @@ Return JSON:
 }`;
 
     try {
-      const model = genAI.getGenerativeModel({
-        model: "gemini-2.5-flash",
-        generationConfig: {
-          responseMimeType: "application/json",
-        },
+      const aggregated = await this.generateJsonWithFallback(aggregatorPrompt, {
+        purpose: "result aggregation",
       });
-
-      const result = await model.generateContent(aggregatorPrompt);
-      const responseText = await result.response.text();
-
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
+      if (aggregated) {
+        return aggregated;
       }
     } catch (error) {
       console.warn("⚠️  Aggregator failed:", error.message);

@@ -1,7 +1,7 @@
 //chatbot.jsx
 import { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { FresherSideMenu } from "./FresherSideMenu";
+import FresherShellLayout from "./FresherShellLayout";
 import { db } from "../../firebase";
 import { collection, doc, getDoc, getDocs, setDoc } from "firebase/firestore";
 import { PaperAirplaneIcon, ArrowLeftIcon } from "@heroicons/react/24/solid";
@@ -15,7 +15,7 @@ export default function FresherChatbot() {
   const navigate = useNavigate();
   const location = useLocation();
   const state = location.state || {};
-  const chatEndRef = useRef(null);
+  const messagesScrollRef = useRef(null);
 
   const userId = state.userId || localStorage.getItem("userId");
   const companyId = state.companyId || localStorage.getItem("companyId");
@@ -364,8 +364,14 @@ useEffect(() => {
   };
 
   useEffect(() => {
-  chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-}, [messages, typing]);
+    const panel = messagesScrollRef.current;
+    if (!panel) return;
+
+    panel.scrollTo({
+      top: panel.scrollHeight,
+      behavior: "smooth",
+    });
+  }, [messages, typing]);
 
   if (licenseCheckLoading) {
     return <CompanyPageLoader message="Verifying chatbot access..." layout="page" />;
@@ -393,7 +399,16 @@ useEffect(() => {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#031C3A] text-white">
+    <FresherShellLayout
+      userId={userId}
+      companyId={companyId}
+      deptId={deptId}
+      companyName={companyName}
+      roadmapGenerated={true}
+      headerLabel="Training Assistant"
+      contentClassName="p-0 overflow-hidden"
+    >
+    <div className="h-[calc(100vh-72px)] lg:h-screen bg-[#031C3A] text-white overflow-hidden">
       
       {/* Add CSS for proper HTML rendering in chat */}
       <style>
@@ -484,20 +499,8 @@ useEffect(() => {
         `}
       </style>
 
-      {/* SIDEBAR */}
-     <div className="w-64 bg-[#021B36]/90 p-4 flex-none">
-  <FresherSideMenu
-    userId={userId}
-    companyId={companyId}
-    deptId={deptId}
-    companyName={companyName}
-    roadmapGenerated={true}
-  />
-</div>
-
-
       {/* MAIN */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="h-full min-h-0 flex flex-col overflow-hidden">
 
         {/* HEADER */}
         <div className="bg-gradient-to-r from-[#021B36]/95 via-[#031C3A]/90 to-[#021B36]/95 p-5 border-b border-[#00FFFF40] flex justify-between items-center flex-none">
@@ -557,10 +560,10 @@ useEffect(() => {
       
      
 {/* CHAT CONTAINER */}
-<div className="flex-1 flex flex-col overflow-hidden">
+<div className="flex-1 min-h-0 flex flex-col overflow-hidden">
 
   {/* CHAT MESSAGES - SCROLLABLE */}
-  <div className="flex-1 overflow-y-auto scroll-smooth px-8 py-8">
+  <div ref={messagesScrollRef} className="flex-1 min-h-0 overflow-y-auto scroll-smooth px-8 py-8">
    {messages.map((msg, i) => (
   <div key={i} className="mb-6">
     <div className={`flex items-start gap-3 ${msg.from === "user" ? "justify-end" : "justify-start"}`}>
@@ -607,9 +610,8 @@ useEffect(() => {
       </div>
     </div>
   </div>
-)}
+) }
 
-          <div ref={chatEndRef} />
         </div>
 
         {/* INPUT */}
@@ -698,5 +700,6 @@ useEffect(() => {
       </div>
     )}
     </div>
+    </FresherShellLayout>
   );
 }

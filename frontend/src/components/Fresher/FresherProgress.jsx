@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { doc, getDoc, collection, getDocs, updateDoc } from "firebase/firestore";
 import { db } from "../../firebase";
-import { FresherSideMenu } from "./FresherSideMenu";
+import FresherShellLayout from "./FresherShellLayout";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import TrainingLockedScreen from "./TrainingLockedScreen";
 import { getCompanyLicensePlan } from "../../services/companyLicense";
@@ -223,27 +223,36 @@ if (userData?.trainingLocked) {
 
 if (!userData) {
   return (
-    <div className="flex min-h-screen bg-[#031C3A] text-white">
-      <div className="w-64 bg-[#021B36]/90 p-4">
-        <FresherSideMenu userId={userId} companyId={companyId} deptId={deptId} companyName={companyName} roadmapGenerated={true} />
-      </div>
-      <div className="flex-1 p-10 flex items-center justify-center text-[#AFCBE3]">
+    <FresherShellLayout
+      userId={userId}
+      companyId={companyId}
+      deptId={deptId}
+      companyName={companyName}
+      roadmapGenerated={true}
+      headerLabel="Progress"
+    >
+      <div className="min-h-[60vh] flex items-center justify-center text-[#AFCBE3]">
         No data available.
       </div>
-    </div>
+    </FresherShellLayout>
   );
 }
 
 
   return (
-    <div className="relative flex min-h-screen bg-[#031C3A] text-white overflow-hidden">
+    <FresherShellLayout
+      userId={userId}
+      companyId={companyId}
+      deptId={deptId}
+      companyName={companyName}
+      roadmapGenerated={true}
+      headerLabel="Progress"
+      contentClassName="relative overflow-hidden"
+    >
+      <div>
       <div className="pointer-events-none absolute -top-24 -left-24 w-72 h-72 rounded-full bg-[#00FFFF]/10 blur-3xl" />
       <div className="pointer-events-none absolute top-1/3 -right-20 w-72 h-72 rounded-full bg-[#00FFC2]/10 blur-3xl" />
-      <div className="w-64 bg-[#021B36]/90 p-4">
-        <FresherSideMenu userId={userId} companyId={companyId} deptId={deptId} companyName={companyName} roadmapGenerated={true} />
-      </div>
-
-      <div className="flex-1 p-10 relative z-10">
+      <div className="relative z-10 p-4 md:p-10">
         <div className="mb-6 backdrop-blur-xl bg-[#021B36]/50 border border-[#00FFFF25] rounded-2xl p-6 shadow-[0_15px_50px_rgba(0,255,255,0.08)]">
           <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
             <div>
@@ -635,6 +644,7 @@ if (!userData) {
 
         <p className="text-center text-xs text-[#AFCBE3] mt-10">Powered by TrainMate</p>
       </div>
-    </div>
+      </div>
+    </FresherShellLayout>
   );
 }

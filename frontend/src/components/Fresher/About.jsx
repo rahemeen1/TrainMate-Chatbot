@@ -1,4 +1,4 @@
-import { FresherSideMenu } from "./FresherSideMenu";
+import FresherShellLayout from "./FresherShellLayout";
 import TrainingLockedScreen from "./TrainingLockedScreen";
 import { useState, useEffect } from "react";
 import { db } from "../../firebase";
@@ -146,20 +146,16 @@ export default function About() {
   }
 
   return (
-    <div className="flex min-h-screen bg-[#031C3A] text-white overflow-hidden">
-      {/* SIDEBAR */}
-      <div className="w-64 bg-[#021B36]/90 p-4 overflow-hidden border-r border-[#00FFFF]/20">
-        <FresherSideMenu
-          userId={userId}
-          companyId={companyId}
-          deptId={deptId}
-          companyName={companyName}
-          roadmapGenerated={roadmapGenerated}
-        />
-      </div>
-
-      {/* MAIN CONTENT */}
-      <div className="flex-1 overflow-y-auto">
+    <FresherShellLayout
+      userId={userId}
+      companyId={companyId}
+      deptId={deptId}
+      companyName={companyName}
+      roadmapGenerated={roadmapGenerated}
+      headerLabel="About"
+      contentClassName="p-0 sm:p-0 lg:p-0"
+    >
+      <div>
         <div className="min-h-screen px-6 py-8 md:px-10 md:py-10 lg:px-12 lg:py-12 bg-[#031C3A]">
           {/* Header */}
           <div className="mb-8 md:mb-10">
@@ -230,6 +226,6 @@ export default function About() {
           </div>
         </div>
       </div>
-    </div>
+    </FresherShellLayout>
     );
 }

@@ -13,8 +13,8 @@ import {
   serverTimestamp,
   deleteField,
 } from "firebase/firestore";
-import CompanySidebar from "../../components/CompanySpecific/CompanySidebar";
 import CompanyPageLoader from "../../components/CompanySpecific/CompanyPageLoader";
+import CompanyShellLayout from "../../components/CompanySpecific/CompanyShellLayout";
 import { DEFAULT_LICENSING_PLANS, getLicensingPlans } from "../../services/licensingConfig";
 
 const LICENSE_PLAN_OPTIONS = ["License Basic", "License Pro"];
@@ -198,21 +198,15 @@ export default function CompanyDetails() {
 
   if (loading) {
     return (
-      <div className="company-page-shell flex min-h-screen">
-        <div className="flex-shrink-0">
-          <CompanySidebar companyId={companyId} companyName={companyName} />
-        </div>
-        <div className="company-main-content flex-1 min-w-0 p-6 md:p-8">
+      <CompanyShellLayout companyId={companyId} companyName={companyName} headerLabel="Company Details">
           <CompanyPageLoader layout="content" message="Loading company details..." />
-        </div>
-      </div>
+      </CompanyShellLayout>
     );
   }
 
   return (
-    <div className="flex min-h-screen bg-[#031C3A] text-white">
-      <CompanySidebar companyId={companyId} companyName={companyName} />
-      <div className="flex-1 p-6 md:p-8">
+    <CompanyShellLayout companyId={companyId} companyName={companyName} headerLabel="Company Details" contentClassName="text-white">
+      <div>
         <div className="max-w-6xl mx-auto space-y-6">
           <div className="rounded-2xl border border-[#00FFFF30] bg-[#021B36]/80 shadow-lg px-6 py-5 md:px-8 md:py-6">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -435,6 +429,6 @@ export default function CompanyDetails() {
           </div>
         </div>
       )}
-    </div>
+    </CompanyShellLayout>
   );
 }

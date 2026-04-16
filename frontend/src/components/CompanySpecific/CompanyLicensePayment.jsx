@@ -16,7 +16,7 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import { db } from "../../firebase";
-import CompanySidebar from "./CompanySidebar";
+import CompanyShellLayout from "./CompanyShellLayout";
 import {
   DEFAULT_LICENSING_PLANS,
   getLicensingPlans,
@@ -196,10 +196,8 @@ export default function CompanyLicensePayment() {
   };
 
   return (
-    <div className="flex min-h-screen bg-[#031C3A] text-white">
-      <CompanySidebar companyId={companyId} companyName={companyName} />
-
-      <div className="flex-1 p-6 md:p-8">
+    <CompanyShellLayout companyId={companyId} companyName={companyName} headerLabel="License Payment" contentClassName="text-white">
+      <div>
         <div className="max-w-3xl mx-auto space-y-6">
           <div className="rounded-2xl bg-[#021B36]/80 border border-[#00FFFF30] p-6">
             <p className="text-xs text-[#8EB6D3] uppercase tracking-[0.14em]">Secure Upgrade</p>
@@ -296,6 +294,6 @@ export default function CompanyLicensePayment() {
           </div>
         </div>
       </div>
-    </div>
+    </CompanyShellLayout>
   );
 }

@@ -5,7 +5,7 @@ import { useParams, useLocation, useNavigate, Navigate } from "react-router-dom"
 import { db } from "../../firebase";
 import { collection, getDocs, doc, getDoc, updateDoc } from "firebase/firestore";
 import axios from "axios";
-import { FresherSideMenu } from "./FresherSideMenu";
+import FresherShellLayout from "./FresherShellLayout";
 import TrainingLockedScreen from "./TrainingLockedScreen";
 import { getCompanyLicensePlan } from "../../services/companyLicense";
 import CompanyPageLoader from "../CompanySpecific/CompanyPageLoader";
@@ -427,52 +427,55 @@ if (loading) return <CompanyPageLoader message="Loading roadmap modules..." />;
 
 if (!roadmap.length)
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-[#031C3A] text-white p-8">
-      <div className="text-[#00FFFF] mb-4">
-        <svg
-          className="w-20 h-20 mx-auto animate-bounce"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-          xmlns="http://www.w3.org/2000/svg"
+    <FresherShellLayout
+      userId={userId}
+      companyId={companyId}
+      deptId={deptId}
+      companyName={companyName}
+      roadmapGenerated={false}
+      headerLabel="Roadmap"
+      contentClassName="p-4 md:p-8"
+    >
+      <div className="min-h-[60vh] flex flex-col items-center justify-center text-white p-8">
+        <div className="text-[#00FFFF] mb-4">
+          <svg
+            className="w-20 h-20 mx-auto animate-bounce"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M9 17v-6h6v6m2 4H7a2 2 0 01-2-2V7a2 2 0 012-2h5l2 2h5a2 2 0 012 2v10a2 2 0 01-2 2z"
+            />
+          </svg>
+        </div>
+        <p className="text-lg font-semibold mb-2">No modules found for this fresher</p>
+        <p className="text-sm text-[#AFCBE3] mb-4">Roadmap will be generated once onboarding starts.</p>
+        <button
+          onClick={() => window.location.reload()}
+          className="px-5 py-2 bg-[#00FFFF] text-[#031C3A] rounded font-semibold hover:bg-white transition"
         >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M9 17v-6h6v6m2 4H7a2 2 0 01-2-2V7a2 2 0 012-2h5l2 2h5a2 2 0 012 2v10a2 2 0 01-2 2z"
-          />
-        </svg>
+          Retry / Refresh
+        </button>
       </div>
-      <p className="text-lg font-semibold mb-2">No modules found for this fresher</p>
-      <p className="text-sm text-[#AFCBE3] mb-4">Roadmap will be generated once onboarding starts.</p>
-      <button
-        onClick={() => window.location.reload()}
-        className="px-5 py-2 bg-[#00FFFF] text-[#031C3A] rounded font-semibold hover:bg-white transition"
-      >
-        Retry / Refresh
-      </button>
-    </div>
+    </FresherShellLayout>
   );
   const unlockedModules = getUnlockedModules();
   return (
-    <div className="min-h-screen bg-[#031C3A] text-white flex">
-      {/* Sidebar */}
-<div className="w-64 flex-shrink-0 bg-[#021B36]/90">
-  <div className="sticky top-0 h-screen p-4 overflow-hidden">
-    <FresherSideMenu
+    <FresherShellLayout
       userId={userId}
       companyId={companyId}
       deptId={deptId}
       companyName={companyName}
       roadmapGenerated={true}
-    />
-  </div>
-</div>
-
-
-      {/* Modules */}
-      <div className="flex-1 p-8 space-y-6">
+      headerLabel="Roadmap"
+      contentClassName="p-4 md:p-8"
+    >
+      <div className="space-y-6">
         <h2 className="text-3xl font-bold text-[#00FFFF] mb-2">Your Personalized Roadmap</h2>
         {roadmapGeneratedAt && (
           <p className="text-sm text-[#AFCBE3] mb-6">
@@ -681,6 +684,6 @@ if (!roadmap.length)
     
 
       </div>
-    </div>
+    </FresherShellLayout>
   );
 }

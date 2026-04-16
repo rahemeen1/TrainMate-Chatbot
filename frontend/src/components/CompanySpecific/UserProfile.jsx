@@ -3,8 +3,8 @@ import { useEffect, useState } from "react";
 import { useLocation, useParams } from "react-router-dom";
 import { doc, getDoc, collection, getDocs } from "firebase/firestore";
 import { db } from "../../firebase"; 
-import CompanySidebar from "./CompanySidebar"; 
 import CompanyPageLoader from "./CompanyPageLoader";
+import CompanyShellLayout from "./CompanyShellLayout";
 export default function UserProfile() {
   const { companyId, deptId, userId } = useParams();
   const location = useLocation();
@@ -339,28 +339,23 @@ export default function UserProfile() {
 
   if (loading) {
   return (
-    <div className="company-page-shell flex min-h-screen">
-      <div className="flex-shrink-0">
-        <CompanySidebar companyId={companyId} />
-      </div>
-      <div className="company-main-content flex-1 min-w-0 md:p-8 lg:p-10">
+    <CompanyShellLayout companyId={companyId} headerLabel="User Profile">
         <CompanyPageLoader layout="content" message="Loading User Profile..." />
-      </div>
-    </div>
+    </CompanyShellLayout>
   );
 }
 if (!user) {
   return (
-    <div className="flex min-h-screen bg-[#031C3A] text-white items-center justify-center">
-      <p className="text-2xl font-semibold">No user found</p>
-    </div>
+    <CompanyShellLayout companyId={companyId} headerLabel="User Profile" contentClassName="text-white">
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <p className="text-2xl font-semibold">No user found</p>
+      </div>
+    </CompanyShellLayout>
   );
 } 
   return (
-    <div className="company-page-shell flex min-h-screen">
-      <CompanySidebar companyId={companyId} companyName={user.companyName} />
-
-      <div className="company-main-content flex-1 md:p-8 lg:p-10">
+    <CompanyShellLayout companyId={companyId} companyName={user.companyName} headerLabel="User Profile" contentClassName="text-white">
+      <div>
         <div className="company-container space-y-6">
           <style>{`
             @keyframes profileFloatIn {
@@ -747,7 +742,7 @@ if (!user) {
           </section>
         </div>
       </div>
-    </div>
+    </CompanyShellLayout>
   );
 }
 

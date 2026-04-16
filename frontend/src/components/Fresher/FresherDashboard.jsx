@@ -15,7 +15,7 @@ import {
 
 import { auth, db } from "../../firebase";
 import OnboardingPage from "./OnboardingPage";
-import { FresherSideMenu } from "./FresherSideMenu";
+import FresherShellLayout from "./FresherShellLayout";
 
 // Custom scrollbar styles
 const scrollbarStyles = `
@@ -349,23 +349,16 @@ if (loading) {
   return (
     <>
       <style>{scrollbarStyles}</style>
-      <div className="flex h-screen bg-[#031C3A] text-white overflow-hidden">
-        {/* SIDE MENU */}
-        <div className={`w-64 bg-[#021B36]/90 p-4 overflow-hidden custom-scrollbar ${isTrainingLocked ? "opacity-50" : ""}`}>
-          <div>
-            <FresherSideMenu
-              userId={userId}
-              companyId={companyId}
-              deptId={deptId}
-              companyName={companyName}
-              roadmapGenerated={roadmapGenerated}
-              isTrainingLocked={isTrainingLocked}
-            />
-          </div>
-        </div>
-
-        {/* MAIN */}
-        <div className="flex-1 p-10 overflow-y-auto custom-scrollbar">
+      <FresherShellLayout
+        userId={userId}
+        companyId={companyId}
+        deptId={deptId}
+        companyName={companyName}
+        roadmapGenerated={roadmapGenerated}
+        isTrainingLocked={isTrainingLocked}
+        headerLabel="Dashboard"
+      >
+        <div className="p-6 md:p-10">
         {/* TRAINING LOCKED MESSAGE */}
         {isTrainingLocked && (
           <div className="bg-red-500/20 border-l-4 border-red-500 px-4 py-3 mb-6 rounded flex items-center gap-3">
@@ -519,7 +512,7 @@ if (loading) {
           Powered by TrainMate
         </p>
         </div>
-      </div>
+      </FresherShellLayout>
     </>
   );
 }

@@ -7,8 +7,8 @@ import {
   query,
   orderBy,
 } from "firebase/firestore";
-import CompanySidebar from "./CompanySidebar";
 import CompanyPageLoader from "./CompanyPageLoader";
+import CompanyShellLayout from "./CompanyShellLayout";
 
 export default function ProgressDetails() {
   const { companyId, deptName: encodedDeptName, userId } = useParams();
@@ -74,14 +74,9 @@ export default function ProgressDetails() {
 
   if (loading) {
     return (
-      <div className="company-page-shell flex min-h-screen">
-        <div className="flex-shrink-0">
-          <CompanySidebar companyId={companyId} />
-        </div>
-        <div className="company-main-content flex-1 min-w-0 p-10">
+      <CompanyShellLayout companyId={companyId} headerLabel="Progress">
           <CompanyPageLoader layout="content" message="Loading roadmap progress..." />
-        </div>
-      </div>
+      </CompanyShellLayout>
     );
   }
 
@@ -90,12 +85,8 @@ export default function ProgressDetails() {
     : "N/A";
 
   return (
-    <div className="flex min-h-screen bg-[#031C3A] text-white">
-      {/* Sidebar */}
-      <CompanySidebar companyId={companyId} />
-
-      {/* Main Content */}
-      <div className="flex-1 p-10">
+    <CompanyShellLayout companyId={companyId} headerLabel="Progress" contentClassName="text-white">
+      <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="flex items-start justify-between mb-2">
           <div>
@@ -195,6 +186,6 @@ export default function ProgressDetails() {
           )}
         </div>
       </div>
-    </div>
+    </CompanyShellLayout>
   );
 }
