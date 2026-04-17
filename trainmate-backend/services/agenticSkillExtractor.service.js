@@ -94,7 +94,7 @@ export const extractSkillsAgentically = async ({
         })
       : [];
 
-    const cvSkills = normalizeSkills([
+    const cvSkillsRaw = normalizeSkills([
       ...structuredCvSkills,
       ...cvSkillsFromText,
       ...((shouldRunCv && (cvDecision?.strategy === "fallback_only" || (!hasCv && !hasStructuredCvSignal)))
@@ -131,25 +131,48 @@ export const extractSkillsAgentically = async ({
       companySkills = buildTopicTemplateSkills(trainingOn);
     }
 
-    const cvSet = new Set(cvSkills.map((skill) => skill.toLowerCase()));
-    const skillGap = companySkills.filter((skill) => !cvSet.has(skill.toLowerCase()));
+    const cvSkills = dedupeSkillsSemantically(cvSkillsRaw);
+    const companySkillsFinal = dedupeSkillsSemantically(companySkills);
+
+    const cvFreshness = estimateCvFreshness(cvText, structuredCv);
+    const cvSkillProfiles = buildSkillProfiles(cvSkillsRaw, {
+      sourceType: "cv",
+      strategy: cvDecision?.strategy || "unknown",
+      hasPrimarySource: hasCv,
+      trainingOn,
+      freshness: cvFreshness,
+    });
+
+    const companySkillProfiles = buildSkillProfiles(companySkillsFinal, {
+      sourceType: "company",
+      strategy: companyDecision?.strategy || "unknown",
+      hasPrimarySource: hasCompanyDocs,
+      trainingOn,
+      freshness: 1,
+    });
+
+    const cvSet = new Set(cvSkills.map((skill) => getSemanticSkillKey(skill)));
+    const skillGap = companySkillsFinal.filter((skill) => !cvSet.has(getSemanticSkillKey(skill)));
     const criticalGaps = skillGap.slice(0, Math.max(3, Math.ceil(skillGap.length / 3)));
 
     console.log(`${logTag} ✅ CV Skills extracted:`, cvSkills);
-    console.log(`${logTag} ✅ Company Skills extracted:`, companySkills);
+    console.log(`${logTag} ✅ Company Skills extracted:`, companySkillsFinal);
     console.log(`${logTag} ✅ Skill gaps identified:`, skillGap);
     console.log(`${logTag} 🔴 Critical gaps:`, criticalGaps);
     console.log(`${logTag} ================ AGENTIC SKILL EXTRACTION END ==================\n`);
 
     return {
       cvSkills,
-      companySkills,
+      companySkills: companySkillsFinal,
       skillGap,
       criticalGaps,
+      cvSkillProfiles,
+      companySkillProfiles,
       extractionDetails: {
         cvAnalysis: hasCv ? "Extracted from CV context" : "Derived from available topic context",
         companyAnalysis: hasCompanyDocs ? "Extracted from company documentation" : "Derived from agentic topic inference",
         gapPrioritization: `${criticalGaps.length} critical gaps identified`,
+        cvFreshness,
       },
     };
   } catch (error) {
@@ -164,10 +187,13 @@ function buildFallbackResult(trainingOn, reason) {
     companySkills: [trainingOn],
     skillGap: [trainingOn],
     criticalGaps: [trainingOn],
+    cvSkillProfiles: [],
+    companySkillProfiles: [],
     extractionDetails: {
       cvAnalysis: reason,
       companyAnalysis: reason,
       gapPrioritization: "Fallback gap analysis",
+      cvFreshness: 0.5,
     },
   };
 }
@@ -630,6 +656,239 @@ function isLikelySkillCandidate(value) {
   if (words > 6) return false;
 
   return true;
+}
+
+function clamp(value, min = 0, max = 1) {
+  return Math.min(max, Math.max(min, Number(value) || 0));
+}
+
+function getSemanticSkillKey(value) {
+  const raw = String(value || "").toLowerCase().trim();
+  if (!raw) return "";
+
+  const normalized = raw
+    .replace(/[()]/g, " ")
+    .replace(/[^a-z0-9+#.\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const rules = [
+    [/\b(ms|microsoft)\s*excel\b|\bexcel\b/, "microsoft excel"],
+    [/\bquick\s*books\b|\bquickbooks\b/, "quickbooks"],
+    [/\bpower\s*bi\b/, "power bi"],
+    [/\btableau\b/, "tableau"],
+    [/\bbook\s*keeping\b|\bbookkeeping\b/, "bookkeeping"],
+    [/\bfinancial\s*report(ing)?\b/, "financial reporting"],
+    [/\bbank\s*recon(ciliation)?\b/, "bank reconciliation"],
+    [/\bgaap\b/, "gaap"],
+    [/\bifrs\b/, "ifrs"],
+    [/\bgst\b/, "gst"],
+    [/\bvat\b/, "vat"],
+    [/\bhris\b/, "hris"],
+    [/\bats\b/, "ats"],
+    [/\bobject\s*oriented\s*programming\b|\boop\b/, "oop"],
+    [/\bdata\s*structures\s*and\s*algorithms\b|\bdsa\b/, "data structures and algorithms"],
+    [/\buser\s*experience\s*design\b|\bux\s*design\b/, "ux design"],
+    [/\brest\s*api(s)?\b|\brestful\s*api(s)?\b/, "rest api"],
+    [/\bnode\s*js\b/, "node.js"],
+    [/\breact\s*js\b|\breact\.js\b|\breact\b/, "react"],
+  ];
+
+  for (const [pattern, target] of rules) {
+    if (pattern.test(normalized)) return target;
+  }
+
+  return normalized;
+}
+
+function dedupeSkillsSemantically(skills = []) {
+  const map = new Map();
+
+  for (const skill of normalizeSkills(skills)) {
+    const key = getSemanticSkillKey(skill);
+    if (!key) continue;
+
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, skill);
+      continue;
+    }
+
+    // Prefer concise but descriptive labels as canonical display.
+    if (skill.length < existing.length && skill.length >= 3) {
+      map.set(key, skill);
+    }
+  }
+
+  return Array.from(map.values());
+}
+
+function estimateCvFreshness(cvText = "", structuredCv = null) {
+  const currentYear = new Date().getFullYear();
+  const textYears = String(cvText || "").match(/\b(19|20)\d{2}\b/g) || [];
+  const roleDurations = Array.isArray(structuredCv?.roles)
+    ? structuredCv.roles.map((r) => String(r?.duration || ""))
+    : [];
+
+  const durationYears = roleDurations
+    .join(" ")
+    .match(/\b(19|20)\d{2}\b/g) || [];
+
+  const allYears = [...textYears, ...durationYears]
+    .map((y) => Number(y))
+    .filter((y) => Number.isFinite(y) && y >= 1990 && y <= currentYear + 1);
+
+  if (allYears.length === 0) return 0.7;
+
+  const latestYear = Math.max(...allYears);
+  const age = currentYear - latestYear;
+
+  if (age <= 1) return 1;
+  if (age <= 3) return 0.85;
+  if (age <= 5) return 0.7;
+  return 0.55;
+}
+
+function getConfidenceCalibrationConfig() {
+  const read = (name, fallback) => {
+    const value = Number(process.env[name]);
+    return Number.isFinite(value) ? value : fallback;
+  };
+
+  return {
+    cvSourceTrust: clamp(read("CONF_TRUST_CV", 0.82)),
+    companyDocsTrust: clamp(read("CONF_TRUST_COMPANY_DOCS", 0.95)),
+    topicInferenceTrust: clamp(read("CONF_TRUST_TOPIC_INFERENCE", 0.62)),
+    cvFreshnessInfluence: clamp(read("CONF_CV_FRESHNESS_INFLUENCE", 0.35)),
+    cvBaseReliability: clamp(read("CONF_CV_BASE_RELIABILITY", 0.55)),
+    fallbackTrust: clamp(read("CONF_TRUST_FALLBACK", 0.58)),
+  };
+}
+
+function calibrateConfidence({
+  rawConfidence = 0,
+  sourceType = "unknown",
+  strategy = "unknown",
+  freshness = 1,
+  hasPrimarySource = false,
+}) {
+  const cfg = getConfidenceCalibrationConfig();
+  const raw = clamp(rawConfidence);
+  const fresh = clamp(freshness);
+
+  let sourceTrust = cfg.fallbackTrust;
+  let reliability = 1;
+
+  if (sourceType === "cv") {
+    sourceTrust = cfg.cvSourceTrust;
+    reliability = cfg.cvBaseReliability + fresh * cfg.cvFreshnessInfluence;
+    if (!hasPrimarySource) {
+      reliability *= 0.85;
+    }
+  } else if (sourceType === "company") {
+    if (strategy === "company_docs") {
+      sourceTrust = cfg.companyDocsTrust;
+      reliability = hasPrimarySource ? 1 : 0.9;
+    } else if (strategy === "topic_inference") {
+      sourceTrust = cfg.topicInferenceTrust;
+      reliability = 0.9;
+    } else {
+      sourceTrust = cfg.fallbackTrust;
+      reliability = 0.92;
+    }
+  }
+
+  const calibratedConfidence = clamp(raw * sourceTrust * reliability);
+
+  return {
+    calibratedConfidence,
+    calibrationMeta: {
+      sourceTrust: Number(sourceTrust.toFixed(2)),
+      reliability: Number(clamp(reliability).toFixed(2)),
+      rawConfidence: Number(raw.toFixed(2)),
+    },
+  };
+}
+
+function buildSkillProfiles(skills = [], options = {}) {
+  const normalized = normalizeSkills(skills);
+  const map = new Map();
+
+  for (const skill of normalized) {
+    const key = getSemanticSkillKey(skill);
+    if (!key) continue;
+
+    if (!map.has(key)) {
+      map.set(key, {
+        canonicalSkill: key,
+        skill,
+        frequency: 0,
+      });
+    }
+
+    const item = map.get(key);
+    item.frequency += 1;
+    if (skill.length < item.skill.length) {
+      item.skill = skill;
+    }
+  }
+
+  const strategy = String(options.strategy || "unknown");
+  const sourceType = String(options.sourceType || "unknown");
+  const freshness = clamp(options.freshness ?? 0.75);
+  const hasPrimarySource = Boolean(options.hasPrimarySource);
+  const strategyBase =
+    strategy === "hybrid"
+      ? 0.78
+      : strategy === "single_source"
+      ? 0.68
+      : strategy === "company_docs"
+      ? 0.8
+      : strategy === "topic_inference"
+      ? 0.58
+      : 0.55;
+
+  return Array.from(map.values()).map((item) => {
+    const frequencyBoost = Math.min(0.18, item.frequency * 0.06);
+    const sourceBoost = hasPrimarySource ? 0.06 : 0;
+    const freshnessBoost = sourceType === "cv" ? freshness * 0.12 : 0.08;
+    const rawConfidence = clamp(strategyBase + frequencyBoost + sourceBoost + freshnessBoost);
+    const explorationWeight = clamp(
+      sourceType === "company"
+        ? strategy === "topic_inference"
+          ? 0.86
+          : strategy === "company_docs"
+          ? 0.48
+          : 0.42
+        : sourceType === "cv"
+        ? strategy === "hybrid"
+          ? 0.46
+          : 0.3
+        : 0.38
+    );
+    const { calibratedConfidence, calibrationMeta } = calibrateConfidence({
+      rawConfidence,
+      sourceType,
+      strategy,
+      freshness,
+      hasPrimarySource,
+    });
+
+    return {
+      skill: item.skill,
+      canonicalSkill: item.canonicalSkill,
+      frequency: item.frequency,
+      confidence: Number(calibratedConfidence.toFixed(2)),
+      rawConfidence: Number(rawConfidence.toFixed(2)),
+      calibratedConfidence: Number(calibratedConfidence.toFixed(2)),
+      calibrationMeta,
+      explorationWeight: Number(explorationWeight.toFixed(2)),
+      sourceType,
+      strategy,
+      freshness: sourceType === "cv" ? Number(freshness.toFixed(2)) : 1,
+      conflictSignals: sourceType === "cv" && freshness < 0.7 ? ["cv_recency_risk"] : [],
+    };
+  });
 }
 
 function buildTopicSource(trainingOn) {

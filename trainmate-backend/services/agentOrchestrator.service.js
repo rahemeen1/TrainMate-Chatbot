@@ -30,6 +30,345 @@ function initializeLLMs() {
   initialized = true;
 }
 
+function clamp01(value) {
+  return Math.min(1, Math.max(0, Number(value) || 0));
+}
+
+function normalizeGapSkillKey(skill) {
+  return String(skill || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9+#.\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tokenizeSkill(skill) {
+  return normalizeGapSkillKey(skill)
+    .split(" ")
+    .filter((token) => token.length >= 3);
+}
+
+function jaccardSimilarity(aSet, bSet) {
+  const a = new Set(aSet);
+  const b = new Set(bSet);
+  if (a.size === 0 && b.size === 0) return 0;
+
+  let intersection = 0;
+  for (const item of a) {
+    if (b.has(item)) intersection += 1;
+  }
+
+  const union = a.size + b.size - intersection;
+  return union === 0 ? 0 : intersection / union;
+}
+
+function quantile(values = [], q = 0.5) {
+  const arr = [...values]
+    .map((v) => Number(v))
+    .filter((v) => Number.isFinite(v))
+    .sort((a, b) => a - b);
+
+  if (arr.length === 0) return 0;
+  if (arr.length === 1) return arr[0];
+
+  const pos = (arr.length - 1) * Math.min(1, Math.max(0, q));
+  const base = Math.floor(pos);
+  const rest = pos - base;
+
+  if (arr[base + 1] !== undefined) {
+    return arr[base] + rest * (arr[base + 1] - arr[base]);
+  }
+  return arr[base];
+}
+
+function isConfidenceDebugEnabled() {
+  const value = String(process.env.DEBUG_CONFIDENCE_SCORING || "").toLowerCase();
+  return value === "1" || value === "true" || value === "yes";
+}
+
+function confidenceDebugLog(...args) {
+  if (!isConfidenceDebugEnabled()) return;
+  console.log("[CONF-SCORE]", ...args);
+}
+
+function getGapWeightConfig() {
+  const defaults = {
+    confidenceGap: 0.45,
+    roleCriticality: 0.25,
+    frequencyWeight: 0.2,
+    dependencyWeight: 0.1,
+    recencyBoost: 0.08,
+  };
+
+  const read = (name, fallback) => {
+    const raw = Number(process.env[name]);
+    return Number.isFinite(raw) ? raw : fallback;
+  };
+
+  const cfg = {
+    confidenceGap: read("GAP_WEIGHT_CONFIDENCE", defaults.confidenceGap),
+    roleCriticality: read("GAP_WEIGHT_CRITICALITY", defaults.roleCriticality),
+    frequencyWeight: read("GAP_WEIGHT_FREQUENCY", defaults.frequencyWeight),
+    dependencyWeight: read("GAP_WEIGHT_DEPENDENCY", defaults.dependencyWeight),
+    recencyBoost: read("GAP_WEIGHT_RECENCY", defaults.recencyBoost),
+  };
+
+  const total =
+    cfg.confidenceGap +
+    cfg.roleCriticality +
+    cfg.frequencyWeight +
+    cfg.dependencyWeight +
+    cfg.recencyBoost;
+
+  if (total <= 0) return defaults;
+
+  const normalized = {
+    confidenceGap: cfg.confidenceGap / total,
+    roleCriticality: cfg.roleCriticality / total,
+    frequencyWeight: cfg.frequencyWeight / total,
+    dependencyWeight: cfg.dependencyWeight / total,
+    recencyBoost: cfg.recencyBoost / total,
+  };
+
+  confidenceDebugLog("Gap weight config", {
+    raw: cfg,
+    normalized,
+  });
+
+  return normalized;
+}
+
+function buildDependencyWeights(companyProfiles = []) {
+  const tokenMap = new Map();
+
+  for (const profile of companyProfiles) {
+    const key = String(profile?.canonicalSkill || normalizeGapSkillKey(profile?.skill));
+    if (!key) continue;
+    tokenMap.set(key, tokenizeSkill(profile?.skill || key));
+  }
+
+  const dependencyMap = new Map();
+  const keys = Array.from(tokenMap.keys());
+
+  for (const key of keys) {
+    const sourceTokens = tokenMap.get(key) || [];
+    let sumSimilarity = 0;
+    let peers = 0;
+
+    for (const otherKey of keys) {
+      if (otherKey === key) continue;
+      const sim = jaccardSimilarity(sourceTokens, tokenMap.get(otherKey) || []);
+      if (sim > 0) {
+        sumSimilarity += sim;
+        peers += 1;
+      }
+    }
+
+    const avgSimilarity = peers > 0 ? sumSimilarity / peers : 0;
+    dependencyMap.set(key, clamp01(avgSimilarity * 2));
+  }
+
+  return dependencyMap;
+}
+
+function buildWeightedGapAnalysis({ cvProfiles = [], companyProfiles = [], trainingOn = "" }) {
+  const cvMap = new Map();
+  const companyMap = new Map();
+
+  confidenceDebugLog("Starting weighted gap analysis", {
+    trainingOn,
+    cvProfiles: Array.isArray(cvProfiles) ? cvProfiles.length : 0,
+    companyProfiles: Array.isArray(companyProfiles) ? companyProfiles.length : 0,
+  });
+
+  for (const profile of Array.isArray(cvProfiles) ? cvProfiles : []) {
+    const key = String(profile?.canonicalSkill || normalizeGapSkillKey(profile?.skill));
+    if (!key) continue;
+
+    const prev = cvMap.get(key);
+    const nextConf = Number(profile?.calibratedConfidence ?? profile?.confidence ?? 0);
+    const prevConf = Number(prev?.calibratedConfidence ?? prev?.confidence ?? 0);
+    if (!prev || nextConf > prevConf) {
+      cvMap.set(key, profile);
+    }
+  }
+
+  for (const profile of Array.isArray(companyProfiles) ? companyProfiles : []) {
+    const key = String(profile?.canonicalSkill || normalizeGapSkillKey(profile?.skill));
+    if (!key) continue;
+
+    const prev = companyMap.get(key);
+    const prevFreq = Number(prev?.frequency || 0);
+    const nextFreq = Number(profile?.frequency || 0);
+    if (!prev || nextFreq > prevFreq) {
+      companyMap.set(key, profile);
+    }
+  }
+
+  const prioritized = [];
+  const dependencyWeights = buildDependencyWeights(companyProfiles);
+  const config = getGapWeightConfig();
+
+  const companyFreqValues = Array.from(companyMap.values()).map((p) => Number(p?.frequency || 1));
+  const maxCompanyFrequency = Math.max(1, ...companyFreqValues);
+  const medianCompanyConfidence = quantile(
+    Array.from(companyMap.values()).map((p) => Number(p?.calibratedConfidence ?? p?.confidence ?? 0.6)),
+    0.5
+  );
+
+  confidenceDebugLog("Company profile aggregates", {
+    uniqueCompanySkills: companyMap.size,
+    uniqueCvSkills: cvMap.size,
+    maxCompanyFrequency,
+    medianCompanyConfidence: Number(medianCompanyConfidence.toFixed(3)),
+  });
+
+  for (const [key, companyProfile] of companyMap.entries()) {
+    const cvProfile = cvMap.get(key);
+    const companyConfidence = clamp01(companyProfile?.calibratedConfidence ?? companyProfile?.confidence ?? 0.7);
+    const cvConfidence = clamp01(cvProfile?.calibratedConfidence ?? cvProfile?.confidence ?? 0);
+    const confidenceGap = clamp01(companyConfidence - cvConfidence);
+
+    const frequency = Number(companyProfile?.frequency || 1);
+    const frequencyWeight = clamp01(frequency / maxCompanyFrequency);
+    const criticalityWeight = clamp01(
+      companyConfidence * 0.7 +
+      (companyConfidence >= medianCompanyConfidence ? 0.3 : 0.15)
+    );
+    const dependencyWeight = dependencyWeights.get(key) ?? 0;
+
+    const hasRecencyRisk = Array.isArray(cvProfile?.conflictSignals)
+      ? cvProfile.conflictSignals.includes("cv_recency_risk")
+      : false;
+    const recencyPenalty = hasRecencyRisk && companyConfidence >= 0.7 ? 1 : 0;
+
+    const score = clamp01(
+      confidenceGap * config.confidenceGap +
+      criticalityWeight * config.roleCriticality +
+      frequencyWeight * config.frequencyWeight +
+      dependencyWeight * config.dependencyWeight +
+      recencyPenalty * config.recencyBoost
+    );
+
+    const isMissing = !cvProfile;
+    const shouldInclude = isMissing || confidenceGap > 0.12;
+    confidenceDebugLog("Skill scoring", {
+      skill: companyProfile?.skill || key,
+      canonicalSkill: key,
+      strategy: companyProfile?.strategy || "unknown",
+      sourceType: companyProfile?.sourceType || "unknown",
+      rawCompanyConfidence: Number(companyProfile?.confidence ?? 0),
+      calibratedCompanyConfidence: Number(companyProfile?.calibratedConfidence ?? companyProfile?.confidence ?? 0),
+      rawCvConfidence: Number(cvProfile?.confidence ?? 0),
+      calibratedCvConfidence: Number(cvProfile?.calibratedConfidence ?? cvProfile?.confidence ?? 0),
+      confidenceGap: Number(confidenceGap.toFixed(3)),
+      frequencyWeight: Number(frequencyWeight.toFixed(3)),
+      criticalityWeight: Number(criticalityWeight.toFixed(3)),
+      dependencyWeight: Number(dependencyWeight.toFixed(3)),
+      recencyPenalty,
+      weightedScore: Number(score.toFixed(3)),
+      includeInGap: shouldInclude,
+      includeReason: isMissing ? "missing-in-cv" : "confidence-gap-threshold",
+    });
+
+    if (!shouldInclude) continue;
+
+    prioritized.push({
+      skill: companyProfile?.skill || key,
+      canonicalSkill: key,
+      score: Number(score.toFixed(2)),
+      roleCriticality: Number(criticalityWeight.toFixed(2)),
+      frequencyWeight: Number(frequencyWeight.toFixed(2)),
+      dependencyWeight: Number(dependencyWeight.toFixed(2)),
+      companyConfidence: Number(companyConfidence.toFixed(2)),
+      cvConfidence: Number(cvConfidence.toFixed(2)),
+      confidenceGap: Number(confidenceGap.toFixed(2)),
+      status: isMissing ? "missing" : "upgrade-needed",
+      hasRecencyRisk,
+    });
+  }
+
+  prioritized.sort((a, b) => b.score - a.score);
+
+  const scores = prioritized.map((item) => item.score);
+  const mustHaveThreshold = quantile(scores, 0.67);
+  const goodToHaveThreshold = quantile(scores, 0.34);
+
+  for (const item of prioritized) {
+    if (item.score >= mustHaveThreshold) {
+      item.bucket = "must-have";
+    } else if (item.score >= goodToHaveThreshold) {
+      item.bucket = "good-to-have";
+    } else {
+      item.bucket = "optional";
+    }
+  }
+
+  const buckets = {
+    mustHave: prioritized.filter((item) => item.bucket === "must-have").map((item) => item.skill),
+    goodToHave: prioritized.filter((item) => item.bucket === "good-to-have").map((item) => item.skill),
+    optional: prioritized.filter((item) => item.bucket === "optional").map((item) => item.skill),
+  };
+
+  const explorationCandidates = Array.from(companyMap.values())
+    .map((profile) => {
+      const explorationWeight = clamp01(profile?.explorationWeight ?? 0);
+      const confidence = clamp01(profile?.calibratedConfidence ?? profile?.confidence ?? 0);
+      const isTopicInference = String(profile?.strategy || "").toLowerCase() === "topic_inference";
+      const missingInCv = !cvMap.has(String(profile?.canonicalSkill || normalizeGapSkillKey(profile?.skill)));
+
+      const retrievalPriority = clamp01(
+        explorationWeight * 0.65 +
+        (isTopicInference ? 0.25 : 0.1) +
+        (missingInCv ? 0.1 : 0) -
+        confidence * 0.15
+      );
+
+      return {
+        skill: profile?.skill,
+        canonicalSkill: profile?.canonicalSkill,
+        sourceType: profile?.sourceType || "unknown",
+        strategy: profile?.strategy || "unknown",
+        confidence: Number(confidence.toFixed(2)),
+        explorationWeight: Number(explorationWeight.toFixed(2)),
+        retrievalPriority: Number(retrievalPriority.toFixed(2)),
+        isTopicInference,
+        missingInCv,
+      };
+    })
+    .filter((item) => item.retrievalPriority >= 0.35 || item.isTopicInference)
+    .sort((a, b) => b.retrievalPriority - a.retrievalPriority)
+    .slice(0, 12);
+
+  confidenceDebugLog("Gap buckets summary", {
+    totalPrioritized: prioritized.length,
+    mustHave: buckets.mustHave.length,
+    goodToHave: buckets.goodToHave.length,
+    optional: buckets.optional.length,
+    topPrioritized: prioritized.slice(0, 5).map((item) => ({
+      skill: item.skill,
+      score: item.score,
+      bucket: item.bucket,
+      confidenceGap: item.confidenceGap,
+    })),
+    topExploration: explorationCandidates.slice(0, 5).map((item) => ({
+      skill: item.skill,
+      retrievalPriority: item.retrievalPriority,
+      strategy: item.strategy,
+      explorationWeight: item.explorationWeight,
+      confidence: item.confidence,
+    })),
+  });
+
+  return {
+    prioritized,
+    buckets,
+    skillGap: prioritized.map((item) => item.skill),
+    criticalGaps: buckets.mustHave.slice(0, 10),
+    explorationCandidates,
+  };
+}
+
 /**
  * AGENT ORCHESTRATOR SERVICE
  * 
@@ -61,7 +400,7 @@ export class AgentOrchestrator {
       console.log('    🤖 CV Skills Agent: Analyzing CV...');
       const { cvText, expertise, trainingOn, structuredCv } = context;
 
-      const { cvSkills, extractionDetails } = await extractSkillsAgentically({
+      const { cvSkills, cvSkillProfiles, extractionDetails } = await extractSkillsAgentically({
         cvText,
         companyDocsText: '', // Will be filled after company doc fetching
         expertise,
@@ -72,6 +411,7 @@ export class AgentOrchestrator {
 
       return {
         cvSkills,
+        cvSkillProfiles: Array.isArray(cvSkillProfiles) ? cvSkillProfiles : [],
         extractionDetails,
         agentName: 'CV Skills Agent'
       };
@@ -81,7 +421,7 @@ export class AgentOrchestrator {
       console.log('    🤖 Company Skills Agent: Analyzing company docs...');
       const { companyDocsText, expertise, trainingOn } = context;
 
-      const { companySkills, extractionDetails } = await extractSkillsAgentically({
+      const { companySkills, companySkillProfiles, extractionDetails } = await extractSkillsAgentically({
         cvText: '',
         companyDocsText,
         expertise,
@@ -91,15 +431,36 @@ export class AgentOrchestrator {
 
       return {
         companySkills,
+        companySkillProfiles: Array.isArray(companySkillProfiles) ? companySkillProfiles : [],
         extractionDetails,
         agentName: 'Company Skills Agent'
       };
     });
 
-    this.registerAgent('analyze-skill-gaps', async ({ previousResults }) => {
+    this.registerAgent('analyze-skill-gaps', async ({ previousResults, context }) => {
       console.log('    🤖 Gap Analysis Agent: Identifying skill gaps...');
       const cvSkills = previousResults['extract-cv-skills']?.cvSkills || [];
       const companySkills = previousResults['extract-company-skills']?.companySkills || [];
+      const cvSkillProfiles = previousResults['extract-cv-skills']?.cvSkillProfiles || [];
+      const companySkillProfiles = previousResults['extract-company-skills']?.companySkillProfiles || [];
+
+      if (Array.isArray(cvSkillProfiles) && cvSkillProfiles.length > 0 && Array.isArray(companySkillProfiles) && companySkillProfiles.length > 0) {
+        const weighted = buildWeightedGapAnalysis({
+          cvProfiles: cvSkillProfiles,
+          companyProfiles: companySkillProfiles,
+          trainingOn: context?.trainingOn || "General",
+        });
+
+        return {
+          skillGap: weighted.skillGap,
+          criticalGaps: weighted.criticalGaps,
+          gapCount: weighted.skillGap.length,
+          prioritizedGaps: weighted.prioritized,
+          gapBuckets: weighted.buckets,
+          explorationCandidates: weighted.explorationCandidates,
+          agentName: 'Gap Analysis Agent'
+        };
+      }
 
       const skillGapMap = new Map();
       companySkills.forEach((skill) => {
@@ -128,17 +489,25 @@ export class AgentOrchestrator {
     this.registerAgent('plan-retrieval', async ({ previousResults, context }) => {
       console.log('    🤖 Planning Agent: Creating retrieval strategy...');
       const skillGap = previousResults['analyze-skill-gaps']?.skillGap || [];
+      const explorationCandidates = previousResults['analyze-skill-gaps']?.explorationCandidates || [];
       const { trainingOn } = context;
+
+      const explorationSkills = explorationCandidates
+        .slice(0, 6)
+        .map((item) => String(item?.skill || '').trim())
+        .filter(Boolean);
 
       const plannerPrompt = `Create a retrieval plan for skill gaps.
 
 SKILL GAPS: ${skillGap.slice(0, 10).join(", ")}
+EXPLORATION HINTS: ${explorationSkills.join(", ") || "None"}
 TRAINING TOPIC: ${trainingOn}
 
 Return JSON:
 {
   "queries": ["query1", "query2", "query3"],
   "focusAreas": ["area1", "area2"],
+  "explorationAreas": ["area1", "area2"],
   "priority": "high|medium|low"
 }`;
 
@@ -155,6 +524,9 @@ Return JSON:
           const focusAreas = Array.isArray(plan?.focusAreas)
             ? plan.focusAreas.map((f) => String(f || '').trim()).filter(Boolean)
             : [];
+          const explorationAreas = Array.isArray(plan?.explorationAreas)
+            ? plan.explorationAreas.map((f) => String(f || '').trim()).filter(Boolean)
+            : [];
           const priority = ['high', 'medium', 'low'].includes(String(plan?.priority || '').toLowerCase())
             ? String(plan.priority).toLowerCase()
             : 'high';
@@ -167,6 +539,7 @@ Return JSON:
             ...plan,
             queries,
             focusAreas,
+            explorationAreas: explorationAreas.length > 0 ? explorationAreas : explorationSkills,
             priority,
             agentName: 'Planning Agent'
           };
@@ -178,6 +551,7 @@ Return JSON:
       return {
         queries: [`${trainingOn} fundamentals`, `${trainingOn} best practices`],
         focusAreas: ['fundamentals', 'practices'],
+        explorationAreas: explorationSkills,
         priority: 'high',
         agentName: 'Planning Agent'
       };
@@ -665,12 +1039,18 @@ Return JSON only:
 
   normalizePlan(plan, goal) {
     const availableAgents = new Set(this.agents.keys());
-    const fallbackPlan = this.generateFallbackPlan(goal, Array.from(availableAgents));
+    const fallbackPlan = this.generateFallbackPlan(goal, Array.from(availableAgents), { log: false });
+    const corrections = [];
 
     if (!plan || !Array.isArray(plan.steps)) {
+      corrections.push({
+        type: "invalid_plan_shape_fallback",
+        reason: "Planner returned non-array steps",
+      });
       return {
         plan: fallbackPlan,
         warnings: ["Planner returned an invalid plan shape; using fallback."],
+        corrections,
       };
     }
 
@@ -681,16 +1061,25 @@ Return JSON only:
       const rawAgent = typeof rawStep?.agent === "string" ? rawStep.agent.trim() : "";
       if (!rawAgent || !availableAgents.has(rawAgent)) {
         warnings.push(`Planner proposed unknown agent: ${rawAgent || "<empty>"}`);
+        corrections.push({
+          type: "unknown_agent_removed",
+          agent: rawAgent || "<empty>",
+        });
         continue;
       }
 
       normalizedSteps.push({
         stepNumber: normalizedSteps.length + 1,
+        sourceStepNumber: Number.isFinite(Number(rawStep?.stepNumber))
+          ? Number(rawStep.stepNumber)
+          : null,
         description: rawStep?.description || `Execute ${rawAgent}`,
         agent: rawAgent,
         critical: rawStep?.critical !== false,
         dependencies: Array.isArray(rawStep?.dependencies)
-          ? rawStep.dependencies.filter((d) => typeof d === "string" && d.trim())
+          ? rawStep.dependencies
+              .map((d) => String(d ?? "").trim())
+              .filter(Boolean)
           : [],
         retryPolicy: {
           maxRetries: Math.max(1, Number(rawStep?.retryPolicy?.maxRetries) || 1),
@@ -700,27 +1089,87 @@ Return JSON only:
     }
 
     if (normalizedSteps.length === 0) {
+      corrections.push({
+        type: "all_steps_invalid_fallback",
+        reason: "No valid steps remained after sanitization",
+      });
       return {
         plan: fallbackPlan,
         warnings: [...warnings, "No valid planned steps remained; using fallback."],
+        corrections,
       };
+    }
+
+    const sourceStepToAgent = new Map();
+    for (const step of normalizedSteps) {
+      if (Number.isFinite(step?.sourceStepNumber) && step.sourceStepNumber > 0) {
+        sourceStepToAgent.set(step.sourceStepNumber, step.agent);
+      }
     }
 
     const plannedAgentSet = new Set(normalizedSteps.map((s) => s.agent));
     for (const step of normalizedSteps) {
-      step.dependencies = step.dependencies.filter((dep) => {
+      const resolved = [];
+      for (const depRaw of step.dependencies || []) {
+        let dep = String(depRaw || "").trim();
+        if (!dep) continue;
+
+        const numericMatch = dep.match(/^\d+$/);
+        if (numericMatch) {
+          const depNum = Number(dep);
+          const mappedAgent = sourceStepToAgent.get(depNum) || normalizedSteps[depNum - 1]?.agent;
+          if (mappedAgent) {
+            corrections.push({
+              type: "numeric_dependency_mapped",
+              step: step.agent,
+              from: dep,
+              to: mappedAgent,
+            });
+            dep = mappedAgent;
+          }
+        }
+
+        if (dep === step.agent) {
+          warnings.push(`Removed self dependency '${dep}' from agent '${step.agent}'.`);
+          corrections.push({
+            type: "self_dependency_removed",
+            step: step.agent,
+            dependency: dep,
+          });
+          continue;
+        }
+
         const exists = plannedAgentSet.has(dep);
         if (!exists) {
           warnings.push(`Removed invalid dependency '${dep}' from agent '${step.agent}'.`);
+          corrections.push({
+            type: "invalid_dependency_removed",
+            from: `${step.agent} <- ${dep}`,
+            step: step.agent,
+            dependency: dep,
+          });
+          continue;
         }
-        return exists;
-      });
+
+        if (!resolved.includes(dep)) {
+          resolved.push(dep);
+        }
+      }
+
+      step.dependencies = resolved;
     }
 
     const allowedStrategies = new Set(["fail_fast", "retry", "skip_non_critical", "pivot"]);
     const errorStrategy = allowedStrategies.has(plan.errorStrategy)
       ? plan.errorStrategy
       : "retry";
+    if (!allowedStrategies.has(plan.errorStrategy)) {
+      corrections.push({
+        type: "error_strategy_corrected",
+        from: plan.errorStrategy || "<empty>",
+        to: "retry",
+      });
+    }
 
     if (this.isRoadmapGoal(goal) && availableAgents.has("generate-roadmap")) {
       const cvStep = normalizedSteps.find((s) => s.agent === "extract-cv-skills");
@@ -731,6 +1180,12 @@ Return JSON only:
         const deps = Array.isArray(companyStep.dependencies) ? companyStep.dependencies : [];
         if (!deps.includes("extract-cv-skills")) {
           companyStep.dependencies = [...deps, "extract-cv-skills"];
+          corrections.push({
+            type: "dependency_injected",
+            from: "extract-company-skills",
+            dependency: "extract-cv-skills",
+            reason: "serialize extraction for deterministic execution",
+          });
         }
       }
 
@@ -753,12 +1208,26 @@ Return JSON only:
           },
         });
         warnings.push("Planner omitted generate-roadmap; injected required roadmap step.");
+        corrections.push({
+          type: "missing_step_injected",
+          step: "generate-roadmap",
+          reason: "roadmap goal requires roadmap generation",
+        });
       }
 
       // Company document retrieval is useful but optional in early data phases.
       // Keep the agent in the plan, but do not allow it to block roadmap generation.
       for (const step of normalizedSteps) {
         if (step.agent === "retrieve-documents") {
+          if (step.critical !== false) {
+            corrections.push({
+              type: "criticality_adjusted",
+              step: "retrieve-documents",
+              from: true,
+              to: false,
+              reason: "non-blocking retrieval in roadmap workflow",
+            });
+          }
           step.critical = false;
         }
       }
@@ -771,6 +1240,7 @@ Return JSON only:
         errorStrategy,
       },
       warnings,
+      corrections,
     };
   }
 
@@ -818,6 +1288,7 @@ Return JSON only:
       let activeContext = runContext;
       let activePlan = null;
       let activeWarnings = [];
+      let activePlanCorrections = [];
       let finalExecutionResults = null;
       let finalValidation = null;
       let successfulCycle = null;
@@ -825,12 +1296,16 @@ Return JSON only:
       // STEP 1: Generate initial execution plan
       console.log("\n📋 STEP 1: Generating execution plan...");
       const rawPlan = await this.generatePlan(goal, runContext);
-      const { plan, warnings } = this.normalizePlan(rawPlan, goal);
+      const { plan, warnings, corrections } = this.normalizePlan(rawPlan, goal);
       activePlan = plan;
       activeWarnings = warnings;
+      activePlanCorrections = corrections || [];
 
       if (warnings.length > 0) {
         console.warn("⚠️  Plan sanitization warnings:", warnings);
+      }
+      if (activePlanCorrections.length > 0) {
+        console.warn("🛠️  Plan corrections applied:", activePlanCorrections);
       }
 
       executionLog.push({
@@ -840,6 +1315,7 @@ Return JSON only:
         steps: plan.steps.map((s) => s.agent),
         errorStrategy: plan.errorStrategy,
         warnings,
+        planCorrections: activePlanCorrections,
       });
       console.log(`✅ Plan generated: ${plan.steps.length} steps, strategy: ${plan.errorStrategy}`);
 
@@ -882,6 +1358,7 @@ Return JSON only:
           goal,
           cycle,
           plan: activePlan,
+          planCorrections: activePlanCorrections,
           executionResults,
           validation,
           context: activeContext,
@@ -892,6 +1369,7 @@ Return JSON only:
         const normalizedReplan = this.normalizePlan(replanned, goal);
         activePlan = normalizedReplan.plan;
         activeWarnings = normalizedReplan.warnings;
+        activePlanCorrections = normalizedReplan.corrections || [];
         activeContext = this.refineContextForNextIteration(activeContext, critique, cycle);
 
         executionLog.push({
@@ -900,11 +1378,15 @@ Return JSON only:
           status: "updated",
           critique,
           warnings: activeWarnings,
+          planCorrections: activePlanCorrections,
           nextSteps: activePlan.steps.map((s) => s.agent),
         });
 
         if (activeWarnings.length > 0) {
           console.warn("⚠️  Replan sanitization warnings:", activeWarnings);
+        }
+        if (activePlanCorrections.length > 0) {
+          console.warn("🛠️  Replan corrections applied:", activePlanCorrections);
         }
       }
 
@@ -1069,15 +1551,17 @@ Return JSON only:
     } catch (error) {
       console.warn("⚠️  Planner agent failed:", error.message);
       // Return fallback plan
-      return this.generateFallbackPlan(goal, availableAgents);
+      return this.generateFallbackPlan(goal, availableAgents, { log: true });
     }
   }
 
   /**
    * Generate fallback plan if planner fails
    */
-  generateFallbackPlan(goal, availableAgents) {
-    console.log("🔄 Using fallback plan");
+  generateFallbackPlan(goal, availableAgents, options = {}) {
+    if (options?.log !== false) {
+      console.log("🔄 Using fallback plan");
+    }
 
     // Simple heuristic-based planning
     const steps = [];
@@ -1125,6 +1609,7 @@ Return JSON only:
     goal,
     cycle,
     plan,
+    planCorrections = [],
     executionResults,
     validation,
     context,
@@ -1135,6 +1620,7 @@ Return JSON only:
       goal,
       cycle,
       plan,
+      planCorrections,
       executionResults,
       validation,
       constraints,

@@ -393,6 +393,8 @@ Return JSON only:
     const memory = await this.loadLongTermMemory(context);
     const memorySummary = this.summarizeMemory(memory || context.orchestrationMemory || {});
     const constraints = this.normalizeConstraintEnvelope(context.constraints);
+    const adaptiveSignals = context.adaptiveSignals || {};
+    const notificationLearning = context.notificationLearning || {};
 
     const prompt = `You are an intelligent notification strategist for a corporate training platform called TrainMate.
 
@@ -407,6 +409,7 @@ USER PROFILE:
 - Modules Completed: ${context.engagementData?.modulesCompleted || 0}
 - Average Quiz Score: ${context.engagementData?.averageQuizScore || 0}%
 - Email Open Rate: ${context.engagementData?.emailOpenRate || 0}%
+- Attendance Rate: ${context.engagementData?.attendanceRate || 0}%
 - Time Spent Learning: ${context.engagementData?.timeSpentLearning || 0} minutes
 - Current Module: ${context.activeModule?.moduleTitle || "None"}
 
@@ -417,6 +420,16 @@ NOTIFICATION CONTEXT:
 - User Timezone: ${context.timezone}
 - Constraints: ${JSON.stringify(constraints)}
 - Memory insights: ${memorySummary}
+
+ADAPTIVE FEEDBACK SIGNALS:
+- userIgnoredLast3Notifications: ${Boolean(adaptiveSignals.userIgnoredLast3Notifications)}
+- lowEngagementNow: ${Boolean(adaptiveSignals.lowEngagementNow)}
+- inCooldown: ${Boolean(adaptiveSignals.inCooldown)}
+- recommendedCadenceHours: ${adaptiveSignals.recommendedCadenceHours ?? "n/a"}
+- lastSentHoursAgo: ${adaptiveSignals.lastSentHoursAgo ?? "n/a"}
+- historicalConsecutiveIgnored: ${Number(notificationLearning.consecutiveIgnored || 0)}
+- historicalTotalSent: ${Number(notificationLearning.totalSent || 0)}
+- historicalTotalSkipped: ${Number(notificationLearning.totalSkipped || 0)}
 
 Return JSON only:
 {
@@ -471,8 +484,10 @@ Return JSON only:
     }
 
     return {
-      shouldSend: true,
-      reason: "AI unavailable, using defaults",
+      shouldSend: !Boolean(adaptiveSignals.userIgnoredLast3Notifications && !isCriticalNotificationType(context.notificationType)),
+      reason: Boolean(adaptiveSignals.userIgnoredLast3Notifications && !isCriticalNotificationType(context.notificationType))
+        ? "AI unavailable; adaptive fallback throttled due to ignored streak"
+        : "AI unavailable, using defaults",
       sendEmail: true,
       createCalendarEvent: true,
       optimalTime: "15:00",
@@ -673,6 +688,7 @@ Return JSON:
       goal,
       cycle,
       plan,
+      planCorrections = [],
       executionResults,
       validation,
       constraints,
@@ -696,6 +712,7 @@ VALIDATION PASS: ${Boolean(validation?.pass)}
 VALIDATION SCORE: ${Number(validation?.score || 0)}
 VALIDATION REASON: ${validation?.reason || "unknown"}
 VALIDATION ISSUES: ${JSON.stringify(validation?.suggestions || validation?.issues || [])}
+PLAN CORRECTIONS APPLIED: ${JSON.stringify(planCorrections || []).slice(0, 1200)}
 CONSTRAINTS: ${JSON.stringify(constraints || {})}
 AVAILABLE AGENTS: ${availableAgents.join(", ")}
 CONTEXT SNAPSHOT: ${JSON.stringify(contextSnapshot || {}).slice(0, 1000)}
@@ -976,6 +993,12 @@ Rules:
       },
     };
   }
+
+}
+
+function isCriticalNotificationType(notificationType = "") {
+  const type = String(notificationType || "").toUpperCase();
+  return type === "ROADMAP_GENERATED" || type === "QUIZ_UNLOCK";
 }
 
 export const policyEngine = new PolicyEngine();
