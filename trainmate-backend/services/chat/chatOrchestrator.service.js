@@ -18,6 +18,41 @@ const DEFAULT_TIMEZONE = process.env.DEFAULT_TIMEZONE || "Asia/Karachi";
 const FEEDBACK_PROMPT_INTERVAL = 10;
 const requestCache = new Map();
 const cacheTtlMs = 5 * 60 * 1000;
+const MODULE_SCOPE_HINTS = [
+  "module",
+  "training",
+  "roadmap",
+  "skill",
+  "skills",
+  "lesson",
+  "topic",
+  "quiz",
+  "progress",
+  "deadline",
+  "days left",
+  "time remaining",
+  "practice",
+  "example",
+  "explain",
+  "summary",
+  "learn",
+  "learned",
+];
+
+const OFF_TOPIC_HINTS = [
+  "weather",
+  "movie",
+  "music",
+  "sports",
+  "politics",
+  "cooking",
+  "crypto",
+  "relationship",
+  "travel",
+  "gaming",
+  "shopping",
+  "news",
+];
 
 const cohere = new CohereClient({ token: process.env.COHERE_API_KEY });
 
@@ -46,6 +81,160 @@ function getCache(key) {
 
 function cacheKeyFor(query, companyId, deptId) {
   return `${companyId}:${deptId}:${String(query || "").trim().toLowerCase()}`;
+}
+
+function extractKeywords(text) {
+  return String(text || "")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length > 2);
+}
+
+function stripHtml(text) {
+  return String(text || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function buildModuleKeywordSet(finalModuleData = {}) {
+  const moduleText = [
+    finalModuleData?.moduleTitle,
+    finalModuleData?.description,
+    ...(Array.isArray(finalModuleData?.skillsCovered) ? finalModuleData.skillsCovered : []),
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return new Set(extractKeywords(moduleText));
+}
+
+function filterContextCandidatesToModuleScope(contextCandidates = [], finalModuleData = {}) {
+  const moduleKeywords = buildModuleKeywordSet(finalModuleData);
+  if (moduleKeywords.size === 0) {
+    return Array.isArray(contextCandidates) ? contextCandidates.slice(0, 4) : [];
+  }
+
+  return (Array.isArray(contextCandidates) ? contextCandidates : [])
+    .map((item) => {
+      const text = String(item?.text || "");
+      const ctxKeywords = extractKeywords(text);
+      const overlap = ctxKeywords.filter((token) => moduleKeywords.has(token)).length;
+      return {
+        ...item,
+        moduleOverlap: overlap,
+      };
+    })
+    .filter((item) => item.moduleOverlap > 0)
+    .sort((a, b) => b.moduleOverlap - a.moduleOverlap)
+    .slice(0, 4)
+    .map(({ moduleOverlap, ...rest }) => rest);
+}
+
+function isReplyGroundedToModule(botReply, finalModuleData = {}, contextCandidates = []) {
+  const moduleKeywords = buildModuleKeywordSet(finalModuleData);
+  const replyKeywords = extractKeywords(stripHtml(botReply));
+  const moduleOverlap = replyKeywords.filter((token) => moduleKeywords.has(token));
+
+  const contextText = (Array.isArray(contextCandidates) ? contextCandidates : [])
+    .map((item) => String(item?.text || ""))
+    .join(" ");
+  const contextKeywords = new Set(extractKeywords(contextText));
+  const contextOverlap = replyKeywords.filter((token) => contextKeywords.has(token));
+
+  const moduleOverlapRatio = replyKeywords.length > 0
+    ? moduleOverlap.length / replyKeywords.length
+    : 0;
+
+  const contextOverlapRatio = replyKeywords.length > 0
+    ? contextOverlap.length / replyKeywords.length
+    : 0;
+
+  return {
+    pass:
+      moduleOverlap.length >= 2 &&
+      (moduleOverlapRatio >= 0.08 || contextOverlapRatio >= 0.1),
+    moduleOverlap,
+    moduleOverlapRatio,
+    contextOverlapRatio,
+  };
+}
+
+function buildGroundingFallbackReply({ moduleTitle = "this module", skillsCovered = [] }) {
+  const list = Array.isArray(skillsCovered) && skillsCovered.length > 0
+    ? skillsCovered.slice(0, 4).map((skill) => `<li>${skill}</li>`).join("")
+    : "<li>key concepts from this module</li><li>core skills in this module</li><li>step-by-step practice tasks for this module</li>";
+
+  return `<div style="line-height: 1.8;">
+<p><b>Let's stay focused on ${moduleTitle}.</b></p>
+<p>I want to teach accurately and avoid guesses, so I will only explain content grounded in this module.</p>
+<p><b>We can continue with:</b></p>
+<ul>${list}</ul>
+<p>Tell me which concept you want to learn next, and I will teach it step by step.</p>
+</div>`;
+}
+
+function buildFormattedRefusalReply({ moduleTitle = "this module", skillsCovered = [] }) {
+  const skillsList = Array.isArray(skillsCovered) && skillsCovered.length > 0
+    ? skillsCovered.slice(0, 4).map((skill) => `<li>${skill}</li>`).join("")
+    : "<li>module concepts</li><li>skills to learn</li><li>progress and deadlines</li><li>practice or examples from the module</li>";
+
+  return `<div style="line-height: 1.8;">
+<div style="color: #FFB84D; font-size: 18px; font-weight: 600; margin-bottom: 12px;">
+I can only help with your training module
+</div>
+<div style="color: #E0EAF5; font-size: 14px; margin-bottom: 12px;">
+That question looks outside the current module or too vague to answer accurately. I do not want to guess or give you unrelated information.
+</div>
+<div style="color: #FFFFFF; font-size: 14px; font-weight: 600; margin-bottom: 8px;">
+Please ask about:
+</div>
+<ul style="color: #E0EAF5; font-size: 14px; margin: 0 0 12px 18px; padding: 0;">
+${skillsList}
+</ul>
+<div style="color: #AFCBE3; font-size: 13px; font-style: italic;">
+Try asking something about ${moduleTitle} and I will help you right away.
+</div>
+</div>`;
+}
+
+function assessModuleScope({ newMessage, finalModuleData = {} }) {
+  const message = String(newMessage || "").trim();
+  const messageLower = message.toLowerCase();
+  const messageKeywords = extractKeywords(message);
+
+  if (!message || messageKeywords.length === 0) {
+    return { shouldRefuse: true, reason: "empty-or-non-informative" };
+  }
+
+  const scopeText = [
+    finalModuleData?.moduleTitle,
+    finalModuleData?.description,
+    ...(Array.isArray(finalModuleData?.skillsCovered) ? finalModuleData.skillsCovered : []),
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const scopeKeywords = new Set(extractKeywords(scopeText));
+  const overlap = messageKeywords.filter((token) => scopeKeywords.has(token));
+  const hasModuleHint = MODULE_SCOPE_HINTS.some((hint) => messageLower.includes(hint));
+  const hasOffTopicHint = OFF_TOPIC_HINTS.some((hint) => messageLower.includes(hint));
+  const asksForProgress = /\b(days? left|time remaining|deadline|progress|unlock|locked|expired|next module|what will i learn|module content|skills to learn|quiz|practice|example|explain|summary)\b/i.test(messageLower);
+
+  if (hasOffTopicHint) {
+    return { shouldRefuse: true, reason: "off-topic-hint" };
+  }
+
+  if (overlap.length > 0) {
+    return { shouldRefuse: false, reason: "module-overlap", overlap };
+  }
+
+  if (asksForProgress || hasModuleHint) {
+    return { shouldRefuse: false, reason: "module-intent" };
+  }
+
+  if (messageKeywords.length <= 3) {
+    return { shouldRefuse: true, reason: "too-vague" };
+  }
+
+  return { shouldRefuse: true, reason: "no-module-overlap" };
 }
 
 async function embedText(text) {
@@ -624,7 +813,47 @@ export async function handleChatRequest({ userId, companyId, deptId, newMessage 
   }
 
   const companyInfo = companyMeta.companyInfo || "";
-  const actualSkillsContext = finalModuleData.skillsCovered || [];
+
+  const scopeDecision = assessModuleScope({
+    newMessage,
+    finalModuleData,
+  });
+
+  if (scopeDecision.shouldRefuse) {
+    const refusalReply = buildFormattedRefusalReply({
+      moduleTitle: finalModuleData.moduleTitle || "this module",
+      skillsCovered: finalModuleData.skillsCovered || [],
+    });
+
+    await chatSessionRef.update({
+      messages: admin.firestore.FieldValue.arrayUnion(
+        { from: "user", text: newMessage, timestamp: new Date() },
+        { from: "bot", text: refusalReply, timestamp: new Date() }
+      ),
+    });
+
+    const botRepliesToday = existingMessages.filter((message) => message?.from === "bot").length + 1;
+
+    const response = {
+      reply: refusalReply,
+      sourceUsed: false,
+      askForFeedback: false,
+      botRepliesToday,
+      chatDecision: {
+        scope: scopeDecision,
+        guardrail: {
+          pass: true,
+          score: 100,
+          reason: "Deterministic module-scope refusal",
+        },
+        rankedContext: [],
+        usedRecovery: false,
+      },
+    };
+
+    setCache(cacheKey, response);
+    return response;
+  }
 
   const [embedding, externalKnowledge] = await Promise.all([
     embedTextFromRetrievalService(newMessage).catch((error) => {
@@ -652,8 +881,10 @@ export async function handleChatRequest({ userId, companyId, deptId, newMessage 
     })),
   ]);
 
-  const context = contextCandidates.length > 0
-    ? contextCandidates.map((item) => item.text).join("\n\n")
+  const moduleScopedContextCandidates = filterContextCandidatesToModuleScope(contextCandidates, finalModuleData);
+
+  const context = moduleScopedContextCandidates.length > 0
+    ? moduleScopedContextCandidates.map((item) => item.text).join("\n\n")
     : "No additional context.";
 
   const recentFeedback = Array.isArray(userData?.chatbotFeedback?.entries)
@@ -694,7 +925,7 @@ export async function handleChatRequest({ userId, companyId, deptId, newMessage 
     userId,
     userMessage: newMessage,
     finalPrompt,
-    contextCandidates,
+    contextCandidates: moduleScopedContextCandidates,
     expectedFormat: "html",
     fallbackReply: "I am here to help with your training module.",
     constraints: {
@@ -704,7 +935,15 @@ export async function handleChatRequest({ userId, companyId, deptId, newMessage 
   });
 
   let botReply = chatResult?.reply || "I am here to help with your training module.";
-  const plainReply = botReply.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  const groundingCheck = isReplyGroundedToModule(botReply, finalModuleData, moduleScopedContextCandidates);
+  if (!groundingCheck.pass) {
+    botReply = buildGroundingFallbackReply({
+      moduleTitle: finalModuleData?.moduleTitle || "this module",
+      skillsCovered: finalModuleData?.skillsCovered || [],
+    });
+  }
+
+  const plainReply = stripHtml(botReply);
   if (!/[?؟]/.test(plainReply)) {
     const moduleTitle = (finalModuleData?.moduleTitle || "this module").trim();
     botReply = `${botReply.trim()}\n\nWhat would you like to learn next about ${moduleTitle}: concept, example, or a quick practice task?`;
@@ -737,8 +976,10 @@ export async function handleChatRequest({ userId, companyId, deptId, newMessage 
     chatDecision: {
       plan: chatResult?.plan || null,
       guardrail: chatResult?.guardrail || null,
-      rankedContext: chatResult?.rankedContext || [],
+      rankedContext: chatResult?.rankedContext || moduleScopedContextCandidates,
       usedRecovery: Boolean(chatResult?.usedRecovery),
+      scope: scopeDecision,
+      grounding: groundingCheck,
     },
   };
 

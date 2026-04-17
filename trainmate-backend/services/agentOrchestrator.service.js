@@ -1,3 +1,4 @@
+//trainmate-backend/services/agentOrchestrator.service.js
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import dotenv from "dotenv";
 import { db } from "../config/firebase.js";
@@ -58,13 +59,14 @@ export class AgentOrchestrator {
 
     this.registerAgent('extract-cv-skills', async ({ previousResults, context }) => {
       console.log('    🤖 CV Skills Agent: Analyzing CV...');
-      const { cvText, expertise, trainingOn } = context;
+      const { cvText, expertise, trainingOn, structuredCv } = context;
 
       const { cvSkills, extractionDetails } = await extractSkillsAgentically({
         cvText,
         companyDocsText: '', // Will be filled after company doc fetching
         expertise,
         trainingOn,
+        structuredCv,
       });
 
       return {
@@ -145,8 +147,25 @@ Return JSON:
         const jsonMatch = text.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           const plan = JSON.parse(jsonMatch[0]);
+          const queries = Array.isArray(plan?.queries)
+            ? plan.queries.map((q) => String(q || '').trim()).filter(Boolean)
+            : [];
+          const focusAreas = Array.isArray(plan?.focusAreas)
+            ? plan.focusAreas.map((f) => String(f || '').trim()).filter(Boolean)
+            : [];
+          const priority = ['high', 'medium', 'low'].includes(String(plan?.priority || '').toLowerCase())
+            ? String(plan.priority).toLowerCase()
+            : 'high';
+
+          if (queries.length === 0 || focusAreas.length === 0) {
+            throw new Error('Planner returned incomplete retrieval strategy');
+          }
+
           return {
             ...plan,
+            queries,
+            focusAreas,
+            priority,
             agentName: 'Planning Agent'
           };
         }
@@ -721,6 +740,14 @@ Return JSON only:
           },
         });
         warnings.push("Planner omitted generate-roadmap; injected required roadmap step.");
+      }
+
+      // Company document retrieval is useful but optional in early data phases.
+      // Keep the agent in the plan, but do not allow it to block roadmap generation.
+      for (const step of normalizedSteps) {
+        if (step.agent === "retrieve-documents") {
+          step.critical = false;
+        }
       }
     }
 
@@ -1537,6 +1564,29 @@ Return JSON only:
       };
     }
 
+    if (step.agent === "plan-retrieval") {
+      const queries = Array.isArray(output.queries) ? output.queries.filter((q) => String(q || "").trim()) : [];
+      const focusAreas = Array.isArray(output.focusAreas)
+        ? output.focusAreas.filter((a) => String(a || "").trim())
+        : [];
+      const priority = String(output.priority || "").toLowerCase();
+      const validPriority = ["high", "medium", "low"].includes(priority);
+      const pass = queries.length > 0 && focusAreas.length > 0 && validPriority;
+
+      const issues = [];
+      if (queries.length === 0) issues.push("queries must contain at least one non-empty value");
+      if (focusAreas.length === 0) issues.push("focusAreas must contain at least one non-empty value");
+      if (!validPriority) issues.push("priority must be one of: high, medium, low");
+
+      return {
+        pass,
+        score: pass ? 92 : 35,
+        reason: pass ? "Retrieval plan structure is valid" : "Retrieval plan is incomplete or malformed",
+        issues,
+        canRecover: true,
+      };
+    }
+
     if (step.agent === "retrieve-documents") {
       const docs = Array.isArray(output.documents) ? output.documents : [];
       const declaredCount = Number.isFinite(output.documentCount)
@@ -1545,21 +1595,21 @@ Return JSON only:
       const countMatches = declaredCount === docs.length;
 
       return {
-        pass: docs.length > 0,
-        score: docs.length > 0 ? 90 : 35,
+        pass: true,
+        score: docs.length > 0 ? 90 : 65,
         reason:
           docs.length > 0
             ? countMatches
               ? "Documents retrieved successfully"
               : "Documents retrieved (count normalized by actual array length)"
-            : "No documents retrieved",
+            : "No documents retrieved; continuing with CV-driven roadmap generation",
         issues:
           docs.length > 0
             ? countMatches
               ? []
               : ["documentCount did not match documents.length in raw output"]
             : ["documents array is empty"],
-        canRecover: docs.length === 0,
+        canRecover: false,
       };
     }
 

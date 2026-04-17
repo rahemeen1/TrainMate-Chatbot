@@ -115,7 +115,7 @@ STRICT RULES:
 ${weaknessWelcome ? "" : "- NEVER repeat greetings or introductions\n"}- NEVER repeat step numbers or progress status (e.g., "You've completed 2 of 6 steps")
 - NEVER say "ready to dive", "let's move on", or similar transition phrases
 - Get straight to answering the question with teaching content
-- If completely off-topic (not module, company, or department related), say: "I'm here to help with your training module and answer questions about the company."
+- If the question is vague, irrelevant, or outside the active module, politely refuse in HTML using a short formatted block that says you can only help with the training module and suggests asking about module concepts, skills, progress, or practice examples
 - Focus on teaching concepts, not announcing progress
 
 CONTEXT:
