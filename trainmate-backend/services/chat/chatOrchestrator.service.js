@@ -127,7 +127,7 @@ function filterContextCandidatesToModuleScope(contextCandidates = [], finalModul
     .slice(0, 4)
     .map(({ moduleOverlap, ...rest }) => rest);
 }
-
+     
 function isReplyGroundedToModule(botReply, finalModuleData = {}, contextCandidates = []) {
   const moduleKeywords = buildModuleKeywordSet(finalModuleData);
   const replyKeywords = extractKeywords(stripHtml(botReply));
