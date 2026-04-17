@@ -958,9 +958,22 @@ About: ${description}
     }
 
     /* ---------- CHECK FOR UNLOCK-RELATED QUESTIONS ---------- */
-    const unlockKeywords = ["unlock", "next module", "how to get", "when can i", "access", "locked", "expired", "complete this module"];
-    const messageLower = newMessage.toLowerCase();
-    const isUnlockQuestion = unlockKeywords.some(keyword => messageLower.includes(keyword));
+    const messageLower = String(newMessage || "").toLowerCase();
+    const explainIntent = /\b(explain|easy words|simple words|summarize|what does this mean|meaning)\b/i.test(messageLower);
+    const unlockIntentPatterns = [
+      /\bunlock\b/i,
+      /\bnext\s+module\b/i,
+      /\bwhen\s+can\s+i\s+(unlock|get|access)\b/i,
+      /\bhow\s+to\s+(unlock|get\s+access)\b/i,
+      /\bmodule\s+(is\s+)?(locked|expired)\b/i,
+      /\bcomplete\s+this\s+module\b/i,
+      /\bquiz\s+unlock\b/i,
+    ];
+    const moduleContextKeywords = ["module", "roadmap", "quiz", "training", "unlock", "locked", "expired"];
+
+    const hasUnlockIntent = unlockIntentPatterns.some((pattern) => pattern.test(messageLower));
+    const hasModuleContext = moduleContextKeywords.some((keyword) => messageLower.includes(keyword));
+    const isUnlockQuestion = !explainIntent && hasUnlockIntent && hasModuleContext;
 
     if (isUnlockQuestion) {
       const unlockResponse = `I understand you're asking about module progression and unlocking. 
