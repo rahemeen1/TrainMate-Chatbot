@@ -11,8 +11,6 @@ import { searchMDN } from "../knowledge/mdn.js";
 import { searchStackOverflow } from "../knowledge/stackoverflow.js";
 import { searchDevTo } from "../knowledge/devto.js";
 import { aggregateKnowledge } from "../knowledge/knowledgeAggregator.js";
-import { orchestrator } from "../services/agentOrchestrator.service.js";
-import { handleChatRequest as handleAgenticChatRequest } from "../services/chat/chatOrchestrator.service.js";
 
 dotenv.config();
 
@@ -831,8 +829,423 @@ Your active module is <span style="color: #FFFFFF; font-weight: 500;">${finalMod
 
 export const chatController = async (req, res) => {
   try {
-    const response = await handleAgenticChatRequest(req.body);
-    return res.json(response);
+    const { userId, companyId, deptId, newMessage } = req.body;
+    if (!userId || !companyId || !deptId || !newMessage) {
+      return res.json({ reply: "Missing parameters" });
+    }
+
+    /* ---------- USER ---------- */
+    const userRef = db
+      .collection("freshers")
+      .doc(companyId)
+      .collection("departments")
+      .doc(deptId)
+      .collection("users")
+      .doc(userId);
+
+    const userSnap = await userRef.get();
+    const userData = userSnap.exists ? userSnap.data() : {};
+    const feedbackEntries = Array.isArray(userData?.chatbotFeedback?.entries)
+      ? userData.chatbotFeedback.entries
+      : [];
+    const recentFeedback = feedbackEntries
+      .slice(-3)
+      .map((entry) => {
+        const rating = Number(entry?.rating) || 0;
+        const comment = String(entry?.comment || "").trim();
+        if (rating && comment) return `- ${rating}/5: ${comment}`;
+        if (rating) return `- ${rating}/5`;
+        if (comment) return `- ${comment}`;
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n");
+
+    /* ---------- COMPANY INFORMATION ---------- */
+    let companyInfo = "";
+    try {
+      const companyRef = db.collection("companies").doc(companyId).collection("onboardingAnswers");
+      const companySnap = await companyRef.get();
+      
+      if (!companySnap.empty) {
+        const companyDoc = companySnap.docs[0].data();
+        const answers = companyDoc.answers || {};
+        
+        const duration = answers['2'] || answers[2] || "Not specified"; // Training duration
+        const teamSize = answers['3'] || answers[3] || "Not specified"; // Team size
+        const description = answers['4'] || answers[4] || "No description available"; // Company description
+        
+        companyInfo = `
+COMPANY INFORMATION:
+Duration: ${duration}
+Team Size: ${teamSize}
+About: ${description}
+`;
+        
+        console.log("✅ Company info loaded:", description.substring(0, 50));
+      } else {
+        console.warn("⚠️ No company onboarding answers found");
+      }
+    } catch (err) {
+      console.warn("⚠️ Could not fetch company info:", err.message);
+    }
+
+    /* ---------- ACTIVE MODULE ---------- */
+    const roadmapGeneratedAt = getRoadmapGeneratedAt(userData);
+    const roadmapRef = userRef.collection("roadmap");
+    const roadmapSnap = await roadmapRef.get();
+
+    if (roadmapSnap.empty) {
+      return res.json({ reply: "Your roadmap does not exist." });
+    }
+
+    // 🔄 COMPREHENSIVE CHECK: Scan ALL modules, mark expired ones as expired, unlock next
+    const comprehensiveCheck = await checkAndUnlockModulesComprehensive(
+      companyId,
+      deptId,
+      userId,
+      roadmapRef,
+      roadmapGeneratedAt
+    );
+
+    let finalActiveModule = comprehensiveCheck.nextActiveModule;
+    if (!finalActiveModule) {
+      return res.json({ reply: "🎉 You've completed all training modules. Contact your company admin for next steps." });
+    }
+
+    const finalModuleData = comprehensiveCheck.nextActiveModuleData;
+    const moduleStartDate = getModuleStartDateByOrder(
+      comprehensiveCheck.allModules,
+      finalActiveModule.id,
+      roadmapGeneratedAt
+    );
+
+    /* ---------- CHAT SESSION ---------- */
+    const today = getDateKey(new Date());
+    const chatSessionRef = roadmapRef
+      .doc(finalActiveModule.id)
+      .collection("chatSessions")
+      .doc(today);
+
+    const chatSessionSnap = await chatSessionRef.get();
+    const existingMessages = chatSessionSnap.exists
+      ? chatSessionSnap.data()?.messages || []
+      : [];
+    const isFirstMessageToday = !chatSessionSnap.exists;
+    
+    if (isFirstMessageToday) {
+      await chatSessionRef.set({ startedAt: new Date(), messages: [] });
+    }
+
+    /* ---------- MEMORY (DYNAMIC) ---------- */
+    const memoryData = await getAgentMemory({
+      userId,
+      companyId,
+      deptId,
+      moduleId: finalActiveModule.id
+    });
+    
+    const agentMemory = memoryData.summary || "No prior memory.";
+    const strugglingAreas = memoryData.strugglingAreas || [];
+    const masteredTopics = memoryData.masteredTopics || [];
+    
+    console.log(`📝 Agent Memory: ${agentMemory.substring(0, 100)}...`);
+    if (strugglingAreas.length > 0) {
+      console.log(`⚠️  Struggling with: ${strugglingAreas.slice(0, 3).join(", ")}`);
+    }
+    if (masteredTopics.length > 0) {
+      console.log(`✅ Mastered: ${masteredTopics.slice(0, 3).join(", ")}`);
+    }
+
+    /* ---------- CHECK FOR UNLOCK-RELATED QUESTIONS ---------- */
+    const unlockKeywords = ["unlock", "next module", "how to get", "when can i", "access", "locked", "expired", "complete this module"];
+    const messageLower = newMessage.toLowerCase();
+    const isUnlockQuestion = unlockKeywords.some(keyword => messageLower.includes(keyword));
+
+    if (isUnlockQuestion) {
+      const unlockResponse = `I understand you're asking about module progression and unlocking. 
+
+Here's how it works:
+- Modules are automatically unlocked once their estimated time expires
+- Your progress is tracked automatically as you complete each module
+- Expired modules are marked as expired, and the next module becomes available
+
+For questions about your specific module timeline or if you believe something is incorrect, please contact your company admin for further details. They can review your progress and provide personalized guidance.
+
+In the meantime, let me know if you have questions about the current module content, and I'm happy to help! 📚`;
+
+      // Save this message to chat history
+      await chatSessionRef.update({
+        messages: admin.firestore.FieldValue.arrayUnion(
+          { from: "user", text: newMessage, timestamp: new Date() },
+          { from: "bot", text: unlockResponse, timestamp: new Date() }
+        ),
+      });
+
+      const botRepliesToday =
+        existingMessages.filter((message) => message?.from === "bot").length + 1;
+      const askForFeedback = botRepliesToday % FEEDBACK_PROMPT_INTERVAL === 0;
+
+      return res.json({
+        reply: unlockResponse,
+        askForFeedback,
+        botRepliesToday,
+      });
+    }
+
+    /* ---------- WEAKNESS ANALYSIS FOR WELCOME MESSAGE ---------- */
+    let weaknessWelcome = "";
+    
+    // Check if roadmap was recently regenerated and this is first chat after regeneration
+    if (isFirstMessageToday && userData.roadmapRegenerated && userData.weaknessAnalysis) {
+      const weakness = userData.weaknessAnalysis;
+      const generatedAt = weakness.generatedAt?.toDate ? weakness.generatedAt.toDate() : new Date(weakness.generatedAt);
+      const hoursSinceRegeneration = (new Date() - generatedAt) / (1000 * 60 * 60);
+      
+      // If regenerated within last 48 hours, show welcome message
+      if (hoursSinceRegeneration < 48) {
+        const topWeakConcepts = (weakness.concepts || []).slice(0, 5).map(w => w.concept).join(", ");
+        const wrongQuestionsPreview = (weakness.wrongQuestions || []).slice(0, 3)
+          .map(q => `- ${q.question.substring(0, 60)}...`)
+          .join("\n");
+        
+        weaknessWelcome = `
+🔄 ROADMAP REGENERATION CONTEXT:
+Your learning roadmap has been regenerated based on your quiz performance.
+
+AREAS YOU STRUGGLED WITH:
+${topWeakConcepts || "General concepts"}
+
+AVERAGE QUIZ SCORE: ${weakness.avgScore}%
+
+SAMPLE QUESTIONS YOU GOT WRONG:
+${wrongQuestionsPreview || "No specific questions available"}
+
+I will focus our conversation on strengthening these areas. Let's start from the fundamentals and build your understanding step by step.
+`;
+        
+        console.log(`👋 First chat after regeneration - will show weakness welcome`);
+        
+        // Clear the flag after showing welcome once
+        try {
+          await userRef.update({
+            'weaknessAnalysis.welcomed': true,
+            'weaknessAnalysis.welcomedAt': new Date(),
+          });
+        } catch (err) {
+          console.warn("Failed to update weakness welcome flag:", err.message);
+        }
+      }
+    }
+
+    /* ---------- SKILL-BASED PROGRESS (FROM ACTUAL CONVERSATIONS) ---------- */
+    const actualSkillsData = await getActualSkillsCovered(
+      companyId,
+      deptId,
+      userId,
+      finalActiveModule.id,
+      finalModuleData.skillsCovered || []
+    );
+    
+    const skillProgress = calculateSkillProgressFromActual(actualSkillsData);
+    console.log(`📊 Actual Skills Covered: ${skillProgress.masteredSkills}/${skillProgress.totalSkills} skills (${skillProgress.progressPercentage}%)`);
+    console.log(`📝 Skills covered in conversations: ${skillProgress.actualSkillsCovered.join(", ") || "None yet"}`);
+    
+    // Update module progress in Firestore with actual skills
+    if (skillProgress.usingSkillTracking) {
+      try {
+        await roadmapRef.doc(finalActiveModule.id).update({
+          skillProgress: skillProgress.progressPercentage,
+          actualSkillsCovered: skillProgress.actualSkillsCovered,
+          skillsCovered: finalModuleData.skillsCovered || [],
+          lastProgressUpdate: new Date()
+        });
+      } catch (err) {
+        console.warn("⚠️ Failed to update skill progress:", err.message);
+      }
+    }
+
+    /* ---------- PINECONE (SAFE) ---------- */
+    let relevantDocs = [];
+
+    try {
+      const embedding = await embedText(newMessage);
+      const pineconeResults = await queryPinecone({
+        embedding,
+        companyId,
+        deptId,
+      });
+
+      relevantDocs = pineconeResults.filter(doc =>
+        isDocAllowed({
+          similarityScore: doc.score,
+          docDepartment: doc.dept,
+          userDepartment: deptId.toUpperCase(),
+        })
+      );
+
+    } catch (err) {
+      console.warn("⚠️ Pinecone skipped:", err.message);
+    }
+
+    /* ---------- AGENTIC KNOWLEDGE FETCH ---------- */
+    console.log("🤖 Fetching agentic knowledge from external sources...");
+    const agenticKnowledge = await fetchAgenticKnowledge(newMessage, relevantDocs);
+    
+    const topExternalSource = agenticKnowledge.topResult;
+    const externalSources = agenticKnowledge.summary || [];
+    
+    if (topExternalSource) {
+      console.log(`✅ Top external source: ${topExternalSource.source}`);
+    }
+
+    /* ---------- CONTEXT ---------- */
+    const contextParts = [];
+
+    if (relevantDocs.length > 0) {
+      contextParts.push(
+        `COMPANY TRAINING MATERIAL:\n${relevantDocs.map(d => d.text).join("\n")}`
+      );
+    }
+
+    // Add external knowledge sources
+    if (externalSources.length > 0) {
+      const externalContext = externalSources.map(doc => {
+        if (doc.source === 'mdn') {
+          return `📖 MDN: ${doc.title}\nURL: ${doc.mdn_url}\nSummary: ${doc.summary}`;
+        } else if (doc.source === 'stackOverflow') {
+          return `🔗 StackOverflow: ${doc.title}\nURL: ${doc.link}`;
+        } else if (doc.source === 'devto') {
+          return `📝 Dev.to: ${doc.title}\nURL: ${doc.link}`;
+        }
+        return `${doc.source}: ${doc.title || doc.text}`;
+      }).join("\n\n");
+      
+      contextParts.push(
+        `EXTERNAL KNOWLEDGE SOURCES (MDN, StackOverflow, Dev.to):\n${externalContext}`
+      );
+    }
+
+    const context =
+      contextParts.length > 0
+        ? contextParts.join("\n\n")
+        : "No additional context.";
+
+    /* ---------- PROMPT ---------- */
+    const finalPrompt = `
+SYSTEM ROLE:
+You are TrainMate, a goal-driven onboarding agent focused on teaching concepts.
+
+${weaknessWelcome ? `${weaknessWelcome}\n` : ''}
+LEARNING MEMORY (Topics & Patterns):
+${agentMemory}
+${strugglingAreas.length > 0 ? `\nUser needs help with: ${strugglingAreas.slice(0, 3).join(", ")}` : ''}
+${masteredTopics.length > 0 ? `\nUser has learned: ${masteredTopics.slice(0, 3).join(", ")}` : ''}
+${recentFeedback ? `\nRECENT USER FEEDBACK:\n${recentFeedback}` : "\nRECENT USER FEEDBACK:\nNo recent feedback yet."}
+
+USER PROFILE:
+Name: ${userData.name || "User"}
+Department: ${userData.deptName || deptId}
+Training Level: ${userData.trainingLevel || "Not specified"}
+${companyInfo || "\nCOMPANY INFORMATION: Not available in system\n"}
+
+ACTIVE MODULE:
+Title: ${finalModuleData.moduleTitle}
+Description: ${finalModuleData.description || "No description available"}
+Skills to Learn: ${finalModuleData.skillsCovered ? finalModuleData.skillsCovered.join(", ") : "Not specified"}
+Estimated Duration: ${finalModuleData.estimatedDays || "N/A"} days
+Days Completed: ${calculateTrainingProgress(finalModuleData, moduleStartDate).completedDays} days
+Days Remaining: ${calculateTrainingProgress(finalModuleData, moduleStartDate).remainingDays} days
+
+PROGRESS TRACKING:
+${skillProgress.usingSkillTracking 
+  ? `Skill-Based Progress: ${skillProgress.masteredSkills}/${skillProgress.totalSkills} skills actually covered in conversations (${skillProgress.progressPercentage}%)
+Skills Covered So Far: ${skillProgress.actualSkillsCovered.length > 0 ? skillProgress.actualSkillsCovered.join(", ") : "No skills covered yet"}
+Skills Still to Cover: ${finalModuleData.skillsCovered ? finalModuleData.skillsCovered.filter(s => !skillProgress.actualSkillsCovered.includes(s)).join(", ") : "N/A"}` 
+  : `Time-Based Progress: ${calculateTrainingProgress(finalModuleData, moduleStartDate).remainingDays} days remaining to complete this module`}
+
+AGENTIC GUIDELINES:
+- You have access to company training materials AND external sources (MDN, StackOverflow, Dev.to)
+- Adapt style based on recent user feedback (pace, clarity, and depth)
+- Prioritize company training materials for module-specific content
+- Use external sources for general programming concepts, best practices, or when depth is needed
+- Adjust explanation depth based on Training Level: "easy" = simple terms, "medium" = moderate depth, "hard" = advanced/in-depth
+- When external source is highly relevant, cite it: "<b>Source: MDN / StackOverflow / Dev.to</b>"
+- Combine company knowledge with external expertise for richer answers
+- In every response, end with one short context-aware question to keep the learner engaged and continue the conversation.
+${weaknessWelcome ? '\n- Start this conversation by welcoming the user and acknowledging their quiz struggles\n- Explain you will help them master the weak concepts identified\n- Be encouraging and supportive about starting fresh with regenerated roadmap\n' : ''}
+
+STRICT RULES:
+- Answer questions related to the active module, department, OR company information
+- When asked about the company, ALWAYS check the COMPANY INFORMATION section above first
+- If COMPANY INFORMATION shows "Not available", then say you don't have company details
+- If COMPANY INFORMATION has an "About" field, use that to answer questions about the company
+- When asked about "how many days left", "time remaining", or "deadline", use the "Days Remaining" value from ACTIVE MODULE section
+- When asked about "what will I learn", "module content", or "skills to cover", reference the "Skills to Learn" and "Description" from ACTIVE MODULE section
+- When asked to create a learning plan or divide remaining time, use the "Days Remaining" and "Skills to Learn" to create a structured day-by-day plan
+- For learning plan requests: Break down skills across available days, prioritize fundamentals first, include practice time
+- Give practical examples when helpful
+- Use <b>, <i>, <ul>, <li>, <p> HTML tags for formatting
+- Do NOT use markdown formatting (no **, ##, __, etc.)
+${weaknessWelcome ? '' : '- NEVER repeat greetings or introductions\n'}- NEVER repeat step numbers or progress status (e.g., "You've completed 2 of 6 steps")
+- NEVER say "ready to dive", "let's move on", or similar transition phrases
+- Get straight to answering the question with teaching content
+- If completely off-topic (not module, company, or department related), say: "I'm here to help with your training module and answer questions about the company."
+- Focus on teaching concepts, not announcing progress
+
+
+CONTEXT:
+${context}
+
+USER MESSAGE:
+${newMessage}
+
+RESPOND WITH: Direct educational content addressing the question, using both company materials and external sources intelligently. No progress updates or step announcements.
+`;
+
+    /* ---------- LLM ---------- */
+    const completion = await initializeChatModel().generateContent(finalPrompt);
+    let botReply =
+      completion?.response?.text() ||
+      "I’m here to help with your training module.";
+
+    // Safety net in case model misses the prompt rule.
+    // Only append when there is no question at all, to avoid duplicate end questions.
+    const plainReply = botReply.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+    if (!/[?؟]/.test(plainReply)) {
+      const moduleTitle = (finalModuleData?.moduleTitle || "this module").trim();
+      botReply = `${botReply.trim()}\n\nWhat would you like to learn next about ${moduleTitle}: concept, example, or a quick practice task?`;
+    }
+
+    /* ---------- SAVE CHAT ---------- */
+    await chatSessionRef.update({
+      messages: admin.firestore.FieldValue.arrayUnion(
+        { from: "user", text: newMessage, timestamp: new Date() },
+        { from: "bot", text: botReply, timestamp: new Date() }
+      ),
+    });
+
+    const botRepliesToday =
+      existingMessages.filter((message) => message?.from === "bot").length + 1;
+    const askForFeedback = botRepliesToday % FEEDBACK_PROMPT_INTERVAL === 0;
+
+    /* ---------- UPDATE MEMORY (ASYNC) ---------- */
+    // Update memory in background without blocking response
+    updateMemoryAfterChat({
+      userId,
+      companyId,
+      deptId,
+      moduleId: finalActiveModule.id,
+      userMessage: newMessage,
+      botReply: botReply
+    }).catch(err => console.warn("⚠️ Memory update skipped:", err.message));
+
+    return res.json({
+      reply: botReply,
+      sourceUsed: relevantDocs.length > 0,
+      askForFeedback,
+      botRepliesToday,
+    });
 
   } catch (err) {
     console.error("❌ chatController FULL ERROR:", err);
