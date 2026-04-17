@@ -1,5 +1,4 @@
-import { db } from "../config/firebase.js";
-import { collection, doc, setDoc, getDocs, query, orderBy, limit, Timestamp } from "firebase/firestore";
+import { db, admin } from "../config/firebase.js";
 
 const AGENT_HEALTH_COLLECTION = "agentHealthSnapshots";
 const AGENT_METRICS_COLLECTION = "agentMetrics";
@@ -14,15 +13,14 @@ export async function storeAgentHealthSnapshot(agentRows, summary) {
 
     const snapshot = {
       timestamp,
-      firebaseTimestamp: Timestamp.now(),
+      firebaseTimestamp: admin.firestore.FieldValue.serverTimestamp(),
       agents: agentRows,
       kpis: summary.kpis,
       segments: summary.segments,
       alerts: summary.alerts,
     };
 
-    const snapshotRef = doc(db, AGENT_HEALTH_COLLECTION, docId);
-    await setDoc(snapshotRef, snapshot);
+    await db.collection(AGENT_HEALTH_COLLECTION).doc(docId).set(snapshot);
 
     console.log(`✅ Agent health snapshot stored: ${docId}`);
     return { success: true, docId, timestamp };
@@ -52,11 +50,10 @@ export async function storeAgentMetrics(agent) {
       status: agent.status,
       lastRunAt: agent.lastRunAt,
       timestamp,
-      firebaseTimestamp: Timestamp.now(),
+      firebaseTimestamp: admin.firestore.FieldValue.serverTimestamp(),
     };
 
-    const metricsRef = doc(db, AGENT_METRICS_COLLECTION, docId);
-    await setDoc(metricsRef, metrics);
+    await db.collection(AGENT_METRICS_COLLECTION).doc(docId).set(metrics);
 
     return { success: true, docId };
   } catch (error) {
@@ -70,13 +67,11 @@ export async function storeAgentMetrics(agent) {
  */
 export async function getLatestAgentHealthSnapshot() {
   try {
-    const q = query(
-      collection(db, AGENT_HEALTH_COLLECTION),
-      orderBy("firebaseTimestamp", "desc"),
-      limit(1)
-    );
-
-    const snapshot = await getDocs(q);
+    const snapshot = await db
+      .collection(AGENT_HEALTH_COLLECTION)
+      .orderBy("firebaseTimestamp", "desc")
+      .limit(1)
+      .get();
 
     if (snapshot.empty) {
       return { success: false, data: null, message: "No stored snapshots found" };
@@ -97,13 +92,12 @@ export async function getAgentHealthSnapshots(hoursBack = 24) {
   try {
     const cutoffTime = new Date(Date.now() - hoursBack * 60 * 60 * 1000);
 
-    const q = query(
-      collection(db, AGENT_HEALTH_COLLECTION),
-      orderBy("firebaseTimestamp", "desc"),
-      limit(100)
-    );
+    const snapshots = await db
+      .collection(AGENT_HEALTH_COLLECTION)
+      .orderBy("firebaseTimestamp", "desc")
+      .limit(100)
+      .get();
 
-    const snapshots = await getDocs(q);
     const filtered = snapshots.docs
       .map((doc) => ({
         docId: doc.id,
@@ -128,13 +122,12 @@ export async function getAgentMetricsHistory(agentKey, hoursBack = 24) {
   try {
     const cutoffTime = new Date(Date.now() - hoursBack * 60 * 60 * 1000);
 
-    const q = query(
-      collection(db, AGENT_METRICS_COLLECTION),
-      orderBy("firebaseTimestamp", "desc"),
-      limit(500)
-    );
+    const docs = await db
+      .collection(AGENT_METRICS_COLLECTION)
+      .orderBy("firebaseTimestamp", "desc")
+      .limit(500)
+      .get();
 
-    const docs = await getDocs(q);
     const filtered = docs.docs
       .map((doc) => ({
         docId: doc.id,

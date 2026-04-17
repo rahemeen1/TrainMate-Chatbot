@@ -169,13 +169,39 @@ async function extractSkillsFromLongText({
 
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i];
-    const prompt = `You are extracting skills for a fresher roadmap generation pipeline.
+    
+    // Determine skill extraction context based on training topic
+    const isNonTechnical = /accounting|finance|hr|human\s*resources|management|sales|marketing|business/i.test(trainingOn);
+    
+    let scopeRules = "";
+    if (isNonTechnical) {
+      scopeRules = `
+SKILL EXTRACTION RULES FOR ${trainingOn.toUpperCase()}:
+- Extract domain-specific competencies and tools relevant to this department
+- Examples for ACCOUNTING: Financial Modeling, Excel, Tax, Audit, Reconciliation, QuickBooks, SAP, Tally, Bookkeeping, GAAP, GST, Balance Sheet
+- Examples for HR: Recruitment, HRIS, Payroll, Employee Relations, Training & Development, ATS systems, Compensation, Performance Management, Labor Law
+- Examples for SALES: Client Management, CRM, Negotiation, Pipeline Management, Salesforce, Territory Management
+- Examples for MARKETING: Digital Marketing, SEO, Social Media, Content Marketing, Analytics, Google Analytics, Marketing Automation, Adobe Creative Suite
+- Examples for MANAGEMENT: Project Management, Leadership, Strategic Planning, Risk Management, Agile, Scrum, Jira
+- DO NOT extract: department/job titles, company names, or soft skills descriptions
+`;
+    } else {
+      scopeRules = `
+SKILL EXTRACTION RULES FOR TECHNICAL ROLES:
+- Extract ONLY technical skills: programming languages, frameworks, tools, methodologies, and technologies
+- Examples: Python, Java, React, Docker, SQL, Agile, REST APIs, Git, AWS, Kubernetes, Machine Learning, Data Analysis
+- DO NOT extract: job titles, company names, project names, certifications, degrees, dates, or soft achievements
+`;
+    }
+    
+    const prompt = `You are extracting skills from a CV for a fresher roadmap generation pipeline.
 
-TASK:
-- Extract explicit and implied skills from this text segment.
-- ${scopeInstruction}
-- Prioritize items listed in sections like Skills, Coursework, Tools, Certifications, Projects, and Experience.
-- Keep skill names concise, normalized, and reusable in learning plans.
+${scopeRules}
+
+GENERAL RULES:
+- Extract ONLY professional, reusable skills that belong in a learning roadmap
+- Keep skill names concise, normalized, and clearly actionable
+- One skill per item (no multi-skill entries)
 
 TOPIC CONTEXT: ${trainingOn}
 EXPERTISE LEVEL: ${expertise}/5
@@ -202,18 +228,43 @@ Return ONLY valid JSON:
 
 async function inferSkillsFromTopicAgentically(trainingOn = "General", expertise = 1) {
   const topic = String(trainingOn || "General").trim();
+  
+  // Determine domain context
+  const isAccounting = /accounting|finance|audit|tax/i.test(topic);
+  const isHR = /hr|human\s*resources|recruitment|payroll/i.test(topic);
+  const isSales = /sales|business\s*development|account\s*executive/i.test(topic);
+  const isMarketing = /marketing|digital\s*marketing|brand/i.test(topic);
+  const isManagement = /management|project\s*management|operations/i.test(topic);
+  
+  let domainContext = "";
+  if (isAccounting) {
+    domainContext = `Accounting/Finance domain: Include skills like Financial Modeling, Excel Advanced, Tax Knowledge, Audit Processes, GL Accounting, ERP systems (SAP, Tally), Balance Sheet Analysis, GAAP/IFRS, GST Compliance`;
+  } else if (isHR) {
+    domainContext = `HR domain: Include skills like Recruitment Strategies, HRIS Systems, Payroll Processing, Employee Relations, Training & Development, Compensation & Benefits, Labor Law, Performance Management, ATS Tools`;
+  } else if (isSales) {
+    domainContext = `Sales domain: Include skills like Client Management, CRM Systems (Salesforce), Sales Pipeline Management, Negotiation, Territory Management, Sales Analytics, Deal Closing, Customer Relationship Building`;
+  } else if (isMarketing) {
+    domainContext = `Marketing domain: Include skills like Digital Marketing, SEO/SEM, Social Media Management, Analytics (Google Analytics), Content Marketing, Email Marketing, Marketing Automation, Adobe Creative Suite`;
+  } else if (isManagement) {
+    domainContext = `Management/Operations domain: Include skills like Project Management, Leadership, Strategic Planning, Risk Management, Agile/Scrum, Jira, Process Optimization, Team Management`;
+  } else {
+    domainContext = `Technical domain: Include programming languages, frameworks, tools, databases, cloud platforms, and development methodologies`;
+  }
 
-  const prompt = `You are an L&D specialist.
+  const prompt = `You are an L&D specialist with expertise across technical and non-technical domains.
 
-Given only a training topic/department name, infer 10-15 practical skills that a fresher should learn first.
+Given a training topic/department name, infer 10-15 practical skills that a fresher should learn first.
 
 TOPIC: ${topic}
 EXPERTISE LEVEL: ${expertise}/5
+DOMAIN CONTEXT: ${domainContext}
 
 Rules:
-- No role fluff, only concrete skill names.
-- Include domain, tooling, process, and communication skills relevant to the topic.
-- Keep each skill short and clear.
+- Infer ONLY concrete, actionable skill names (not soft skills or general descriptions)
+- Focus on technical tools, systems, processes, and competencies specific to the domain
+- Keep each skill short, clear, and relevant to learning roadmaps
+- One skill per item
+- No role titles or job descriptions
 
 Return ONLY valid JSON:
 {
@@ -221,7 +272,7 @@ Return ONLY valid JSON:
   "analysis": "one line"
 }`;
 
-  const inferred = await extractSkillList(prompt, "Company topic inference", topic);
+  const inferred = await extractSkillList(prompt, "Topic-based skill inference", topic);
   return normalizeSkills(inferred);
 }
 
@@ -309,16 +360,15 @@ function extractSkillsArrayFromText(text) {
 function extractSkillsFromStructuredCv(structuredCv) {
   if (!structuredCv || typeof structuredCv !== "object") return [];
 
+  // Only extract explicit skills field, ignore tools, certifications, projects
   const skills = Array.isArray(structuredCv.skills) ? structuredCv.skills : [];
+  
+  // Also extract from tools if present (tools are skills)
   const tools = Array.isArray(structuredCv.tools) ? structuredCv.tools : [];
-  const certs = Array.isArray(structuredCv.certifications) ? structuredCv.certifications : [];
-  const projects = Array.isArray(structuredCv.projects) ? structuredCv.projects : [];
 
   const seeded = [
     ...skills,
     ...tools,
-    ...certs,
-    ...projects,
   ].flatMap((item) => splitSkillCandidates(item));
 
   return normalizeSkills(seeded);
