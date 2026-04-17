@@ -474,7 +474,7 @@ console.log("companyId:", companyId);
     const loadPendingNotifications = async () => {
       try {
         const res = await fetch(
-          `http://localhost:5000/api/company/notifications/${companyId}?status=pending&types=module_lock,training_completion`
+          `http://localhost:5000/api/company/notifications/${companyId}?status=pending&types=module_lock,training_completion,training_summary_report`
         );
         const data = await res.json();
         if (!res.ok) return;

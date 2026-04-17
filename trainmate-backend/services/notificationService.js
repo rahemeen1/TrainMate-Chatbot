@@ -9,6 +9,7 @@
 import { google } from "googleapis";
 import { db } from "../config/firebase.js";
 import { sendRoadmapEmail, sendQuizUnlockEmail, sendDailyModuleReminderEmail } from "./emailService.js";
+import { policyEngine } from "./policy/policyEngine.service.js";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -234,6 +235,31 @@ function getReminderOverrides() {
     { method: "email", minutes: 60 },   // Email 60 min before
     { method: "popup", minutes: 10 },   // Popup 10 min before
   ];
+}
+
+async function getNotificationDecision(context = {}) {
+  try {
+    const decision = await policyEngine.decide("notification", {
+      ...context,
+      constraints: context.constraints || {
+        maxLatency: 2000,
+        costSensitivity: "medium",
+      },
+    });
+
+    if (decision && typeof decision.shouldSend === "boolean") {
+      return decision;
+    }
+  } catch (error) {
+    console.warn("⚠️ Failed to get orchestrator notification strategy:", error.message);
+  }
+
+  return {
+    shouldSend: true,
+    sendEmail: true,
+    createCalendarEvent: true,
+    reason: "Fallback strategy",
+  };
 }
 
 /**
@@ -499,8 +525,27 @@ export async function handleRoadmapGenerated({
       return result;
     }
 
+    const decision = await getNotificationDecision({
+      companyId,
+      deptId,
+      userId,
+      userName,
+      companyName,
+      trainingTopic,
+      notificationType: "ROADMAP_GENERATED",
+      isNewUser: true,
+      activeModule: modules?.[0] || null,
+      timezone: process.env.DEFAULT_TIMEZONE || "Asia/Karachi",
+    });
+
+    if (!decision.shouldSend) {
+      console.log(`⏭️ Skipping roadmap notifications: ${decision.reason}`);
+      return result;
+    }
+
     // 1️⃣ Send roadmap email with PDF
-    try {
+    if (decision.sendEmail) {
+      try {
       await sendRoadmapEmail({
         userEmail,
         userName,
@@ -511,32 +556,35 @@ export async function handleRoadmapGenerated({
       });
       console.log(`✅ Roadmap email sent`);
       result.emailSent = true;
-    } catch (emailErr) {
-      console.error(`❌ Roadmap email failed:`, emailErr.message);
+      } catch (emailErr) {
+        console.error(`❌ Roadmap email failed:`, emailErr.message);
+      }
     }
 
     // 2️⃣ Create ONE recurring daily reminder event
-    try {
-      const activeModule = modules[0];
-      const calendarEventId = await createRoadmapDailyReminderEvent({
-        companyId,
-        deptId,
-        userId,
-        userEmail,
-        userName,
-        companyName,
-        activeModuleTitle: activeModule.moduleTitle,
-        startDate: new Date(),
-        totalModules: modules.length,
-        estimatedDays: activeModule.estimatedDays || 30,
-        timeZone: process.env.DEFAULT_TIMEZONE || "Asia/Karachi",
-      });
-      console.log(`✅ Daily reminder event created`);
-      result.calendarEventCreated = true;
-      result.calendarEventId = calendarEventId;
-    } catch (calendarErr) {
-      console.error(`❌ Calendar event failed:`, calendarErr.message);
-      result.calendarError = calendarErr.message;
+    if (decision.createCalendarEvent) {
+      try {
+        const activeModule = modules[0];
+        const calendarEventId = await createRoadmapDailyReminderEvent({
+          companyId,
+          deptId,
+          userId,
+          userEmail,
+          userName,
+          companyName,
+          activeModuleTitle: activeModule.moduleTitle,
+          startDate: new Date(),
+          totalModules: modules.length,
+          estimatedDays: activeModule.estimatedDays || 30,
+          timeZone: process.env.DEFAULT_TIMEZONE || "Asia/Karachi",
+        });
+        console.log(`✅ Daily reminder event created`);
+        result.calendarEventCreated = true;
+        result.calendarEventId = calendarEventId;
+      } catch (calendarErr) {
+        console.error(`❌ Calendar event failed:`, calendarErr.message);
+        result.calendarError = calendarErr.message;
+      }
     }
 
     console.log(`\n✅ Roadmap generation notification complete for ${userEmail}`);
@@ -567,6 +615,22 @@ export async function handleQuizUnlock({
 
     if (!userEmail) {
       console.warn(`⚠️ No user email, skipping quiz unlock notification`);
+      return;
+    }
+
+    const decision = await getNotificationDecision({
+      companyId,
+      deptId,
+      userId,
+      userName,
+      companyName,
+      trainingTopic: moduleTitle,
+      notificationType: "QUIZ_UNLOCK",
+      timezone: process.env.DEFAULT_TIMEZONE || "Asia/Karachi",
+    });
+
+    if (!decision.shouldSend || !decision.sendEmail) {
+      console.log(`⏭️ Skipping quiz unlock notification: ${decision.reason}`);
       return;
     }
 
@@ -610,20 +674,38 @@ export async function handleActiveModuleChange({
       return;
     }
 
-    // Update the existing recurring event
-    await updateReminderEventForNewModule({
+    const decision = await getNotificationDecision({
       companyId,
       deptId,
       userId,
-      userEmail,
       userName,
       companyName,
-      newActiveModuleTitle,
-      newEstimatedDays,
+      trainingTopic: newActiveModuleTitle,
+      notificationType: "ACTIVE_MODULE_CHANGE",
+      timezone: process.env.DEFAULT_TIMEZONE || "Asia/Karachi",
     });
 
+    if (!decision.shouldSend) {
+      console.log(`⏭️ Skipping module change notification: ${decision.reason}`);
+      return;
+    }
+
+    // Update the existing recurring event
+    if (decision.createCalendarEvent) {
+      await updateReminderEventForNewModule({
+        companyId,
+        deptId,
+        userId,
+        userEmail,
+        userName,
+        companyName,
+        newActiveModuleTitle,
+        newEstimatedDays,
+      });
+    }
+
     // Optionally send email notification
-    if (sendNotification) {
+    if (sendNotification && decision.sendEmail) {
       try {
         await sendDailyReminderEmail({
           userEmail,

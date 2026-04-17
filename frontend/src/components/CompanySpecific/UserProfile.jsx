@@ -34,7 +34,7 @@ export default function UserProfile() {
 
       try {
         const res = await fetch(
-          `http://localhost:5000/api/company/notifications/${companyId}?status=all&types=module_lock,training_completion`
+          `http://localhost:5000/api/company/notifications/${companyId}?status=all&types=module_lock,training_completion,training_summary_report`
         );
         const data = await res.json();
         if (!res.ok) return;

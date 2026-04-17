@@ -19,7 +19,7 @@ export default function CompanyNotifications() {
     try {
       setLoading(true);
       setError("");
-      const res = await fetch(`http://localhost:5000/api/company/notifications/${companyId}?status=pending&types=module_lock,training_completion`);
+      const res = await fetch(`http://localhost:5000/api/company/notifications/${companyId}?status=pending&types=module_lock,training_completion,training_summary_report`);
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Failed to load notifications");
       setNotifications(data.notifications || []);
@@ -98,8 +98,13 @@ export default function CompanyNotifications() {
                       <div className="space-y-3">
                         {(() => {
                           const isCompletion = n.type === "training_completion";
-                          const badgeLabel = isCompletion ? "Update" : "Action Required";
-                          const title = isCompletion ? "Training Completed" : "Module Lock Alert";
+                          const isSummary = n.type === "training_summary_report";
+                          const badgeLabel = isSummary || isCompletion ? "Update" : "Action Required";
+                          const title = isSummary
+                            ? "Training Summary Report"
+                            : isCompletion
+                            ? "Training Completed"
+                            : "Module Lock Alert";
                           return (
                             <>
                         <div className="flex items-center gap-3">
@@ -115,8 +120,10 @@ export default function CompanyNotifications() {
                           <p><span className="text-[#AFCBE3]">User:</span> {n.userName || "Unknown"}</p>
                           <p><span className="text-[#AFCBE3]">Email:</span> {n.userEmail || "Unknown"}</p>
                           <p><span className="text-[#AFCBE3]">Department:</span> {n.deptId || "Unknown"}</p>
-                          {!isCompletion && <p><span className="text-[#AFCBE3]">Module:</span> {n.moduleTitle || n.moduleId || "N/A"}</p>}
-                          {!isCompletion && <p><span className="text-[#AFCBE3]">Attempt:</span> {n.attemptNumber || "N/A"}</p>}
+                          {!isCompletion && !isSummary && <p><span className="text-[#AFCBE3]">Module:</span> {n.moduleTitle || n.moduleId || "N/A"}</p>}
+                          {!isCompletion && !isSummary && <p><span className="text-[#AFCBE3]">Attempt:</span> {n.attemptNumber || "N/A"}</p>}
+                          {isSummary && <p><span className="text-[#AFCBE3]">Modules:</span> {n?.summary?.completedModules || "N/A"}/{n?.summary?.totalModules || "N/A"}</p>}
+                          {isSummary && <p><span className="text-[#AFCBE3]">Total Attempts:</span> {n?.summary?.totalQuizAttempts ?? "N/A"}</p>}
                           <p><span className="text-[#AFCBE3]">Score:</span> {typeof n.score === "number" ? `${n.score}%` : "N/A"}</p>
                         </div>
                             </>
@@ -125,12 +132,24 @@ export default function CompanyNotifications() {
                       </div>
 
                       <div className="shrink-0">
-                        <button
-                          onClick={() => handleViewProfile(n)}
-                          className="company-primary-btn"
-                        >
-                          View Profile
-                        </button>
+                        <div className="flex flex-col gap-2">
+                          <button
+                            onClick={() => handleViewProfile(n)}
+                            className="company-primary-btn"
+                          >
+                            View Profile
+                          </button>
+                          {n.type === "training_summary_report" && n.reportDownloadUrl && (
+                            <a
+                              href={n.reportDownloadUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="company-outline-btn text-center"
+                            >
+                              Download Report PDF
+                            </a>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>

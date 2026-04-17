@@ -1,6 +1,7 @@
 // trainmate-backend/services/aiAgenticNotificationService.js
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { db } from "../config/firebase.js";
+import { policyEngine } from "./policy/policyEngine.service.js";
 import { sendRoadmapEmail, sendDailyModuleReminderEmail, sendQuizUnlockEmail } from "./emailService.js";
 import { createDailyModuleReminder, createQuizUnlockReminder, createRoadmapGeneratedEvent } from "./calendarService.js";
 
@@ -62,83 +63,13 @@ export async function analyzeUserEngagement(companyId, deptId, userId) {
  * @returns {Promise<Object>} AI decision
  */
 export async function aiDecideNotificationStrategy(context) {
-  console.log("\n🤖 AI Agentic Service: Consulting Gemini for notification strategy...");
-
-  const prompt = `You are an intelligent notification strategist for a corporate training platform called TrainMate.
-
-Analyze this user context and make smart notification decisions:
-
-USER PROFILE:
-- Name: ${context.userName}
-- Company: ${context.companyName}
-- Training Topic: ${context.trainingTopic}
-- Last Login: ${context.engagementData?.lastLoginAt?.toLocaleString() || "Unknown"}
-- Learning Streak: ${context.engagementData?.learningStreak || 0} days
-- Modules Completed: ${context.engagementData?.modulesCompleted || 0}
-- Average Quiz Score: ${context.engagementData?.averageQuizScore || 0}%
-- Email Open Rate: ${context.engagementData?.emailOpenRate || 0}%
-- Time Spent Learning: ${context.engagementData?.timeSpentLearning || 0} minutes
-- Current Module: ${context.activeModule?.moduleTitle || "None"}
-
-NOTIFICATION CONTEXT:
-- Notification Type: ${context.notificationType}
-- Is First-time User: ${context.isNewUser}
-- Current Hour: ${new Date().getHours()}
-- User Timezone: ${context.timezone}
-
-Based on this profile, provide a JSON response with these EXACT fields:
-{
-  "shouldSend": true/false,
-  "reason": "Brief explanation",
-  "sendEmail": true/false,
-  "createCalendarEvent": true/false,
-  "optimalTime": "HH:MM",
-  "personalizationTip": "How to personalize content",
-  "urgencyLevel": "high/medium/low",
-  "estimatedEngagementScore": 0-100,
-  "recommendedMessageTone": "motivational/factual/supportive"
-}
-
-Consider:
-1. User engagement patterns and history
-2. Optimal timing based on their activity
-3. Risk of notification fatigue (too many emails)
-4. Learning effectiveness (when they're most receptive)
-5. Whether they're likely to engage`;
-
-  try {
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
-
-    // Extract JSON from response
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error("No JSON found in response");
-    }
-
-    const aiDecision = JSON.parse(jsonMatch[0]);
-    console.log("🧠 AI Decision:", {
-      shouldSend: aiDecision.shouldSend,
-      reason: aiDecision.reason,
-      estimatedEngagement: aiDecision.estimatedEngagementScore,
-    });
-
-    return aiDecision;
-  } catch (error) {
-    console.error("❌ AI decision-making failed:", error.message);
-    // Fallback to safe defaults
-    return {
-      shouldSend: true,
-      reason: "AI unavailable, using defaults",
-      sendEmail: true,
-      createCalendarEvent: true,
-      optimalTime: "15:00",
-      estimatedEngagementScore: 50,
-      recommendedMessageTone: "motivational",
-      urgencyLevel: "medium",
-    };
-  }
+  const aiDecision = await policyEngine.decide("notification", context);
+  console.log("🧠 AI Decision:", {
+    shouldSend: aiDecision.shouldSend,
+    reason: aiDecision.reason,
+    estimatedEngagement: aiDecision.estimatedEngagementScore,
+  });
+  return aiDecision;
 }
 
 /**

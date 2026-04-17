@@ -30,10 +30,22 @@ export default function ViewCompanies() {
     return seconds ? new Date(seconds * 1000).toLocaleDateString("en-GB") : "—";
   };
 
+  const normalizeLicensePlan = (company) => {
+    const rawPlan =
+      company?.latestBillingPaymentPlan ||
+      company?.billingPayment?.plan ||
+      company?.plan ||
+      company?.licensePlan ||
+      "License Basic";
+
+    const normalized = String(rawPlan).trim().toLowerCase();
+    return normalized.includes("pro") ? "License Pro" : "License Basic";
+  };
+
   const activeCompanies = companies.filter((company) => company.status === "active").length;
   const inactiveCompanies = Math.max(0, companies.length - activeCompanies);
-  const basicPlanCount = companies.filter((company) => (company.licensePlan || "License Basic") === "License Basic").length;
-  const proPlanCount = companies.filter((company) => (company.licensePlan || "License Basic") === "License Pro").length;
+  const basicPlanCount = companies.filter((company) => normalizeLicensePlan(company) === "License Basic").length;
+  const proPlanCount = companies.filter((company) => normalizeLicensePlan(company) === "License Pro").length;
 
   const toDateSafe = (value) => {
     if (!value) return null;
@@ -50,7 +62,7 @@ export default function ViewCompanies() {
   const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
 
   const getLicenseMeta = (company) => {
-    const licensePlan = company.licensePlan || "License Basic";
+    const licensePlan = normalizeLicensePlan(company);
     const planLabel = licensePlan === "License Pro" ? "Pro" : "Basic";
     const billingPeriodDays = Number(company.billingPeriodDays) || 30;
 
@@ -87,7 +99,7 @@ export default function ViewCompanies() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
+    <div className="w-full max-w-7xl mx-auto space-y-6 overflow-x-hidden">
       <div className="bg-[#031C3A]/70 border border-[#00FFFF30] rounded-2xl p-5 sm:p-6">
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
           <div>

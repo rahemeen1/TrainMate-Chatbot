@@ -1,29 +1,29 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import OpenAI from "openai";
 import dotenv from "dotenv";
 import { db } from "../config/firebase.js";
+import { extractSkillsAgentically } from "./agenticSkillExtractor.service.js";
+import { generateRoadmap } from "./llmService.js";
+import { evaluateCode } from "./codeEvaluator.service.js";
+import { retrieveDeptDocsFromPinecone } from "./pineconeService.js";
+import { applyGuardrails } from "./guardrail.service.js";
+import { policyEngine } from "./policy/policyEngine.service.js";
 
 dotenv.config();
 
 let genAI = null;
-let openAI = null;
 let initialized = false;
 
 function initializeLLMs() {
   if (initialized) return;
   
   const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY);
-  const hasOpenAIKey = Boolean(process.env.OPENAI_API_KEY);
-  
-  if (!hasGeminiKey && !hasOpenAIKey) {
-    throw new Error("❌ At least one LLM key is required (GEMINI_API_KEY or OPENAI_API_KEY)");
+
+  if (!hasGeminiKey) {
+    throw new Error("❌ GEMINI_API_KEY is required");
   }
   
   if (hasGeminiKey) {
     genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  }
-  if (hasOpenAIKey) {
-    openAI = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   }
   
   initialized = true;
@@ -43,6 +43,283 @@ export class AgentOrchestrator {
     this.agents = new Map(); // Registry: { name: agent function }
     this.executionHistory = []; // Audit log
     this.maxHistorySize = 100;
+    this.coreAgentsRegistered = false;
+    this.registerCoreAgents();
+  }
+
+  registerCoreAgents() {
+    if (this.coreAgentsRegistered) {
+      return;
+    }
+
+    console.log('\n📋 Initializing Agent Registry...');
+
+    // ==================== EXTRACTION AGENTS ====================
+
+    this.registerAgent('extract-cv-skills', async ({ previousResults, context }) => {
+      console.log('    🤖 CV Skills Agent: Analyzing CV...');
+      const { cvText, expertise, trainingOn } = context;
+
+      const { cvSkills, extractionDetails } = await extractSkillsAgentically({
+        cvText,
+        companyDocsText: '', // Will be filled after company doc fetching
+        expertise,
+        trainingOn,
+      });
+
+      return {
+        cvSkills,
+        extractionDetails,
+        agentName: 'CV Skills Agent'
+      };
+    });
+
+    this.registerAgent('extract-company-skills', async ({ previousResults, context }) => {
+      console.log('    🤖 Company Skills Agent: Analyzing company docs...');
+      const { companyDocsText, expertise, trainingOn } = context;
+
+      const { companySkills, extractionDetails } = await extractSkillsAgentically({
+        cvText: '',
+        companyDocsText,
+        expertise,
+        trainingOn,
+      });
+
+      return {
+        companySkills,
+        extractionDetails,
+        agentName: 'Company Skills Agent'
+      };
+    });
+
+    this.registerAgent('analyze-skill-gaps', async ({ previousResults }) => {
+      console.log('    🤖 Gap Analysis Agent: Identifying skill gaps...');
+      const cvSkills = previousResults['extract-cv-skills']?.cvSkills || [];
+      const companySkills = previousResults['extract-company-skills']?.companySkills || [];
+
+      const skillGapMap = new Map();
+      companySkills.forEach((skill) => {
+        if (!cvSkills.includes(skill)) {
+          skillGapMap.set(skill, skillGapMap.has(skill) ? skillGapMap.get(skill) + 1 : 1);
+        }
+      });
+
+      const skillGap = Array.from(skillGapMap.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 20)
+        .map(([skill]) => skill);
+
+      const criticalGaps = skillGap.slice(0, Math.ceil(skillGap.length * 0.3));
+
+      return {
+        skillGap,
+        criticalGaps,
+        gapCount: skillGap.length,
+        agentName: 'Gap Analysis Agent'
+      };
+    });
+
+    // ==================== PLANNING AGENTS ====================
+
+    this.registerAgent('plan-retrieval', async ({ previousResults, context }) => {
+      console.log('    🤖 Planning Agent: Creating retrieval strategy...');
+      const skillGap = previousResults['analyze-skill-gaps']?.skillGap || [];
+      const { trainingOn } = context;
+
+      const plannerPrompt = `Create a retrieval plan for skill gaps.
+
+SKILL GAPS: ${skillGap.slice(0, 10).join(", ")}
+TRAINING TOPIC: ${trainingOn}
+
+Return JSON:
+{
+  "queries": ["query1", "query2", "query3"],
+  "focusAreas": ["area1", "area2"],
+  "priority": "high|medium|low"
+}`;
+
+      try {
+        const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash', generationConfig: { responseMimeType: 'application/json' } });
+        const result = await model.generateContent(plannerPrompt);
+        const text = result.response.text();
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const plan = JSON.parse(jsonMatch[0]);
+          return {
+            ...plan,
+            agentName: 'Planning Agent'
+          };
+        }
+      } catch (error) {
+        console.warn('    ⚠️  Planner failed, using default');
+      }
+
+      return {
+        queries: [`${trainingOn} fundamentals`, `${trainingOn} best practices`],
+        focusAreas: ['fundamentals', 'practices'],
+        priority: 'high',
+        agentName: 'Planning Agent'
+      };
+    });
+
+    this.registerAgent('retrieve-documents', async ({ previousResults, context }) => {
+      console.log('    🤖 Retrieval Agent: Fetching company documents...');
+      const queries = previousResults['plan-retrieval']?.queries || [];
+      const { companyId, deptId } = context;
+
+      const allDocs = [];
+      for (const query of queries) {
+        try {
+          const docs = await retrieveDeptDocsFromPinecone({
+            queryText: query,
+            companyId,
+            deptName: deptId,
+          });
+          allDocs.push(...docs);
+        } catch (error) {
+          console.warn(`    ⚠️  Retrieval failed for query: ${query}`);
+        }
+      }
+
+      const uniqueDocs = Array.from(new Map(allDocs.map((d) => [d.text, d])).values());
+
+      return {
+        documentCount: uniqueDocs.length,
+        documents: uniqueDocs,
+        agentName: 'Retrieval Agent'
+      };
+    });
+
+    // ==================== GENERATION AGENTS ====================
+
+    this.registerAgent('generate-roadmap', async ({ previousResults, context }) => {
+      console.log('    🤖 Roadmap Generation Agent: Creating learning roadmap...');
+
+      const skillGap = previousResults['analyze-skill-gaps']?.skillGap || [];
+      const focusAreas = previousResults['plan-retrieval']?.focusAreas || [];
+      const docs = previousResults['retrieve-documents']?.documents || [];
+
+      const {
+        cvText,
+        expertise,
+        trainingOn,
+        level,
+        trainingDuration,
+        learningProfile,
+      } = context;
+
+      const docsText = docs.map((d) => d.text || '').join('\n').slice(0, 8000);
+      const companyContext = `COMPANY DOCUMENTS:\n${docsText || 'No company documents available.'}`;
+
+      const modules = await generateRoadmap({
+        cvText,
+        pineconeContext: docs,
+        companyContext,
+        expertise,
+        trainingOn,
+        trainingLevel: level,
+        trainingDuration,
+        skillGap,
+        learningProfile,
+        planFocusAreas: focusAreas,
+      });
+
+      return {
+        modules,
+        moduleCount: modules.length,
+        totalDays: modules.reduce((sum, m) => sum + (m.estimatedDays || 1), 0),
+        agentName: 'Roadmap Generation Agent'
+      };
+    });
+
+    // ==================== EVALUATION AGENTS ====================
+
+    this.registerAgent('evaluate-code', async ({ context }) => {
+      console.log('    🤖 Code Evaluation Agent: Evaluating code submission...');
+      const { userCode, testCases, question, language } = context;
+
+      try {
+        const expectedApproach = Array.isArray(testCases)
+          ? testCases.map((tc) => `${tc?.input ?? ''} => ${tc?.expectedOutput ?? ''}`).join('\n')
+          : String(testCases || 'Not provided');
+
+        const evaluation = await evaluateCode({
+          question: String(question || 'Coding problem not provided'),
+          code: String(userCode || ''),
+          expectedApproach,
+          language: String(language || 'JavaScript'),
+        });
+        return {
+          ...evaluation,
+          agentName: 'Code Evaluation Agent'
+        };
+      } catch (error) {
+        return {
+          isCorrect: false,
+          score: 0,
+          feedback: 'Code evaluation failed',
+          agentName: 'Code Evaluation Agent'
+        };
+      }
+    });
+
+    this.registerAgent('validate-roadmap', async ({ previousResults, context }) => {
+      console.log('    🤖 Validation Agent: Checking roadmap quality...');
+      const modules = previousResults['generate-roadmap']?.modules || [];
+      const { trainingDuration } = context;
+
+      const validatorPrompt = `Validate this roadmap quality.
+
+MODULES: ${modules.length}
+TOTAL DAYS: ${modules.reduce((sum, m) => sum + (m.estimatedDays || 1), 0)}
+ALLOWED DURATION: ${trainingDuration}
+
+CRITERIA:
+1. Modules complete?
+2. Estimated days realistic?
+3. Skills covered adequate?
+4. Logical progression?
+
+Return JSON:
+{
+  "pass": true/false,
+  "score": 0-100,
+  "issues": ["issue1"],
+  "improvements": ["suggestion1"]
+}`;
+
+      try {
+        const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash', generationConfig: { responseMimeType: 'application/json' } });
+        const result = await model.generateContent(validatorPrompt);
+        const text = result.response.text();
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const validation = JSON.parse(jsonMatch[0]);
+          return {
+            ...validation,
+            agentName: 'Validation Agent'
+          };
+        }
+      } catch (error) {
+        console.warn('    ⚠️  Validation check skipped');
+      }
+
+      return {
+        pass: modules.length > 0,
+        score: 80,
+        issues: [],
+        agentName: 'Validation Agent'
+      };
+    });
+
+    this.coreAgentsRegistered = true;
+    console.log('✅ Agent Registry initialized (8 agents registered)\n');
+  }
+
+  ensureCoreAgentsRegistered() {
+    if (!this.coreAgentsRegistered || this.agents.size === 0) {
+      this.registerCoreAgents();
+    }
   }
 
   isRoadmapGoal(goal) {
@@ -115,31 +392,54 @@ export class AgentOrchestrator {
       }
     }
 
-    if (openAI) {
-      try {
-        const completion = await openAI.chat.completions.create({
-          model: "gpt-4o-mini",
-          response_format: { type: "json_object" },
-          messages: [
-            ...(systemInstruction ? [{ role: "system", content: systemInstruction }] : []),
-            { role: "user", content: prompt },
-          ],
-          temperature: 0.2,
-        });
+    return null;
+  }
 
-        const responseText = completion.choices?.[0]?.message?.content || "";
-        const jsonText = this.extractJsonFromText(responseText);
-        if (!jsonText) {
-          throw new Error("No JSON found in OpenAI response");
-        }
-
-        return JSON.parse(jsonText);
-      } catch (error) {
-        console.warn(`⚠️  OpenAI fallback failed for ${purpose}:`, error.message);
-      }
+  normalizeConstraintEnvelope(rawConstraints) {
+    if (rawConstraints && typeof rawConstraints === "object" && !Array.isArray(rawConstraints)) {
+      return {
+        maxLatency: Number(rawConstraints.maxLatency) || 2000,
+        costSensitivity: ["low", "medium", "high"].includes(rawConstraints.costSensitivity)
+          ? rawConstraints.costSensitivity
+          : "medium",
+      };
     }
 
-    return null;
+    return {
+      maxLatency: 2000,
+      costSensitivity: "medium",
+    };
+  }
+
+  summarizeMemory(memory = {}) {
+    if (!memory || typeof memory !== "object") {
+      return "No historical memory available.";
+    }
+
+    const recentRuns = Array.isArray(memory.recentRuns) ? memory.recentRuns.slice(-5) : [];
+    const failCount = recentRuns.filter((r) => r && r.success === false).length;
+    const successCount = recentRuns.filter((r) => r && r.success === true).length;
+    const avgValidation = recentRuns
+      .map((r) => Number(r?.validationScore))
+      .filter((v) => Number.isFinite(v));
+
+    const avgValidationScore = avgValidation.length
+      ? Math.round(avgValidation.reduce((sum, v) => sum + v, 0) / avgValidation.length)
+      : null;
+
+    return [
+      `Last goal: ${memory.lastGoal || "unknown"}`,
+      `Recent successes: ${successCount}`,
+      `Recent failures: ${failCount}`,
+      `Average validation score: ${avgValidationScore ?? "n/a"}`,
+    ].join(" | ");
+  }
+
+  extractKeywords(text) {
+    return String(text || "")
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((token) => token.length > 2);
   }
 
   getMemoryDocRef(context = {}) {
@@ -214,6 +514,132 @@ export class AgentOrchestrator {
     } catch (error) {
       console.warn("⚠️  Failed to save orchestrator memory:", error.message);
     }
+  }
+
+  getAutonomyGoalsCollection() {
+    return db.collection("autonomousAgentGoals");
+  }
+
+  sanitizeAutonomousContextPatch(patch) {
+    if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
+      return {};
+    }
+
+    const forbiddenKeys = new Set([
+      "GEMINI_API_KEY",
+      "OPENAI_API_KEY",
+      "COHERE_API_KEY",
+      "serviceAccountKey",
+      "admin",
+    ]);
+
+    const sanitized = {};
+    for (const [key, value] of Object.entries(patch)) {
+      if (forbiddenKeys.has(key)) continue;
+      if (typeof value === "function") continue;
+      sanitized[key] = value;
+    }
+
+    return sanitized;
+  }
+
+  async suggestFollowUpGoals({
+    goal,
+    context,
+    finalOutput,
+    validation,
+    executionLog,
+  }) {
+    const autonomyDepth = Number(context?.autonomyDepth || 0);
+    if (autonomyDepth >= 2) {
+      return [];
+    }
+
+    const prompt = `You are an autonomous goal expansion agent.
+
+PRIMARY GOAL: ${goal}
+VALIDATION SCORE: ${Number(validation?.score || 0)}
+VALIDATION REASON: ${validation?.reason || "n/a"}
+
+EXECUTION SUMMARY:
+${this.compactForPrompt(executionLog || [], 900)}
+
+FINAL OUTPUT SUMMARY:
+${this.compactForPrompt(finalOutput || {}, 1200)}
+
+Suggest up to 2 useful follow-up goals only if they clearly improve learner outcomes.
+Do not suggest duplicate or overly broad goals.
+
+Return JSON only:
+{
+  "followUpGoals": [
+    {
+      "goal": "specific autonomous goal",
+      "reason": "why this helps",
+      "priority": 1,
+      "contextPatch": {
+        "focus": "..."
+      }
+    }
+  ]
+}`;
+
+    try {
+      const parsed = await this.generateJsonWithFallback(prompt, {
+        purpose: "autonomous follow-up goal suggestion",
+      });
+
+      const rawGoals = Array.isArray(parsed?.followUpGoals) ? parsed.followUpGoals : [];
+
+      return rawGoals
+        .map((item) => ({
+          goal: String(item?.goal || "").trim(),
+          reason: String(item?.reason || "").trim(),
+          priority: Math.max(0, Math.min(10, Number(item?.priority || 5))),
+          contextPatch: this.sanitizeAutonomousContextPatch(item?.contextPatch || {}),
+        }))
+        .filter((item) => item.goal.length >= 12)
+        .slice(0, 2);
+    } catch {
+      return [];
+    }
+  }
+
+  async enqueueAutonomousGoals(goals = [], options = {}) {
+    const autonomyGoalsRef = this.getAutonomyGoalsCollection();
+    const createdIds = [];
+
+    for (const goalItem of goals) {
+      const goalText = String(goalItem?.goal || "").trim();
+      if (!goalText) continue;
+
+      const payload = {
+        goal: goalText,
+        reason: goalItem?.reason || null,
+        status: "pending",
+        priority: Math.max(0, Math.min(10, Number(goalItem?.priority || 5))),
+        attempts: 0,
+        maxAttempts: Math.max(1, Math.min(5, Number(options.maxAttempts || 3))),
+        createdBy: options.createdBy || "agent",
+        parentGoal: options.parentGoal || null,
+        parentGoalId: options.parentGoalId || null,
+        context: {
+          ...(options.baseContext || {}),
+          ...(goalItem?.contextPatch || {}),
+          autonomyMode: true,
+          allowAutonomousFollowUps: true,
+          autonomyDepth: Math.min(3, Number(options.autonomyDepth || 0) + 1),
+        },
+        nextRunAt: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const ref = await autonomyGoalsRef.add(payload);
+      createdIds.push(ref.id);
+    }
+
+    return createdIds;
   }
 
   normalizePlan(plan, goal) {
@@ -308,6 +734,20 @@ export class AgentOrchestrator {
     };
   }
 
+  resolveAgentDefinition(agentEntry) {
+    if (typeof agentEntry === "function") {
+      return {
+        execute: agentEntry,
+      };
+    }
+
+    if (agentEntry && typeof agentEntry === "object" && typeof agentEntry.execute === "function") {
+      return agentEntry;
+    }
+
+    return null;
+  }
+
   /**
    * 🎯 Main orchestration entry point
    * 
@@ -332,11 +772,22 @@ export class AgentOrchestrator {
         ...context,
         orchestrationMemory: longTermMemory,
       };
+      const constraints = this.normalizeConstraintEnvelope(runContext.constraints);
+      const maxIterations = Math.max(2, Math.min(4, Number(runContext.maxReasoningIterations) || 3));
 
-      // STEP 1: Generate execution plan
+      let activeContext = runContext;
+      let activePlan = null;
+      let activeWarnings = [];
+      let finalExecutionResults = null;
+      let finalValidation = null;
+      let successfulCycle = null;
+
+      // STEP 1: Generate initial execution plan
       console.log("\n📋 STEP 1: Generating execution plan...");
       const rawPlan = await this.generatePlan(goal, runContext);
       const { plan, warnings } = this.normalizePlan(rawPlan, goal);
+      activePlan = plan;
+      activeWarnings = warnings;
 
       if (warnings.length > 0) {
         console.warn("⚠️  Plan sanitization warnings:", warnings);
@@ -352,37 +803,100 @@ export class AgentOrchestrator {
       });
       console.log(`✅ Plan generated: ${plan.steps.length} steps, strategy: ${plan.errorStrategy}`);
 
-      // STEP 2: Execute plan
-      console.log("\n⚙️  STEP 2: Executing plan...");
-      const executionResults = await this.executePlan(plan, runContext, executionLog);
-      console.log(`✅ Execution complete: ${Object.keys(executionResults.results).length} results`);
+      for (let cycle = 1; cycle <= maxIterations; cycle++) {
+        console.log(`\n🔁 REASONING CYCLE ${cycle}/${maxIterations}`);
+        console.log("⚙️  Execute...");
+        const executionResults = await this.executePlan(activePlan, activeContext, executionLog);
+        console.log(`✅ Execution complete: ${Object.keys(executionResults.results).length} results`);
 
-      // STEP 3: Validate final output
-      console.log("\n🔍 STEP 3: Validating output...");
-      const validation = await this.validateFinalOutput(
-        executionResults.results,
-        goal,
-        executionLog
-      );
+        console.log("🔍 Critique (validation)...");
+        const validation = await this.validateFinalOutput(
+          executionResults.results,
+          goal,
+          executionLog
+        );
 
-      if (!validation.pass && validation.canRecover) {
-        console.log(`⚠️  Validation warning: ${validation.reason}`);
-        console.log("🔄 Attempting recovery...");
-        const recoveryResult = await this.attemptRecovery(
+        finalExecutionResults = executionResults;
+        finalValidation = validation;
+
+        executionLog.push({
+          stage: "cycle-validation",
+          cycle,
+          status: validation.pass ? "pass" : "fail",
+          reason: validation.reason || "No reason provided",
+          score: validation.score,
+        });
+
+        if (validation.pass) {
+          successfulCycle = cycle;
+          break;
+        }
+
+        console.log(`⚠️  Cycle ${cycle} failed validation: ${validation.reason}`);
+        if (cycle >= maxIterations) {
+          break;
+        }
+
+        console.log("🧠 Replan + refine...");
+        const critique = await this.critiqueExecutionAndSuggestReplan({
+          goal,
+          cycle,
+          plan: activePlan,
           executionResults,
           validation,
-          runContext,
-          executionLog,
-          plan
-        );
-        if (recoveryResult.success) {
-          executionResults.results = recoveryResult.results;
-          console.log("✅ Recovery successful");
+          context: activeContext,
+          constraints,
+        });
+
+        const replanned = this.applyReplanFromCritique(activePlan, critique);
+        const normalizedReplan = this.normalizePlan(replanned, goal);
+        activePlan = normalizedReplan.plan;
+        activeWarnings = normalizedReplan.warnings;
+        activeContext = this.refineContextForNextIteration(activeContext, critique, cycle);
+
+        executionLog.push({
+          stage: "replan",
+          cycle,
+          status: "updated",
+          critique,
+          warnings: activeWarnings,
+          nextSteps: activePlan.steps.map((s) => s.agent),
+        });
+
+        if (activeWarnings.length > 0) {
+          console.warn("⚠️  Replan sanitization warnings:", activeWarnings);
         }
       }
 
+      if (!finalExecutionResults || !finalValidation) {
+        throw new Error("No execution results available after reasoning loop");
+      }
+
+      if (!finalValidation.pass && finalValidation.canRecover) {
+        console.log("🔄 Attempting final recovery...");
+        const recoveryResult = await this.attemptRecovery(
+          finalExecutionResults,
+          finalValidation,
+          activeContext,
+          executionLog,
+          activePlan
+        );
+        if (recoveryResult.success) {
+          finalExecutionResults.results = recoveryResult.results;
+          finalValidation = await this.validateFinalOutput(
+            finalExecutionResults.results,
+            goal,
+            executionLog
+          );
+        }
+      }
+
+      if (!finalValidation.pass) {
+        throw new Error(`Final validation failed after ${maxIterations} cycles: ${finalValidation.reason}`);
+      }
+
       if (this.isRoadmapGoal(goal)) {
-        const generatedModules = this.getRoadmapModulesFromResults(executionResults.results);
+        const generatedModules = this.getRoadmapModulesFromResults(finalExecutionResults.results);
         if (!Array.isArray(generatedModules) || generatedModules.length === 0) {
           throw new Error("Roadmap generation step did not produce modules");
         }
@@ -391,7 +905,7 @@ export class AgentOrchestrator {
       // STEP 4: Aggregate results
       console.log("\n📦 STEP 4: Aggregating results...");
       const finalOutput = await this.aggregateResults(
-        executionResults.results,
+        finalExecutionResults.results,
         goal,
         executionLog
       );
@@ -403,14 +917,44 @@ export class AgentOrchestrator {
         }
       }
 
+      let queuedFollowUpGoalIds = [];
+      if (context?.autonomyMode === true || context?.allowAutonomousFollowUps === true) {
+        const followUpGoals = await this.suggestFollowUpGoals({
+          goal,
+          context,
+          finalOutput: finalOutput.finalOutput,
+          validation: finalValidation,
+          executionLog,
+        });
+
+        if (followUpGoals.length > 0) {
+          queuedFollowUpGoalIds = await this.enqueueAutonomousGoals(followUpGoals, {
+            createdBy: "agent",
+            parentGoal: goal,
+            parentGoalId: context?.autonomyGoalId || null,
+            baseContext: {
+              companyId: context?.companyId,
+              deptId: context?.deptId,
+              userId: context?.userId,
+              constraints: context?.constraints,
+            },
+            autonomyDepth: Number(context?.autonomyDepth || 0),
+            maxAttempts: 2,
+          });
+        }
+      }
+
       // STEP 5: Log execution
       const executionTime = Date.now() - orchestrationStart;
       this.logExecution({
         goal,
-        plan,
-        executionResults,
+        plan: activePlan,
+        executionResults: finalExecutionResults,
         finalOutput,
-        validation,
+        validation: finalValidation,
+        successfulCycle,
+        maxIterations,
+        queuedFollowUpGoalIds,
         executionTime,
         executionLog,
       });
@@ -418,8 +962,8 @@ export class AgentOrchestrator {
       await this.saveLongTermMemory(context, {
         goal,
         success: true,
-        agentsUsed: plan.steps.map((s) => s.agent),
-        validationScore: validation.score,
+        agentsUsed: activePlan.steps.map((s) => s.agent),
+        validationScore: finalValidation.score,
         executionTimeMs: executionTime,
       });
 
@@ -431,11 +975,13 @@ export class AgentOrchestrator {
         success: true,
         finalOutput: finalOutput.finalOutput,
         metadata: {
-          agentsUsed: plan.steps.map((s) => s.agent),
+          agentsUsed: activePlan.steps.map((s) => s.agent),
           executionTime: `${executionTime}ms`,
-          stepsExecuted: executionResults.executionLog.length,
-          validationScore: validation.score,
-          strategy: plan.errorStrategy,
+          stepsExecuted: finalExecutionResults.executionLog.length,
+          validationScore: finalValidation.score,
+          strategy: activePlan.errorStrategy,
+          reasoningCycles: successfulCycle || maxIterations,
+          queuedFollowUpGoals: queuedFollowUpGoalIds.length,
         },
         explanation: finalOutput.explanation,
         executionLog: executionLog,
@@ -470,46 +1016,11 @@ export class AgentOrchestrator {
   async generatePlan(goal, context) {
     const availableAgents = Array.from(this.agents.keys());
 
-    const plannerPrompt = `You are an expert orchestration planner. Analyze this goal and create an optimal execution plan.
-
-GOAL: ${goal}
-
-CONTEXT:
-- User expertise level: ${context.expertise || "unknown"}
-- Training topic: ${context.trainingOn || "general"}
-- Available agents: ${availableAgents.join(", ")}
-- Constraints: ${context.constraints?.join(", ") || "none"}
-
-PLANNING TASK:
-1. Determine which agents are ESSENTIAL for this goal
-2. Identify dependencies between agents
-3. Determine optimal execution order
-4. Identify which steps are critical vs optional
-5. Choose error handling strategy
-
-Return ONLY valid JSON (no markdown, no explanation):
-{
-  "steps": [
-    {
-      "stepNumber": 1,
-      "description": "What this step accomplishes",
-      "agent": "agent_name_matching_registry",
-      "critical": true/false,
-      "dependencies": ["previous_agent_name or null"],
-      "retryPolicy": {
-        "maxRetries": 2,
-        "backoffMs": 1000
-      }
-    }
-  ],
-  "reasoning": "Why this plan is optimal",
-  "errorStrategy": "fail_fast|retry|skip_non_critical|pivot",
-  "estimatedCost": "low|medium|high"
-}`;
-
     try {
-      const plan = await this.generateJsonWithFallback(plannerPrompt, {
-        purpose: "plan generation",
+      const plan = await policyEngine.decide("planGeneration", {
+        goal,
+        context,
+        availableAgents,
       });
       if (!plan) {
         throw new Error("No valid planner JSON from any LLM");
@@ -570,6 +1081,152 @@ Return ONLY valid JSON (no markdown, no explanation):
     };
   }
 
+  async critiqueExecutionAndSuggestReplan({
+    goal,
+    cycle,
+    plan,
+    executionResults,
+    validation,
+    context,
+    constraints,
+  }) {
+    const availableAgents = Array.from(this.agents.keys());
+    const critique = await policyEngine.decide("replanCritique", {
+      goal,
+      cycle,
+      plan,
+      executionResults,
+      validation,
+      constraints,
+      availableAgents,
+      contextSnapshot: context,
+    });
+
+    return critique || {
+      reason: validation?.reason || "Validation failed; replan with stronger execution coverage",
+      addAgents: [],
+      removeAgents: [],
+      prioritizeAgents: [],
+      errorStrategy: "retry",
+      refineContext: {
+        focusTopics: [],
+        hints: ["Increase grounding and completeness in next cycle"],
+      },
+    };
+  }
+
+  applyReplanFromCritique(plan, critique = {}) {
+    const baseSteps = Array.isArray(plan?.steps)
+      ? plan.steps.map((step) => ({
+          ...step,
+          dependencies: Array.isArray(step.dependencies) ? [...step.dependencies] : [],
+          retryPolicy: {
+            maxRetries: Math.max(1, Number(step?.retryPolicy?.maxRetries) || 1),
+            backoffMs: Math.max(0, Number(step?.retryPolicy?.backoffMs) || 1000),
+          },
+        }))
+      : [];
+
+    const availableAgents = new Set(this.agents.keys());
+    const removeSet = new Set(
+      (Array.isArray(critique.removeAgents) ? critique.removeAgents : []).filter((a) =>
+        availableAgents.has(a)
+      )
+    );
+
+    let steps = baseSteps.filter((step) => !removeSet.has(step.agent));
+    const existingAgents = new Set(steps.map((s) => s.agent));
+
+    const addAgents = (Array.isArray(critique.addAgents) ? critique.addAgents : []).filter(
+      (name) => availableAgents.has(name) && !existingAgents.has(name)
+    );
+
+    for (const agentName of addAgents) {
+      steps.push({
+        stepNumber: steps.length + 1,
+        description: `Refinement pass: execute ${agentName}`,
+        agent: agentName,
+        critical: true,
+        dependencies: [],
+        retryPolicy: {
+          maxRetries: 2,
+          backoffMs: 1000,
+        },
+      });
+      existingAgents.add(agentName);
+    }
+
+    const priority = Array.isArray(critique.prioritizeAgents) ? critique.prioritizeAgents : [];
+    if (priority.length > 0) {
+      const prioritySet = new Set(priority);
+      steps.sort((a, b) => {
+        const aPriority = prioritySet.has(a.agent) ? 0 : 1;
+        const bPriority = prioritySet.has(b.agent) ? 0 : 1;
+        if (aPriority !== bPriority) return aPriority - bPriority;
+        return (a.stepNumber || 0) - (b.stepNumber || 0);
+      });
+    }
+
+    const plannedAgents = new Set(steps.map((s) => s.agent));
+    steps = steps.map((step, idx) => ({
+      ...step,
+      stepNumber: idx + 1,
+      dependencies: (Array.isArray(step.dependencies) ? step.dependencies : []).filter((dep) =>
+        plannedAgents.has(dep)
+      ),
+    }));
+
+    const allowedStrategies = new Set(["fail_fast", "retry", "skip_non_critical", "pivot"]);
+    const errorStrategy = allowedStrategies.has(critique.errorStrategy)
+      ? critique.errorStrategy
+      : plan?.errorStrategy || "retry";
+
+    return {
+      ...plan,
+      steps,
+      errorStrategy,
+      reasoning: `${plan?.reasoning || ""} | Replan: ${critique.reason || "n/a"}`,
+    };
+  }
+
+  refineContextForNextIteration(context, critique = {}, cycle = 1) {
+    const refineContext =
+      critique.refineContext && typeof critique.refineContext === "object"
+        ? critique.refineContext
+        : {};
+
+    const previousHints = Array.isArray(context?.orchestrationHints)
+      ? context.orchestrationHints
+      : [];
+    const newHints = Array.isArray(refineContext.hints) ? refineContext.hints : [];
+
+    return {
+      ...context,
+      orchestrationHints: [...previousHints, ...newHints].slice(-10),
+      orchestrationFocusTopics: Array.isArray(refineContext.focusTopics)
+        ? refineContext.focusTopics
+        : context?.orchestrationFocusTopics || [],
+      orchestrationLoop: {
+        iteration: cycle + 1,
+        critiqueReason: critique.reason || null,
+      },
+    };
+  }
+
+  /**
+   * Centralized quiz decision policy.
+   */
+  async decideQuizOutcome(decisionInput = {}) {
+    return policyEngine.decide("quizOutcome", decisionInput);
+  }
+
+  /**
+   * Centralized notification decision policy.
+   */
+  async decideNotificationStrategy(context = {}) {
+    return policyEngine.decide("notification", context);
+  }
+
   /**
    * ⚙️ Execute the generated plan with monitoring
    */
@@ -589,12 +1246,17 @@ Return ONLY valid JSON (no markdown, no explanation):
         );
       }
 
-      const agent = this.agents.get(step.agent);
-      if (!agent) {
+      const agentEntry = this.agents.get(step.agent);
+      if (!agentEntry) {
         throw new Error(`Agent not found in registry: ${step.agent}`);
       }
 
-      const stepInput = {
+      const agentDefinition = this.resolveAgentDefinition(agentEntry);
+      if (!agentDefinition) {
+        throw new Error(`Agent definition is invalid for: ${step.agent}`);
+      }
+
+      let stepInput = {
         ...step.input,
         previousResults: { ...results },
         context,
@@ -607,10 +1269,26 @@ Return ONLY valid JSON (no markdown, no explanation):
 
       while (attempts < maxRetries) {
         try {
-          output = await agent(stepInput);
-          const validation = await this.validateOutput(output, step);
+          const constraints = this.normalizeConstraintEnvelope(context?.constraints);
+          const executionPlan = {
+            strategy: "single_pass",
+            retrievalDepth: "standard",
+            notes: "control-plane execution",
+          };
 
-          if (validation.pass) {
+          output = await agentDefinition.execute({
+            ...stepInput,
+            executionPlan,
+            constraints,
+          });
+
+          const validation = await this.validateOutput(output, step);
+          const pass = Boolean(validation.pass);
+          const mergedScore = Number(validation.score || 0);
+          const mergedIssues = Array.isArray(validation.issues) ? validation.issues : [];
+          const mergedReason = validation.reason || "Validation result unavailable";
+
+          if (pass) {
             results[step.agent] = output;
             stepOrderMap[step.agent] = step.stepNumber;
 
@@ -619,21 +1297,64 @@ Return ONLY valid JSON (no markdown, no explanation):
               agent: step.agent,
               status: "SUCCESS",
               duration: Date.now() - stepStart,
+              executionPlan,
               validation: {
-                score: validation.score,
-                issues: validation.issues,
+                score: mergedScore,
+                reason: mergedReason,
+                issues: mergedIssues,
               },
             };
 
-            console.log(`      ✅ Success (validation: ${validation.score}/100)`);
+            console.log(`      ✅ Success (validation: ${mergedScore}/100)`);
             return { success: true, log: stepLog, output };
           }
 
-          lastError = new Error(`Validation failed: ${validation.reason}`);
+          lastError = new Error(`Validation failed: ${mergedReason}`);
           attempts++;
-          console.warn(`      ⚠️  Validation issue: ${validation.reason}`);
+          console.warn(`      ⚠️  Validation issue: ${mergedReason}`);
 
           if (attempts < maxRetries) {
+            const recoveryDecision = await policyEngine.decide("stepRecovery", {
+              step,
+              attempt: attempts,
+              maxRetries,
+              stepInput,
+              validation: {
+                pass,
+                score: mergedScore,
+                reason: mergedReason,
+                issues: mergedIssues,
+              },
+              output,
+              error: lastError,
+            });
+
+            if (recoveryDecision.action === "fail") {
+              throw lastError;
+            }
+
+            if (recoveryDecision.action === "skip") {
+              return {
+                success: false,
+                error: new Error(`Agent requested skip after self-recovery analysis: ${step.agent}`),
+                log: {
+                  stepNumber: step.stepNumber,
+                  agent: step.agent,
+                  status: "SKIPPED",
+                  reason: "Policy engine requested skip",
+                  duration: Date.now() - stepStart,
+                  executionPlan,
+                },
+              };
+            }
+
+            if (recoveryDecision.inputPatch) {
+              stepInput = {
+                ...stepInput,
+                ...recoveryDecision.inputPatch,
+              };
+            }
+
             await this.sleep(step.retryPolicy?.backoffMs || 1000);
           }
         } catch (error) {
@@ -893,9 +1614,18 @@ Return ONLY valid JSON:
         purpose: "step output validation",
       });
       if (validation) {
+        const guardrail = applyGuardrails({
+          output: typeof output === "string" ? output : JSON.stringify(output),
+          userMessage: step.description || step.agent,
+          contextText: JSON.stringify(step.input || {}),
+          expectedFormat: "text",
+        });
+
         return {
-          pass: validation.score >= 60,
           ...validation,
+          pass: validation.score >= 60 && guardrail.pass,
+          score: Math.round((Number(validation.score || 0) + guardrail.score) / 2),
+          guardrail,
         };
       }
     } catch {
@@ -934,34 +1664,13 @@ Return ONLY valid JSON:
       null;
     const targetStep = (plan?.steps || []).find((s) => s.agent === targetAgent) || null;
 
-    const recoveryPrompt = `An agent failed validation. Suggest recovery strategy.
-
-FAILED OUTPUT:
-${this.compactForPrompt(latestOutput || {}, 700)}
-
-VALIDATION ISSUES:
-${issues.join("\n") || "No issues provided"}
-
-TARGET AGENT:
-${targetAgent || "unknown"}
-
-AVAILABLE OPTIONS:
-1. Retry the agent with modified input
-2. Skip this step and continue
-3. Use fallback/default value
-
-DECISION: Which option is best?
-
-Return JSON:
-{
-  "strategy": "retry|skip|fallback",
-  "explanation": "why",
-  "modifiedInput": {} or null
-}`;
-
     try {
-      const strategy = await this.generateJsonWithFallback(recoveryPrompt, {
-        purpose: "recovery strategy",
+      const strategy = await policyEngine.decide("recoveryStrategy", {
+        targetAgent,
+        latestOutput,
+        issues,
+        validation,
+        executionResults,
       });
 
       if (!strategy) {
@@ -1081,7 +1790,19 @@ Return JSON:
         purpose: "final output validation",
       });
       if (finalValidation) {
-        return finalValidation;
+        const guardrail = applyGuardrails({
+          output: JSON.stringify(results || {}),
+          userMessage: goal,
+          contextText: JSON.stringify(executionLog || []),
+          expectedFormat: "text",
+        });
+
+        return {
+          ...finalValidation,
+          pass: Boolean(finalValidation.pass) && guardrail.pass,
+          score: Math.round((Number(finalValidation.score || 0) + guardrail.score) / 2),
+          guardrail,
+        };
       }
     } catch {
       // Fallback validation
@@ -1163,16 +1884,42 @@ Return JSON:
     };
   }
 
+  async executeWorkflow(workflowType, workflowContext = {}) {
+    if (workflowType === "chatPipeline") {
+      return policyEngine.decide("chatResponse", workflowContext);
+    }
+
+    throw new Error(`Unsupported workflow type: ${workflowType}`);
+  }
+
+  async orchestrateChatResponse(input = {}) {
+    return this.executeWorkflow("chatPipeline", input);
+  }
+
   /**
    * Register an agent function
    * @param {string} name - Agent name (must be unique)
-   * @param {Function} agentFn - Async function that takes {previousResults, context}
+   * @param {Function|Object} agentDefinition - Async execute function or autonomous agent definition
    */
-  registerAgent(name, agentFn) {
+  registerAgent(name, agentDefinition) {
     if (this.agents.has(name)) {
       console.warn(`⚠️  Agent already registered: ${name}, overwriting...`);
     }
-    this.agents.set(name, agentFn);
+
+    const normalized =
+      typeof agentDefinition === "function"
+        ? {
+            execute: agentDefinition,
+          }
+        : {
+            execute: agentDefinition?.execute,
+          };
+
+    if (!normalized || typeof normalized.execute !== "function") {
+      throw new Error(`Invalid agent registration for '${name}': missing execute function`);
+    }
+
+    this.agents.set(name, normalized);
     console.log(`✅ Agent registered: ${name}`);
   }
 
