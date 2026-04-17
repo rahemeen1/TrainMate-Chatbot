@@ -357,12 +357,16 @@ export async function getSuperAdminAgentHealth(req, res) {
     const runtimeMap = aggregateRuntimeMetrics(history);
     const agentRows = buildAgentRows(AGENT_CATALOG, runtimeMap);
     const summary = summarizeRows(agentRows);
+    const hasRuntimeMetrics = agentRows.some((a) => a.hasRuntimeData);
 
     // Store snapshot to Firestore for persistence
-    const { storeAgentHealthSnapshot, getLatestAgentHealthSnapshot, mergeRuntimeAndStoredData } =
+    const { storeAgentHealthSnapshot, getLatestAgentHealthSnapshot } =
       await import("../../services/agentHealthStorage.service.js");
 
-    await storeAgentHealthSnapshot(agentRows, summary);
+    // Avoid polluting storage with empty/no-runtime snapshots.
+    if (hasRuntimeMetrics) {
+      await storeAgentHealthSnapshot(agentRows, summary);
+    }
 
     // If no runtime data, try to get latest stored snapshot as fallback
     let finalData = {
@@ -379,15 +383,23 @@ export async function getSuperAdminAgentHealth(req, res) {
     };
 
     // If no runtime data available, use stored data as fallback
-    if (!orchestrator || agentRows.every((a) => !a.hasRuntimeData)) {
+    if (!orchestrator || !hasRuntimeMetrics) {
       const storedResult = await getLatestAgentHealthSnapshot();
-      if (storedResult.success && storedResult.data) {
+      const stored = storedResult?.data;
+      const hasStoredAgents = Array.isArray(stored?.agents) && stored.agents.length > 0;
+      const hasStoredKpis = stored?.kpis && typeof stored.kpis === "object";
+
+      if (storedResult.success && hasStoredAgents && hasStoredKpis) {
         finalData = {
           ...finalData,
-          ...storedResult.data,
+          ...stored,
           dataSource: "stored",
-          runtimeMessage: `Using stored snapshot from ${storedResult.data.timestamp}`,
+          runtimeMessage: `Using stored snapshot from ${stored.timestamp || "previous run"}`,
         };
+      } else {
+        finalData.runtimeMessage =
+          finalData.runtimeMessage ||
+          "Runtime unavailable and no valid stored snapshot found";
       }
     }
 

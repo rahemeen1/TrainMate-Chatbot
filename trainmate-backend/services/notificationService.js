@@ -262,6 +262,31 @@ async function getNotificationDecision(context = {}) {
   };
 }
 
+async function getCalendarDecision(context = {}) {
+  try {
+    const decision = await policyEngine.decide("calendarDecision", {
+      ...context,
+      constraints: context.constraints || {
+        maxLatency: 2000,
+        costSensitivity: "medium",
+      },
+    });
+
+    if (decision && typeof decision.shouldCreateCalendarEvent === "boolean") {
+      return decision;
+    }
+  } catch (error) {
+    console.warn("⚠️ Failed to get calendar decision strategy:", error.message);
+  }
+
+  return {
+    shouldCreateCalendarEvent: true,
+    reason: "Fallback calendar strategy",
+    reminderTime: DEFAULT_REMINDER_TIME,
+    urgency: "medium",
+  };
+}
+
 /**
  * 🎯 MAIN FUNCTION: Create ONE recurring daily event when roadmap is generated
  * This is the ONLY calendar event created - it recurs for all modules
@@ -278,6 +303,7 @@ export async function createRoadmapDailyReminderEvent({
   startDate = new Date(),
   totalModules,
   estimatedDays,
+  reminderTime = DEFAULT_REMINDER_TIME,
   timeZone = DEFAULT_TIMEZONE,
 }) {
   try {
@@ -286,7 +312,7 @@ export async function createRoadmapDailyReminderEvent({
     const { client: userAuth, isUsingFallback, authSource } = await getUserOAuthClient(companyId, deptId, userId);
     const calendar = google.calendar({ version: "v3", auth: userAuth });
 
-    const startDateTime = buildDateTime(startDate, DEFAULT_REMINDER_TIME);
+    const startDateTime = buildDateTime(startDate, reminderTime);
     const endDateTime = new Date(startDateTime.getTime() + 60 * 60 * 1000); // 1 hour duration
     const recurrenceDays = Math.max(1, Number(estimatedDays) || 1);
 
@@ -337,7 +363,7 @@ export async function createRoadmapDailyReminderEvent({
     console.log(`   Module: ${activeModuleTitle}`);
     console.log(`   Recurrence days: ${recurrenceDays}`);
     console.log(`   Auth source: ${authSource}`);
-    console.log(`   Time: ${DEFAULT_REMINDER_TIME} daily`);
+    console.log(`   Time: ${reminderTime} daily`);
 
     return response.data.id;
   } catch (error) {
@@ -513,9 +539,13 @@ export async function handleRoadmapGenerated({
   try {
     const result = {
       emailSent: false,
+      emailError: null,
+      calendarAttempted: false,
       calendarEventCreated: false,
       calendarEventId: null,
       calendarError: null,
+      decision: null,
+      calendarDecision: null,
     };
 
     console.log(`\n🚀 Handling roadmap generation for ${userEmail}`);
@@ -538,6 +568,13 @@ export async function handleRoadmapGenerated({
       timezone: process.env.DEFAULT_TIMEZONE || "Asia/Karachi",
     });
 
+    result.decision = {
+      shouldSend: Boolean(decision?.shouldSend),
+      sendEmail: Boolean(decision?.sendEmail),
+      createCalendarEvent: Boolean(decision?.createCalendarEvent),
+      reason: decision?.reason || null,
+    };
+
     if (!decision.shouldSend) {
       console.log(`⏭️ Skipping roadmap notifications: ${decision.reason}`);
       return result;
@@ -558,13 +595,31 @@ export async function handleRoadmapGenerated({
       result.emailSent = true;
       } catch (emailErr) {
         console.error(`❌ Roadmap email failed:`, emailErr.message);
+        result.emailError = emailErr.message;
       }
     }
 
-    // 2️⃣ Create ONE recurring daily reminder event
-    if (decision.createCalendarEvent) {
+    // 2️⃣ Calendar decision agent decides if/when to create recurring event
+    const activeModule = modules?.[0] || null;
+    const calendarDecision = await getCalendarDecision({
+      notificationType: "ROADMAP_GENERATED",
+      userEmail,
+      userName,
+      companyName,
+      trainingTopic,
+      activeModuleTitle: activeModule?.moduleTitle || "",
+      moduleCount: Array.isArray(modules) ? modules.length : 0,
+      estimatedDays: Number(activeModule?.estimatedDays || 0),
+      timezone: process.env.DEFAULT_TIMEZONE || "Asia/Karachi",
+      emailSent: result.emailSent,
+      upstreamDecision: result.decision,
+    });
+
+    result.calendarDecision = calendarDecision;
+
+    if (decision.createCalendarEvent && calendarDecision.shouldCreateCalendarEvent) {
+      result.calendarAttempted = true;
       try {
-        const activeModule = modules[0];
         const calendarEventId = await createRoadmapDailyReminderEvent({
           companyId,
           deptId,
@@ -576,6 +631,7 @@ export async function handleRoadmapGenerated({
           startDate: new Date(),
           totalModules: modules.length,
           estimatedDays: activeModule.estimatedDays || 30,
+          reminderTime: calendarDecision.reminderTime || DEFAULT_REMINDER_TIME,
           timeZone: process.env.DEFAULT_TIMEZONE || "Asia/Karachi",
         });
         console.log(`✅ Daily reminder event created`);
@@ -585,6 +641,10 @@ export async function handleRoadmapGenerated({
         console.error(`❌ Calendar event failed:`, calendarErr.message);
         result.calendarError = calendarErr.message;
       }
+    } else if (!decision.createCalendarEvent) {
+      result.calendarError = "Calendar creation disabled by notification policy";
+    } else {
+      result.calendarError = calendarDecision.reason || "Calendar creation skipped by calendar decision agent";
     }
 
     console.log(`\n✅ Roadmap generation notification complete for ${userEmail}`);

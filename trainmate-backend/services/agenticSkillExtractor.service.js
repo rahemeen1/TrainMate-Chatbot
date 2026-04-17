@@ -1,6 +1,7 @@
 //trainmate-backend/services/agenticSkillExtractor.service.jsS
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import dotenv from "dotenv";
+import { policyEngine } from "./policy/policyEngine.service.js";
 
 dotenv.config();
 
@@ -19,22 +20,71 @@ export const extractSkillsAgentically = async ({
   expertise = 1,
   trainingOn = "General",
   structuredCv = null,
+  mode = "auto",
 }) => {
-  console.log("\n================ AGENTIC SKILL EXTRACTION START ================");
+  const runId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+  const logTag = `[SKILL-X:${runId}]`;
+
+  console.log(`\n${logTag} ================ AGENTIC SKILL EXTRACTION START ================`);
 
   try {
     const hasCv = !!cvText && cvText.trim().length >= 50;
     const hasCompanyDocs = !!companyDocsText && companyDocsText.trim().length >= 50;
 
-    if (!hasCv) {
-      console.warn("⚠️ CV text is very small or empty");
+    const preStructuredCvSkillsCount = Array.isArray(structuredCv?.skills)
+      ? structuredCv.skills.length
+      : 0;
+    const hasStructuredCvSignal = preStructuredCvSkillsCount > 0;
+    const hasAnyCvSignal = hasCv || hasStructuredCvSignal;
+
+    const resolvedMode =
+      mode === "auto"
+        ? hasAnyCvSignal
+          ? (hasCompanyDocs ? "both" : "cv_only")
+          : "company_only"
+        : mode;
+
+    const shouldRunCv = resolvedMode === "both" || resolvedMode === "cv_only";
+    const shouldRunCompany = resolvedMode === "both" || resolvedMode === "company_only";
+
+    console.log(`${logTag} 🧭 Skill extraction mode:`, resolvedMode);
+
+    const cvDecision = shouldRunCv
+      ? await policyEngine.decide("skillExtraction", {
+          source: "cv",
+          trainingOn,
+          cvTextLength: String(cvText || "").trim().length,
+          structuredCvSkillsCount: preStructuredCvSkillsCount,
+        })
+      : null;
+
+    const companyDecision = shouldRunCompany
+      ? await policyEngine.decide("skillExtraction", {
+          source: "company",
+          trainingOn,
+          companyDocsLength: String(companyDocsText || "").trim().length,
+        })
+      : null;
+
+    if (cvDecision) {
+      console.log(`${logTag} 🧠 CV extraction decision:`, cvDecision?.strategy || "unknown");
     }
-    if (!hasCompanyDocs) {
-      console.warn("⚠️ Company docs text is very small or empty, using agentic topic inference");
+    if (companyDecision) {
+      console.log(`${logTag} 🧠 Company extraction decision:`, companyDecision?.strategy || "unknown");
     }
 
-    const structuredCvSkills = extractSkillsFromStructuredCv(structuredCv);
-    const cvSkillsFromText = hasCv
+    if (shouldRunCv && !hasCv && !hasStructuredCvSignal) {
+      console.warn(`${logTag} ⚠️ CV text is very small or empty`);
+    }
+    if (shouldRunCompany && !hasCompanyDocs) {
+      console.warn(`${logTag} ⚠️ Company docs text is very small or empty, using agentic topic inference`);
+    }
+
+    const structuredCvSkills = shouldRunCv && cvDecision?.useStructuredCv
+      ? extractSkillsFromStructuredCv(structuredCv)
+      : [];
+
+    const cvSkillsFromText = shouldRunCv && cvDecision?.useTextExtraction && hasCv
       ? await extractSkillsFromLongText({
           text: cvText,
           taskName: "CV extraction",
@@ -47,28 +97,37 @@ export const extractSkillsAgentically = async ({
     const cvSkills = normalizeSkills([
       ...structuredCvSkills,
       ...cvSkillsFromText,
-      ...(hasCv ? [] : extractFallbackSkills(trainingOn)),
+      ...((shouldRunCv && (cvDecision?.strategy === "fallback_only" || (!hasCv && !hasStructuredCvSignal)))
+        ? extractFallbackSkills(trainingOn, { strict: true })
+        : []),
     ]);
 
-    const companySource = hasCompanyDocs ? companyDocsText : buildTopicSource(trainingOn);
+    const companySource = hasCompanyDocs ? companyDocsText : "";
 
-    let companySkills = await extractSkillsFromLongText({
-      text: companySource,
-      taskName: "Company extraction",
-      trainingOn,
-      extractionType: "company",
-      expertise,
-    });
+    let companySkills = [];
 
-    if (!Array.isArray(companySkills) || companySkills.length === 0) {
+    if (shouldRunCompany && companyDecision?.strategy === "company_docs" && hasCompanyDocs) {
+      companySkills = await extractSkillsFromLongText({
+        text: companySource,
+        taskName: "Company extraction",
+        trainingOn,
+        extractionType: "company",
+        expertise,
+      });
+    }
+
+    if (
+      shouldRunCompany &&
+      (companyDecision?.useTopicInference || companySkills.length === 0) &&
+      !hasCompanyDocs
+    ) {
       companySkills = await inferSkillsFromTopicAgentically(trainingOn, expertise);
     }
 
-    if (!Array.isArray(companySkills) || companySkills.length === 0) {
-      companySkills = extractFallbackSkills(companySource);
+    if (shouldRunCompany && (!Array.isArray(companySkills) || companySkills.length === 0)) {
+      companySkills = extractFallbackSkills(trainingOn, { strict: true });
     }
-
-    if (isTooGenericSkillList(companySkills)) {
+    if (shouldRunCompany && isTooGenericSkillList(companySkills)) {
       companySkills = buildTopicTemplateSkills(trainingOn);
     }
 
@@ -76,11 +135,11 @@ export const extractSkillsAgentically = async ({
     const skillGap = companySkills.filter((skill) => !cvSet.has(skill.toLowerCase()));
     const criticalGaps = skillGap.slice(0, Math.max(3, Math.ceil(skillGap.length / 3)));
 
-    console.log("✅ CV Skills extracted:", cvSkills);
-    console.log("✅ Company Skills extracted:", companySkills);
-    console.log("✅ Skill gaps identified:", skillGap);
-    console.log("🔴 Critical gaps:", criticalGaps);
-    console.log("================ AGENTIC SKILL EXTRACTION END ==================\n");
+    console.log(`${logTag} ✅ CV Skills extracted:`, cvSkills);
+    console.log(`${logTag} ✅ Company Skills extracted:`, companySkills);
+    console.log(`${logTag} ✅ Skill gaps identified:`, skillGap);
+    console.log(`${logTag} 🔴 Critical gaps:`, criticalGaps);
+    console.log(`${logTag} ================ AGENTIC SKILL EXTRACTION END ==================\n`);
 
     return {
       cvSkills,
@@ -113,7 +172,7 @@ function buildFallbackResult(trainingOn, reason) {
   };
 }
 
-async function extractSkillList(prompt, taskName, fallbackText = "") {
+async function extractSkillList(prompt, taskName) {
   const model = genAI.getGenerativeModel({
     model: "gemini-2.5-flash",
     generationConfig: {
@@ -137,10 +196,7 @@ async function extractSkillList(prompt, taskName, fallbackText = "") {
       throw new Error("No extractable skills found in response");
     } catch (error) {
       console.warn(`⚠️ ${taskName} attempt ${attempt} failed:`, error.message);
-      if (attempt === 2) {
-        const fallbackSkills = extractFallbackSkills(fallbackText);
-        return fallbackSkills;
-      }
+      if (attempt === 2) return [];
     }
   }
 
@@ -214,7 +270,7 @@ Return ONLY valid JSON:
   "analysis": "one line"
 }`;
 
-    const skills = await extractSkillList(prompt, `${taskName} (chunk ${i + 1}/${chunks.length})`, chunk);
+    const skills = await extractSkillList(prompt, `${taskName} (chunk ${i + 1}/${chunks.length})`);
     collected.push(...skills);
   }
 
@@ -223,7 +279,12 @@ Return ONLY valid JSON:
     return merged;
   }
 
-  return extractFallbackSkills(boundedText);
+  // Use a stricter fallback only for CV parsing to reduce noisy sentence-like outputs.
+  if (extractionType === "cv") {
+    return extractFallbackSkills(boundedText, { strict: true });
+  }
+
+  return [];
 }
 
 async function inferSkillsFromTopicAgentically(trainingOn = "General", expertise = 1) {
@@ -272,7 +333,7 @@ Return ONLY valid JSON:
   "analysis": "one line"
 }`;
 
-  const inferred = await extractSkillList(prompt, "Topic-based skill inference", topic);
+  const inferred = await extractSkillList(prompt, "Topic-based skill inference");
   return normalizeSkills(inferred);
 }
 
@@ -398,25 +459,25 @@ function extractSkillsFromParsedResponse(parsed) {
 
 function normalizeSkills(arr) {
   return (Array.isArray(arr) ? arr : [])
-    .map((item) => String(item || "").trim())
-    .map((item) => item.replace(/["'`]/g, "").trim())
-    .map((item) => item.replace(/^[:\-\s]+|[:\-\s]+$/g, "").trim())
+    .map((item) => cleanSkillToken(item))
     .filter((item) => item.length > 0 && item.length < 120)
     .filter((item) => !/[{}\[\]]/.test(item))
     .filter((item) => !/^skills?$/i.test(item))
     .filter((item) => !/^analysis$/i.test(item))
     .filter((item) => !/^json$/i.test(item))
     .filter((item) => !/^return$/i.test(item))
+    .filter((item) => isLikelySkillCandidate(item))
     .filter((item, index, self) => self.indexOf(item) === index)
     .slice(0, 50);
 }
 
-function extractFallbackSkills(text) {
+function extractFallbackSkills(text, options = {}) {
+  const strict = Boolean(options.strict);
   const source = String(text || "");
   const fromSkillsSection = extractFromLikelySkillsSection(source);
   const fromLabeledLines = extractFromLabeledSkillLines(source);
-  const fromSignalLines = extractFromSkillSignalLines(source);
-  const fromRequirementSentences = extractFromRequirementSentences(source);
+  const fromSignalLines = strict ? [] : extractFromSkillSignalLines(source);
+  const fromRequirementSentences = strict ? [] : extractFromRequirementSentences(source);
   const merged = normalizeSkills([
     ...fromSkillsSection,
     ...fromLabeledLines,
@@ -539,9 +600,36 @@ function extractFromRequirementSentences(text) {
 function splitSkillCandidates(value) {
   return String(value || "")
     .split(/[,;/|]|\band\b/gi)
-    .map((part) => part.trim())
+    .map((part) => cleanSkillToken(part))
     .filter((part) => part.length >= 2 && part.length <= 80)
-    .filter((part) => !/^\d+$/.test(part));
+    .filter((part) => !/^\d+$/.test(part))
+    .filter((part) => isLikelySkillCandidate(part));
+}
+
+function cleanSkillToken(value) {
+  return String(value || "")
+    .replace(/["'`]/g, "")
+    .replace(/^[:\-\s]+|[:\-\s]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isLikelySkillCandidate(value) {
+  const item = String(value || "").trim();
+  if (!item) return false;
+  if (item.length > 80) return false;
+  if (/\b(education|coursework|experience|project|summary|objective|responsibilities)\b/i.test(item)) return false;
+  if (/\b(quick to learn|passionate|adaptable|hands-on experience|senior with)\b/i.test(item)) return false;
+  if (/\b(19|20)\d{2}\b/.test(item)) return false;
+  if (/\s{2,}/.test(item)) return false;
+  if (/[.!?]/.test(item)) return false;
+  if (/^[a-z\s]{30,}$/i.test(item) && item.split(" ").length > 5) return false;
+
+  // Allow common short and multi-word domain skills.
+  const words = item.split(/\s+/).length;
+  if (words > 6) return false;
+
+  return true;
 }
 
 function buildTopicSource(trainingOn) {

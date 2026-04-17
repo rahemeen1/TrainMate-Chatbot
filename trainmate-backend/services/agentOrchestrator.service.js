@@ -67,6 +67,7 @@ export class AgentOrchestrator {
         expertise,
         trainingOn,
         structuredCv,
+        mode: 'cv_only',
       });
 
       return {
@@ -85,6 +86,7 @@ export class AgentOrchestrator {
         companyDocsText,
         expertise,
         trainingOn,
+        mode: 'company_only',
       });
 
       return {
@@ -721,6 +723,17 @@ Return JSON only:
       : "retry";
 
     if (this.isRoadmapGoal(goal) && availableAgents.has("generate-roadmap")) {
+      const cvStep = normalizedSteps.find((s) => s.agent === "extract-cv-skills");
+      const companyStep = normalizedSteps.find((s) => s.agent === "extract-company-skills");
+
+      // Keep extraction deterministic and logs readable by avoiding parallel CV/company extraction.
+      if (cvStep && companyStep) {
+        const deps = Array.isArray(companyStep.dependencies) ? companyStep.dependencies : [];
+        if (!deps.includes("extract-cv-skills")) {
+          companyStep.dependencies = [...deps, "extract-cv-skills"];
+        }
+      }
+
       const hasRoadmapGenerator = normalizedSteps.some((s) => s.agent === "generate-roadmap");
       if (!hasRoadmapGenerator) {
         const deps = [];

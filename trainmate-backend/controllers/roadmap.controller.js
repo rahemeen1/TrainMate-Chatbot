@@ -720,6 +720,8 @@ console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboa
       companyDocsText: baseDocsText,
       expertise,
       trainingOn,
+      structuredCv,
+      mode: "both",
     });
 
     console.log("✅ Agentic skill extraction complete");

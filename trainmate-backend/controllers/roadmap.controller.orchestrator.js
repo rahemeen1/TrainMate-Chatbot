@@ -296,7 +296,17 @@ export const generateUserRoadmap = async (req, res) => {
       if (notificationResult?.calendarEventCreated) {
         console.log(`✅ Notifications scheduled for ${user.email}`);
       } else {
-        console.warn(`⚠️  Email sent but calendar failed for ${user.email}`);
+        const reason =
+          notificationResult?.calendarError ||
+          notificationResult?.calendarDecision?.reason ||
+          notificationResult?.decision?.reason ||
+          "calendar not attempted";
+
+        if (notificationResult?.calendarAttempted) {
+          console.warn(`⚠️  Email sent but calendar failed for ${user.email}: ${reason}`);
+        } else {
+          console.warn(`ℹ️  Email sent and calendar skipped for ${user.email}: ${reason}`);
+        }
       }
     } catch (notificationErr) {
       console.warn('⚠️  Notification failed (non-critical):', notificationErr.message);

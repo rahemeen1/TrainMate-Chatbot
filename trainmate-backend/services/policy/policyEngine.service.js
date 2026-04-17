@@ -22,10 +22,14 @@ class PolicyEngine {
     switch (decisionType) {
       case "planGeneration":
         return this.decidePlanGeneration(context);
+      case "skillExtraction":
+        return this.decideSkillExtraction(context);
       case "quizOutcome":
         return this.decideQuizOutcome(context);
       case "notification":
         return this.decideNotificationStrategy(context);
+      case "calendarDecision":
+        return this.decideCalendarDecision(context);
       case "chatResponse":
         return this.decideChatResponse(context);
       case "stepRecovery":
@@ -37,6 +41,85 @@ class PolicyEngine {
       default:
         throw new Error(`Unsupported policy decision type: ${decisionType}`);
     }
+  }
+
+  async decideSkillExtraction(context = {}) {
+    const source = String(context.source || "cv").toLowerCase();
+    const trainingOn = String(context.trainingOn || "General").trim();
+    const cvTextLength = Number(context.cvTextLength || 0);
+    const companyDocsLength = Number(context.companyDocsLength || 0);
+    const structuredCvSkillsCount = Number(context.structuredCvSkillsCount || 0);
+
+    const hasCvText = cvTextLength >= 50;
+    const hasCompanyDocs = companyDocsLength >= 50;
+    const isNonTechnical =
+      /accounting|finance|hr|human\s*resources|management|sales|marketing|business/i.test(
+        trainingOn
+      );
+
+    if (source === "cv") {
+      const useStructuredCv = structuredCvSkillsCount > 0;
+      const useTextExtraction = hasCvText;
+
+      if (!useStructuredCv && !useTextExtraction) {
+        return {
+          source,
+          strategy: "fallback_only",
+          useStructuredCv: false,
+          useTextExtraction: false,
+          useTopicInference: false,
+          strictFiltering: true,
+          reason: "No CV text and no structured CV skills available",
+        };
+      }
+
+      return {
+        source,
+        strategy: useStructuredCv && useTextExtraction ? "hybrid" : "single_source",
+        useStructuredCv,
+        useTextExtraction,
+        useTopicInference: false,
+        strictFiltering: true,
+        reason: useStructuredCv && useTextExtraction
+          ? "Using both structured CV and free-text extraction"
+          : "Using available CV source only",
+      };
+    }
+
+    if (source === "company") {
+      if (hasCompanyDocs) {
+        return {
+          source,
+          strategy: "company_docs",
+          useStructuredCv: false,
+          useTextExtraction: true,
+          useTopicInference: false,
+          strictFiltering: true,
+          reason: "Company docs available, extract required skills from docs",
+        };
+      }
+
+      return {
+        source,
+        strategy: "topic_inference",
+        useStructuredCv: false,
+        useTextExtraction: false,
+        useTopicInference: true,
+        strictFiltering: true,
+        domain: isNonTechnical ? "non-technical" : "technical",
+        reason: "Company docs unavailable, infer skills from training topic",
+      };
+    }
+
+    return {
+      source,
+      strategy: "fallback_only",
+      useStructuredCv: false,
+      useTextExtraction: false,
+      useTopicInference: false,
+      strictFiltering: true,
+      reason: "Unknown extraction source",
+    };
   }
 
   extractJsonFromText(text) {
@@ -397,6 +480,111 @@ Return JSON only:
       urgencyLevel: "medium",
       estimatedEngagementScore: 50,
       recommendedMessageTone: "motivational",
+    };
+  }
+
+  async decideCalendarDecision(context = {}) {
+    const {
+      notificationType = "ROADMAP_GENERATED",
+      userEmail,
+      userName,
+      companyName,
+      trainingTopic,
+      moduleCount = 0,
+      estimatedDays = 0,
+      activeModuleTitle = "",
+      timezone = "Asia/Karachi",
+      emailSent = false,
+      upstreamDecision = {},
+      constraints = {},
+    } = context;
+
+    // Hard guards first.
+    if (!userEmail || !String(userEmail).includes("@")) {
+      return {
+        shouldCreateCalendarEvent: false,
+        reason: "Invalid or missing user email",
+        reminderTime: "15:00",
+        urgency: "low",
+      };
+    }
+
+    if (notificationType === "ROADMAP_GENERATED" && Number(moduleCount || 0) <= 0) {
+      return {
+        shouldCreateCalendarEvent: false,
+        reason: "No modules available for scheduling",
+        reminderTime: "15:00",
+        urgency: "low",
+      };
+    }
+
+    if (upstreamDecision && upstreamDecision.createCalendarEvent === false) {
+      return {
+        shouldCreateCalendarEvent: false,
+        reason: "Notification policy disabled calendar creation",
+        reminderTime: "15:00",
+        urgency: "low",
+      };
+    }
+
+    const prompt = `You are a calendar scheduling decision agent for TrainMate.
+
+USER:
+- Name: ${userName || "Trainee"}
+- Email: ${userEmail}
+- Company: ${companyName || "Unknown"}
+- Notification type: ${notificationType}
+- Training topic: ${trainingTopic || "General"}
+- Active module: ${activeModuleTitle || "N/A"}
+- Module count: ${Number(moduleCount || 0)}
+- Estimated days for active module: ${Number(estimatedDays || 0)}
+- Timezone: ${timezone}
+- Email already sent: ${Boolean(emailSent)}
+- Upstream notification decision: ${JSON.stringify(upstreamDecision || {})}
+- Constraints: ${JSON.stringify(constraints || {})}
+
+Decide whether a calendar event should be created now.
+If yes, choose a practical reminder time in HH:mm (24h).
+
+Return JSON only:
+{
+  "shouldCreateCalendarEvent": true,
+  "reason": "short reason",
+  "reminderTime": "15:00",
+  "urgency": "low|medium|high"
+}`;
+
+    try {
+      const parsed = await this.generateJsonWithFallback(prompt, {
+        purpose: "calendar event decision",
+      });
+
+      if (parsed && typeof parsed.shouldCreateCalendarEvent === "boolean") {
+        const reminderTime =
+          typeof parsed.reminderTime === "string" && /^\d{1,2}:\d{2}$/.test(parsed.reminderTime)
+            ? parsed.reminderTime
+            : "15:00";
+
+        const urgency = ["low", "medium", "high"].includes(String(parsed.urgency || "").toLowerCase())
+          ? String(parsed.urgency).toLowerCase()
+          : "medium";
+
+        return {
+          shouldCreateCalendarEvent: parsed.shouldCreateCalendarEvent,
+          reason: parsed.reason || "Calendar decision generated",
+          reminderTime,
+          urgency,
+        };
+      }
+    } catch {
+      // Fall through to deterministic fallback.
+    }
+
+    return {
+      shouldCreateCalendarEvent: true,
+      reason: "Fallback calendar policy: create reminder event",
+      reminderTime: "15:00",
+      urgency: "medium",
     };
   }
 
