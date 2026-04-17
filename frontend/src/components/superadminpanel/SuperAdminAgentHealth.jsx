@@ -161,11 +161,20 @@ export default function SuperAdminAgentHealth() {
             <p>Generated: {formatDate(data.generatedAt)}</p>
             <p>History Window: {data.historyWindow || 0} runs</p>
             <p>Instrumented Agents: {data.kpis.instrumentedAgents || 0}/{data.kpis.totalAgents || 0}</p>
+            <p className="font-semibold text-[#AFCBE3]">
+              Data Source: {data.dataSource === "stored" ? "💾 Stored (Persistent)" : "🔴 Runtime (Live)"}
+            </p>
           </div>
         </div>
 
-        <div className="mt-4 rounded-lg border border-[#00FFFF20] bg-[#021B36] px-3 py-2 text-xs text-[#9FC2DA]">
-          Runtime: {data.runtimeMessage || (data.runtimeAvailable ? "Available" : "Unavailable")}
+        <div className={`mt-4 rounded-lg border px-3 py-2 text-xs ${
+          data.dataSource === "stored"
+            ? "border-[#F59E0B20] bg-[#F59E0B10] text-[#F59E0B]"
+            : "border-[#00FFFF20] bg-[#021B36] text-[#9FC2DA]"
+        }`}>
+          {data.dataSource === "stored" 
+            ? `⚠️ ${data.runtimeMessage || "Showing persistent stored data (runtime unavailable)"}` 
+            : data.runtimeMessage || (data.runtimeAvailable ? "✅ Runtime available" : "Runtime unavailable")}
         </div>
       </div>
 
@@ -236,65 +245,86 @@ export default function SuperAdminAgentHealth() {
         </div>
       </SectionCard>
 
+      <div>
+        <SectionCard title="Agent Runtime Tables" subtitle="Grouped by agent type and sorted by status">
+          {(() => {
+            const agentsByType = {};
+            (data.agents || []).forEach((agent) => {
+              const type = agent.type || "unknown";
+              if (!agentsByType[type]) {
+                agentsByType[type] = [];
+              }
+              agentsByType[type].push(agent);
+            });
+
+            // Sort agents within each type
+            Object.keys(agentsByType).forEach((type) => {
+              agentsByType[type].sort((a, b) => {
+                const order = { critical: 0, warning: 1, healthy: 2, "no-data": 3 };
+                const byStatus = (order[a.status] ?? 10) - (order[b.status] ?? 10);
+                if (byStatus !== 0) return byStatus;
+                return (a.name || "").localeCompare(b.name || "");
+              });
+            });
+
+            const types = Object.keys(agentsByType).sort();
+
+            return (
+              <div className="space-y-6">
+                {types.length === 0 ? (
+                  <div className="rounded-lg border border-[#00FFFF30] bg-[#021B36] p-4 text-center text-[#9FC2DA]">
+                    {loading ? "Loading agent telemetry..." : "No agent data available yet."}
+                  </div>
+                ) : (
+                  types.map((type) => (
+                    <div key={type} className="overflow-x-auto rounded-lg border border-[#00FFFF20]">
+                      <table className="w-full min-w-[960px] text-sm">
+                        <thead>
+                          <tr className="bg-[#021B36] text-[#AFCBE3]">
+                            <th className="p-2 border border-[#00FFFF20] text-left font-semibold capitalize">
+                              {type === "orchestrator-registered" ? "🔄 Orchestrator Agents" : type === "function-agent" ? "⚙️ Function Agents" : `📊 ${type}`}
+                            </th>
+                            <th className="p-2 border border-[#00FFFF20] text-left">Segment</th>
+                            <th className="p-2 border border-[#00FFFF20] text-left">Accuracy</th>
+                            <th className="p-2 border border-[#00FFFF20] text-left">Success</th>
+                            <th className="p-2 border border-[#00FFFF20] text-left">Latency</th>
+                            <th className="p-2 border border-[#00FFFF20] text-left">Runs</th>
+                            <th className="p-2 border border-[#00FFFF20] text-left">Status</th>
+                            <th className="p-2 border border-[#00FFFF20] text-left">Last Run</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {agentsByType[type].map((agent) => (
+                            <tr key={agent.key} className="hover:bg-[#00FFFF0d]">
+                              <td className="p-2 border border-[#00FFFF20] text-[#E8F7FF] font-medium">{agent.name}</td>
+                              <td className="p-2 border border-[#00FFFF20] text-[#AFCBE3]">{agent.segment}</td>
+                              <td className="p-2 border border-[#00FFFF20]">{formatMetric(agent.accuracy, "%")}</td>
+                              <td className="p-2 border border-[#00FFFF20]">{formatMetric(agent.successRate, "%")}</td>
+                              <td className="p-2 border border-[#00FFFF20]">{formatMetric(agent.avgLatencyMs, " ms")}</td>
+                              <td className="p-2 border border-[#00FFFF20]">{agent.runs || 0}</td>
+                              <td className="p-2 border border-[#00FFFF20]">
+                                <span
+                                  className="px-2 py-1 rounded text-xs text-black"
+                                  style={{ backgroundColor: STATUS_COLORS[agent.status] || "#64748B" }}
+                                >
+                                  {statusText(agent.status)}
+                                </span>
+                              </td>
+                              <td className="p-2 border border-[#00FFFF20] text-[#AFCBE3]">{formatDate(agent.lastRunAt)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ))
+                )}
+              </div>
+            );
+          })()}
+        </SectionCard>
+      </div>
+
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <div className="xl:col-span-2">
-          <SectionCard title="Agent Runtime Table" subtitle="Sorted by current status and data availability">
-            <div className="overflow-x-auto rounded-lg border border-[#00FFFF20]">
-              <table className="w-full min-w-[960px] text-sm">
-                <thead>
-                  <tr className="bg-[#021B36] text-[#AFCBE3]">
-                    <th className="p-2 border border-[#00FFFF20] text-left">Agent</th>
-                    <th className="p-2 border border-[#00FFFF20] text-left">Segment</th>
-                    <th className="p-2 border border-[#00FFFF20] text-left">Type</th>
-                    <th className="p-2 border border-[#00FFFF20] text-left">Accuracy</th>
-                    <th className="p-2 border border-[#00FFFF20] text-left">Success</th>
-                    <th className="p-2 border border-[#00FFFF20] text-left">Latency</th>
-                    <th className="p-2 border border-[#00FFFF20] text-left">Runs</th>
-                    <th className="p-2 border border-[#00FFFF20] text-left">Status</th>
-                    <th className="p-2 border border-[#00FFFF20] text-left">Last Run</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {!agentsWithRows ? (
-                    <tr>
-                      <td className="p-3 text-center text-[#9FC2DA]" colSpan={9}>
-                        {loading ? "Loading agent telemetry..." : "No agent rows available yet."}
-                      </td>
-                    </tr>
-                  ) : (
-                    [...data.agents]
-                      .sort((a, b) => {
-                        const order = { critical: 0, warning: 1, healthy: 2, "no-data": 3 };
-                        const byStatus = (order[a.status] ?? 10) - (order[b.status] ?? 10);
-                        if (byStatus !== 0) return byStatus;
-                        return (a.name || "").localeCompare(b.name || "");
-                      })
-                      .map((agent) => (
-                        <tr key={agent.key} className="hover:bg-[#00FFFF0d]">
-                          <td className="p-2 border border-[#00FFFF20] text-[#E8F7FF]">{agent.name}</td>
-                          <td className="p-2 border border-[#00FFFF20] text-[#AFCBE3]">{agent.segment}</td>
-                          <td className="p-2 border border-[#00FFFF20] text-[#AFCBE3]">{agent.type}</td>
-                          <td className="p-2 border border-[#00FFFF20]">{formatMetric(agent.accuracy, "%")}</td>
-                          <td className="p-2 border border-[#00FFFF20]">{formatMetric(agent.successRate, "%")}</td>
-                          <td className="p-2 border border-[#00FFFF20]">{formatMetric(agent.avgLatencyMs, " ms")}</td>
-                          <td className="p-2 border border-[#00FFFF20]">{agent.runs || 0}</td>
-                          <td className="p-2 border border-[#00FFFF20]">
-                            <span
-                              className="px-2 py-1 rounded text-xs text-black"
-                              style={{ backgroundColor: STATUS_COLORS[agent.status] || "#64748B" }}
-                            >
-                              {statusText(agent.status)}
-                            </span>
-                          </td>
-                          <td className="p-2 border border-[#00FFFF20] text-[#AFCBE3]">{formatDate(agent.lastRunAt)}</td>
-                        </tr>
-                      ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </SectionCard>
-        </div>
 
         <div>
           <SectionCard title="Active Alerts" subtitle="Warning and critical agents">

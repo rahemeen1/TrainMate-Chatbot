@@ -358,7 +358,14 @@ export async function getSuperAdminAgentHealth(req, res) {
     const agentRows = buildAgentRows(AGENT_CATALOG, runtimeMap);
     const summary = summarizeRows(agentRows);
 
-    return res.status(200).json({
+    // Store snapshot to Firestore for persistence
+    const { storeAgentHealthSnapshot, getLatestAgentHealthSnapshot, mergeRuntimeAndStoredData } =
+      await import("../../services/agentHealthStorage.service.js");
+
+    await storeAgentHealthSnapshot(agentRows, summary);
+
+    // If no runtime data, try to get latest stored snapshot as fallback
+    let finalData = {
       success: true,
       generatedAt: new Date().toISOString(),
       historyWindow: history.length,
@@ -368,7 +375,23 @@ export async function getSuperAdminAgentHealth(req, res) {
         : `Runtime metrics unavailable (${loadError?.message || "orchestrator not initialized"})`,
       ...summary,
       agents: agentRows,
-    });
+      dataSource: "runtime",
+    };
+
+    // If no runtime data available, use stored data as fallback
+    if (!orchestrator || agentRows.every((a) => !a.hasRuntimeData)) {
+      const storedResult = await getLatestAgentHealthSnapshot();
+      if (storedResult.success && storedResult.data) {
+        finalData = {
+          ...finalData,
+          ...storedResult.data,
+          dataSource: "stored",
+          runtimeMessage: `Using stored snapshot from ${storedResult.data.timestamp}`,
+        };
+      }
+    }
+
+    return res.status(200).json(finalData);
   } catch (error) {
     console.error("Error building super admin agent health:", error);
     return res.status(500).json({

@@ -3,7 +3,6 @@ import { db } from "../config/firebase.js";
 import { parseCvFromUrl } from "../services/cvParser.service.js";
 import { retrieveDeptDocsFromPinecone } from "../services/pineconeService.js";
 import { generateRoadmap } from "../services/llmService.js";
-import { extractSkillsFromText } from "../services/skillExtractor.service.js";
 import { extractSkillsAgentically } from "../services/agenticSkillExtractor.service.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { generateRoadmapPDF } from "../services/pdfService.js";
