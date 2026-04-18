@@ -86,6 +86,17 @@ export const parseCvFromUrl = async (cvUrl) => {
     });
 
     const arrayBuffer = response.data;
+    const downloadedBytes = Number(arrayBuffer?.byteLength || 0);
+    const contentType = String(response.headers?.["content-type"] || "");
+    const contentLength = Number(response.headers?.["content-length"] || downloadedBytes || 0);
+
+    if (downloadedBytes < 10 * 1024) {
+      throw new Error("CV file is too small to be a valid resume");
+    }
+
+    if (downloadedBytes > 5 * 1024 * 1024) {
+      throw new Error("CV file is too large to be a valid resume");
+    }
 
     let fileType = "pdf";
     if (cvUrl.toLowerCase().endsWith(".docx")) fileType = "docx";
@@ -179,6 +190,13 @@ Rules for SKILLS field:
       rawText,
       structured,
       redactedText,
+      fileMeta: {
+        fileType,
+        contentType,
+        contentLength,
+        downloadedBytes,
+        sourceUrl: cvUrl,
+      },
     };
   } catch (error) {
     console.error("[CV][ERROR] Failed to parse CV");

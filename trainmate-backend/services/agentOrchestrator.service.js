@@ -8,6 +8,7 @@ import { evaluateCode } from "./codeEvaluator.service.js";
 import { retrieveDeptDocsFromPinecone } from "./pineconeService.js";
 import { applyGuardrails } from "./guardrail.service.js";
 import { policyEngine } from "./policy/policyEngine.service.js";
+import { queueAgentRunIncrement } from "./agentHealthStorage.service.js";
 
 dotenv.config();
 
@@ -79,6 +80,19 @@ function quantile(values = [], q = 0.5) {
     return arr[base] + rest * (arr[base + 1] - arr[base]);
   }
   return arr[base];
+}
+
+const VALIDATION_SCORE_THRESHOLDS = {
+  retry: 70,
+  trusted: 85,
+};
+
+function getValidationScoreBand(score) {
+  const numericScore = Number(score);
+  if (!Number.isFinite(numericScore)) return "retry";
+  if (numericScore < VALIDATION_SCORE_THRESHOLDS.retry) return "retry";
+  if (numericScore <= VALIDATION_SCORE_THRESHOLDS.trusted) return "degraded";
+  return "trusted";
 }
 
 function isConfidenceDebugEnabled() {
@@ -369,6 +383,54 @@ function buildWeightedGapAnalysis({ cvProfiles = [], companyProfiles = [], train
   };
 }
 
+function normalizePrioritySkillsList(skills = []) {
+  return Array.from(
+    new Set(
+      (Array.isArray(skills) ? skills : [])
+        .map((skill) => String(skill || "").trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+function normalizeSkillToken(skill) {
+  return normalizeGapSkillKey(skill);
+}
+
+function getSkillPriorityRank(skill, prioritizedSkills = {}) {
+  const normalizedSkill = normalizeSkillToken(skill);
+  const mustHave = new Set(normalizePrioritySkillsList(prioritizedSkills.mustHave).map(normalizeSkillToken));
+  const goodToHave = new Set(normalizePrioritySkillsList(prioritizedSkills.goodToHave).map(normalizeSkillToken));
+
+  if (mustHave.has(normalizedSkill)) return 0;
+  if (goodToHave.has(normalizedSkill)) return 1;
+  return 2;
+}
+
+function getModulePriorityRank(module = {}, prioritizedSkills = {}) {
+  const skills = Array.isArray(module?.skillsCovered) ? module.skillsCovered : [];
+  if (skills.length === 0) return 3;
+
+  return skills.reduce((bestRank, skill) => {
+    const rank = getSkillPriorityRank(skill, prioritizedSkills);
+    return Math.min(bestRank, rank);
+  }, 3);
+}
+
+function sortModulesByPriority(modules = [], prioritizedSkills = {}) {
+  return [...modules].sort((a, b) => {
+    const aRank = getModulePriorityRank(a, prioritizedSkills);
+    const bRank = getModulePriorityRank(b, prioritizedSkills);
+    if (aRank !== bRank) return aRank - bRank;
+
+    const aDays = Number(a?.estimatedDays || 1);
+    const bDays = Number(b?.estimatedDays || 1);
+    if (aDays !== bDays) return aDays - bDays;
+
+    return String(a?.moduleTitle || "").localeCompare(String(b?.moduleTitle || ""));
+  });
+}
+
 /**
  * AGENT ORCHESTRATOR SERVICE
  * 
@@ -419,11 +481,37 @@ export class AgentOrchestrator {
 
     this.registerAgent('extract-company-skills', async ({ previousResults, context }) => {
       console.log('    🤖 Company Skills Agent: Analyzing company docs...');
-      const { companyDocsText, expertise, trainingOn } = context;
+      const { companyDocsText, expertise, trainingOn, companyId, deptId } = context;
+
+      let resolvedCompanyDocsText = String(companyDocsText || '').trim();
+
+      // If planner did not preload docs yet, fetch a focused company context directly from Pinecone.
+      if (!resolvedCompanyDocsText) {
+        try {
+          const fallbackQuery = `${trainingOn || 'General'} requirements best practices`;
+          const docs = await retrieveDeptDocsFromPinecone({
+            queryText: fallbackQuery,
+            companyId,
+            deptName: deptId,
+          });
+          resolvedCompanyDocsText = (Array.isArray(docs) ? docs : [])
+            .map((item) => item?.text || '')
+            .filter(Boolean)
+            .join('\n')
+            .slice(0, 8000);
+
+          console.log('    🔎 Company Skills Agent preload docs:', {
+            fetched: Array.isArray(docs) ? docs.length : 0,
+            chars: resolvedCompanyDocsText.length,
+          });
+        } catch (error) {
+          console.warn('    ⚠️  Company Skills Agent preload retrieval failed:', error.message);
+        }
+      }
 
       const { companySkills, companySkillProfiles, extractionDetails } = await extractSkillsAgentically({
         cvText: '',
-        companyDocsText,
+        companyDocsText: resolvedCompanyDocsText,
         expertise,
         trainingOn,
         mode: 'company_only',
@@ -449,6 +537,26 @@ export class AgentOrchestrator {
           cvProfiles: cvSkillProfiles,
           companyProfiles: companySkillProfiles,
           trainingOn: context?.trainingOn || "General",
+        });
+
+        const bucketCounts = {
+          mustHave: Array.isArray(weighted?.buckets?.mustHave) ? weighted.buckets.mustHave.length : 0,
+          goodToHave: Array.isArray(weighted?.buckets?.goodToHave) ? weighted.buckets.goodToHave.length : 0,
+          optional: Array.isArray(weighted?.buckets?.optional) ? weighted.buckets.optional.length : 0,
+        };
+        const topScored = Array.isArray(weighted?.prioritized)
+          ? weighted.prioritized.slice(0, 5).map((item) => ({
+              skill: item?.skill,
+              score: item?.score,
+              confidenceGap: item?.confidenceGap,
+              bucket: item?.bucket,
+            }))
+          : [];
+
+        console.log('    📊 Gap confidence summary:', {
+          prioritized: Array.isArray(weighted?.prioritized) ? weighted.prioritized.length : 0,
+          buckets: bucketCounts,
+          topScored,
         });
 
         return {
@@ -591,6 +699,10 @@ Return JSON:
       console.log('    🤖 Roadmap Generation Agent: Creating learning roadmap...');
 
       const skillGap = previousResults['analyze-skill-gaps']?.skillGap || [];
+      const prioritizedSkills = previousResults['analyze-skill-gaps']?.gapBuckets || {
+        mustHave: previousResults['analyze-skill-gaps']?.criticalGaps || [],
+        goodToHave: [],
+      };
       const focusAreas = previousResults['plan-retrieval']?.focusAreas || [];
       const docs = previousResults['retrieve-documents']?.documents || [];
 
@@ -617,12 +729,14 @@ Return JSON:
         skillGap,
         learningProfile,
         planFocusAreas: focusAreas,
+        prioritizedSkills,
       });
 
       return {
-        modules,
+        modules: sortModulesByPriority(modules, prioritizedSkills),
         moduleCount: modules.length,
         totalDays: modules.reduce((sum, m) => sum + (m.estimatedDays || 1), 0),
+        prioritizedSkills,
         agentName: 'Roadmap Generation Agent'
       };
     });
@@ -830,6 +944,58 @@ Return JSON:
     ].join(" | ");
   }
 
+  buildMemoryInsights(memory = {}) {
+    const recentRuns = Array.isArray(memory?.recentRuns) ? memory.recentRuns.slice(-10) : [];
+    const agentFailureCounts = new Map();
+    let plannerFallbackRuns = 0;
+
+    for (const run of recentRuns) {
+      const plannerMode = String(run?.plannerMode || "").toLowerCase();
+      if (plannerMode === "fallback" || run?.plannerFallbackUsed === true) {
+        plannerFallbackRuns += 1;
+      }
+
+      const failedAgents = Array.isArray(run?.failedAgents) ? run.failedAgents : [];
+      for (const agent of failedAgents) {
+        const key = String(agent || "").trim();
+        if (!key) continue;
+        agentFailureCounts.set(key, (agentFailureCounts.get(key) || 0) + 1);
+      }
+    }
+
+    const repeatedFailedAgents = Array.from(agentFailureCounts.entries())
+      .filter(([, count]) => count >= 2)
+      .sort((a, b) => b[1] - a[1])
+      .map(([agent]) => agent);
+
+    const recentValidationScores = recentRuns
+      .map((run) => Number(run?.validationScore))
+      .filter((value) => Number.isFinite(value));
+
+    const avgValidationScore = recentValidationScores.length
+      ? Math.round(recentValidationScores.reduce((sum, value) => sum + value, 0) / recentValidationScores.length)
+      : null;
+
+    const totalRuns = recentRuns.length;
+    const failedRuns = recentRuns.filter((run) => run && run.success === false).length;
+    const plannerFallbackRate = totalRuns > 0 ? Math.round((plannerFallbackRuns / totalRuns) * 100) : null;
+
+    return {
+      totalRuns,
+      failedRuns,
+      avgValidationScore,
+      plannerFallbackRuns,
+      plannerFallbackRate,
+      repeatedFailedAgents,
+      retryPolicyHint:
+        plannerFallbackRate != null && plannerFallbackRate >= 30
+          ? "conservative"
+          : repeatedFailedAgents.length > 0
+            ? "targeted"
+            : "normal",
+    };
+  }
+
   extractKeywords(text) {
     return String(text || "")
       .toLowerCase()
@@ -887,7 +1053,11 @@ Return JSON:
           success: Boolean(update.success),
           error: update.error || null,
           agentsUsed: update.agentsUsed || [],
+          failedAgents: update.failedAgents || [],
           validationScore: update.validationScore ?? null,
+          validationBand: update.validationBand ?? null,
+          plannerMode: update.plannerMode || null,
+          plannerFallbackUsed: Boolean(update.plannerFallbackUsed),
           executionTimeMs: update.executionTimeMs ?? null,
           timestamp: new Date(),
         },
@@ -899,7 +1069,11 @@ Return JSON:
           lastSuccess: Boolean(update.success),
           lastError: update.error || null,
           lastAgentsUsed: update.agentsUsed || [],
+          lastFailedAgents: update.failedAgents || [],
           lastValidationScore: update.validationScore ?? null,
+          lastValidationBand: update.validationBand ?? null,
+          lastPlannerMode: update.plannerMode || null,
+          lastPlannerFallbackUsed: Boolean(update.plannerFallbackUsed),
           lastExecutionTimeMs: update.executionTimeMs ?? null,
           lastUpdatedAt: new Date(),
           recentRuns: nextRecentRuns,
@@ -1278,9 +1452,20 @@ Return JSON only:
 
     try {
       const longTermMemory = await this.loadLongTermMemory(context);
+      const memoryInsights = this.buildMemoryInsights(longTermMemory || {});
+      console.log("[ORCH] Memory insights", {
+        totalRuns: memoryInsights.totalRuns,
+        failedRuns: memoryInsights.failedRuns,
+        plannerFallbackRate: memoryInsights.plannerFallbackRate,
+        repeatedFailedAgents: Array.isArray(memoryInsights.repeatedFailedAgents)
+          ? memoryInsights.repeatedFailedAgents.slice(0, 5)
+          : [],
+        retryPolicyHint: memoryInsights.retryPolicyHint,
+      });
       const runContext = {
         ...context,
         orchestrationMemory: longTermMemory,
+        memoryInsights,
       };
       const constraints = this.normalizeConstraintEnvelope(runContext.constraints);
       const maxIterations = Math.max(2, Math.min(4, Number(runContext.maxReasoningIterations) || 3));
@@ -1363,6 +1548,7 @@ Return JSON only:
           validation,
           context: activeContext,
           constraints,
+          memoryInsights: activeContext?.memoryInsights || {},
         });
 
         const replanned = this.applyReplanFromCritique(activePlan, critique);
@@ -1411,6 +1597,35 @@ Return JSON only:
             executionLog
           );
         }
+      }
+
+      const plannerMode = activePlan?.plannerMode || "llm";
+      const plannerFallbackUsed = plannerMode === "fallback";
+      console.log("[ORCH] Planner mode", {
+        plannerMode,
+        plannerFallbackUsed,
+      });
+      if (plannerFallbackUsed) {
+        const fallbackPenalty = 10;
+        const adjustedScore = Math.max(0, Number(finalValidation.score || 0) - fallbackPenalty);
+        const adjustedBand = getValidationScoreBand(adjustedScore);
+
+        console.warn("[ORCH] Applying planner fallback penalty", {
+          fallbackPenalty,
+          originalScore: finalValidation.score,
+          adjustedScore,
+          adjustedBand,
+        });
+
+        finalValidation = {
+          ...finalValidation,
+          score: adjustedScore,
+          scoreBand: adjustedBand,
+          degraded: true,
+          trusted: adjustedBand === "trusted",
+          pass: Boolean(finalValidation.pass) && adjustedScore >= VALIDATION_SCORE_THRESHOLDS.retry,
+          reason: `${finalValidation.reason || "Final validation"} | planner fallback penalty applied`,
+        };
       }
 
       if (!finalValidation.pass) {
@@ -1474,6 +1689,8 @@ Return JSON only:
         executionResults: finalExecutionResults,
         finalOutput,
         validation: finalValidation,
+        plannerMode,
+        plannerFallbackUsed,
         successfulCycle,
         maxIterations,
         queuedFollowUpGoalIds,
@@ -1485,7 +1702,11 @@ Return JSON only:
         goal,
         success: true,
         agentsUsed: activePlan.steps.map((s) => s.agent),
+        failedAgents: Array.isArray(finalExecutionResults?.failedAgents) ? finalExecutionResults.failedAgents : [],
         validationScore: finalValidation.score,
+        validationBand: finalValidation.scoreBand || getValidationScoreBand(finalValidation.score),
+        plannerMode,
+        plannerFallbackUsed,
         executionTimeMs: executionTime,
       });
 
@@ -1501,6 +1722,16 @@ Return JSON only:
           executionTime: `${executionTime}ms`,
           stepsExecuted: finalExecutionResults.executionLog.length,
           validationScore: finalValidation.score,
+          validationBand: finalValidation.scoreBand || getValidationScoreBand(finalValidation.score),
+          validationState: finalValidation.degraded
+            ? "degraded"
+            : finalValidation.trusted
+              ? "trusted"
+              : finalValidation.pass
+                ? "accepted"
+                : "blocked",
+          plannerMode,
+          plannerFallbackUsed,
           strategy: activePlan.errorStrategy,
           reasoningCycles: successfulCycle || maxIterations,
           queuedFollowUpGoals: queuedFollowUpGoalIds.length,
@@ -1521,6 +1752,14 @@ Return JSON only:
         goal,
         success: false,
         error: error.message,
+        failedAgents: Array.isArray(executionLog)
+          ? executionLog
+              .filter((entry) => entry && (entry.status === "FAILED" || entry.status === "SKIPPED"))
+              .map((entry) => entry.agent)
+              .filter(Boolean)
+          : [],
+        plannerMode: "unknown",
+        plannerFallbackUsed: false,
       });
 
       return {
@@ -1547,7 +1786,10 @@ Return JSON only:
       if (!plan) {
         throw new Error("No valid planner JSON from any LLM");
       }
-      return plan;
+      return {
+        ...plan,
+        plannerMode: "llm",
+      };
     } catch (error) {
       console.warn("⚠️  Planner agent failed:", error.message);
       // Return fallback plan
@@ -1602,6 +1844,7 @@ Return JSON only:
       reasoning: "Fallback plan based on goal keywords",
       errorStrategy: "retry",
       estimatedCost: "medium",
+      plannerMode: "fallback",
     };
   }
 
@@ -1794,6 +2037,7 @@ Return JSON only:
       let lastError;
 
       while (attempts < maxRetries) {
+        let attemptQueued = false;
         try {
           const constraints = this.normalizeConstraintEnvelope(context?.constraints);
           const executionPlan = {
@@ -1808,36 +2052,71 @@ Return JSON only:
             constraints,
           });
 
-          const validation = await this.validateOutput(output, step);
+          const validation = await this.validateOutput(output, {
+            ...step,
+            input: stepInput,
+          });
           const pass = Boolean(validation.pass);
           const mergedScore = Number(validation.score || 0);
           const mergedIssues = Array.isArray(validation.issues) ? validation.issues : [];
           const mergedReason = validation.reason || "Validation result unavailable";
+          const scoreBand = getValidationScoreBand(mergedScore);
+          const canRetryOnScore =
+            scoreBand === "retry" &&
+            validation.canRecover !== false &&
+            step.critical !== false;
 
-          if (pass) {
+          if (pass && !canRetryOnScore) {
             results[step.agent] = output;
             stepOrderMap[step.agent] = step.stepNumber;
+
+            const stepStatus = scoreBand === "degraded" ? "degraded" : "success";
+            queueAgentRunIncrement({
+              agentKey: step.agent,
+              agentName: step.agent,
+              status: stepStatus,
+              validationScore: mergedScore,
+              durationMs: Date.now() - stepStart,
+            });
+            attemptQueued = true;
 
             const stepLog = {
               stepNumber: step.stepNumber,
               agent: step.agent,
-              status: "SUCCESS",
+              status: scoreBand === "degraded" ? "DEGRADED" : "SUCCESS",
               duration: Date.now() - stepStart,
               executionPlan,
               validation: {
                 score: mergedScore,
                 reason: mergedReason,
                 issues: mergedIssues,
+                scoreBand,
+                degraded: scoreBand === "degraded",
+                trusted: scoreBand === "trusted",
               },
             };
 
-            console.log(`      ✅ Success (validation: ${mergedScore}/100)`);
+            console.log(`      ✅ Success (validation: ${mergedScore}/100, band: ${scoreBand})`);
+            if (scoreBand === "degraded") {
+              console.warn(`      ⚠️  Output accepted but marked degraded: ${step.agent}`);
+            }
             return { success: true, log: stepLog, output };
           }
 
-          lastError = new Error(`Validation failed: ${mergedReason}`);
+          const retryReason = pass
+            ? `Validation score ${mergedScore} below retry threshold`
+            : `Validation failed: ${mergedReason}`;
+          queueAgentRunIncrement({
+            agentKey: step.agent,
+            agentName: step.agent,
+            status: "failed",
+            validationScore: mergedScore,
+            durationMs: Date.now() - stepStart,
+          });
+          attemptQueued = true;
+          lastError = new Error(retryReason);
           attempts++;
-          console.warn(`      ⚠️  Validation issue: ${mergedReason}`);
+          console.warn(`      ⚠️  Validation issue: ${retryReason}`);
 
           if (attempts < maxRetries) {
             const recoveryDecision = await policyEngine.decide("stepRecovery", {
@@ -1845,14 +2124,25 @@ Return JSON only:
               attempt: attempts,
               maxRetries,
               stepInput,
+              memoryInsights: context?.memoryInsights || {},
               validation: {
                 pass,
                 score: mergedScore,
                 reason: mergedReason,
                 issues: mergedIssues,
+                scoreBand,
               },
               output,
               error: lastError,
+            });
+
+            console.log("      [ORCH][STEP-RECOVERY] Decision", {
+              agent: step.agent,
+              action: recoveryDecision?.action,
+              backoffMs: recoveryDecision?.backoffMs || step.retryPolicy?.backoffMs || 1000,
+              hasInputPatch: Boolean(recoveryDecision?.inputPatch),
+              attempt: attempts,
+              maxRetries,
             });
 
             if (recoveryDecision.action === "fail") {
@@ -1860,6 +2150,14 @@ Return JSON only:
             }
 
             if (recoveryDecision.action === "skip") {
+              queueAgentRunIncrement({
+                agentKey: step.agent,
+                agentName: step.agent,
+                status: "skipped",
+                validationScore: mergedScore,
+                durationMs: Date.now() - stepStart,
+              });
+              attemptQueued = true;
               return {
                 success: false,
                 error: new Error(`Agent requested skip after self-recovery analysis: ${step.agent}`),
@@ -1881,9 +2179,21 @@ Return JSON only:
               };
             }
 
-            await this.sleep(step.retryPolicy?.backoffMs || 1000);
+            if (canRetryOnScore) {
+              console.warn(`      🔁 Retrying ${step.agent} because score ${mergedScore} is below threshold`);
+            }
+
+            await this.sleep(recoveryDecision.backoffMs || step.retryPolicy?.backoffMs || 1000);
           }
         } catch (error) {
+          if (!attemptQueued) {
+            queueAgentRunIncrement({
+              agentKey: step.agent,
+              agentName: step.agent,
+              status: "failed",
+              durationMs: Date.now() - stepStart,
+            });
+          }
           lastError = error;
           attempts++;
           console.warn(`      ⚠️  Attempt ${attempts}/${maxRetries} failed:`, error.message);
@@ -2032,34 +2342,40 @@ Return JSON only:
     // Deterministic validation for known agents (avoid LLM false negatives)
     if (step.agent === "extract-cv-skills") {
       const count = Array.isArray(output.cvSkills) ? output.cvSkills.length : 0;
+      const score = count > 0 ? 90 : 30;
       return {
         pass: count > 0,
-        score: count > 0 ? 90 : 30,
+        score,
         reason: count > 0 ? "CV skills extracted" : "No CV skills extracted",
         issues: count > 0 ? [] : ["cvSkills is empty"],
         canRecover: true,
+        scoreBand: getValidationScoreBand(score),
       };
     }
 
     if (step.agent === "extract-company-skills") {
       const count = Array.isArray(output.companySkills) ? output.companySkills.length : 0;
+      const score = count > 0 ? 90 : 30;
       return {
         pass: count > 0,
-        score: count > 0 ? 90 : 30,
+        score,
         reason: count > 0 ? "Company skills extracted" : "No company skills extracted",
         issues: count > 0 ? [] : ["companySkills is empty"],
         canRecover: true,
+        scoreBand: getValidationScoreBand(score),
       };
     }
 
     if (step.agent === "analyze-skill-gaps") {
       const hasArray = Array.isArray(output.skillGap);
+      const score = hasArray ? 95 : 40;
       return {
         pass: hasArray,
-        score: hasArray ? 95 : 40,
+        score,
         reason: hasArray ? "Skill gap analysis available" : "Missing skillGap array",
         issues: hasArray ? [] : ["skillGap missing or invalid"],
         canRecover: true,
+        scoreBand: getValidationScoreBand(score),
       };
     }
 
@@ -2077,12 +2393,15 @@ Return JSON only:
       if (focusAreas.length === 0) issues.push("focusAreas must contain at least one non-empty value");
       if (!validPriority) issues.push("priority must be one of: high, medium, low");
 
+      const score = pass ? 92 : 35;
+
       return {
         pass,
-        score: pass ? 92 : 35,
+        score,
         reason: pass ? "Retrieval plan structure is valid" : "Retrieval plan is incomplete or malformed",
         issues,
         canRecover: true,
+        scoreBand: getValidationScoreBand(score),
       };
     }
 
@@ -2109,29 +2428,54 @@ Return JSON only:
               : ["documentCount did not match documents.length in raw output"]
             : ["documents array is empty"],
         canRecover: false,
+        scoreBand: getValidationScoreBand(docs.length > 0 ? 90 : 65),
       };
     }
 
     if (step.agent === "generate-roadmap") {
       const modules = Array.isArray(output.modules) ? output.modules : [];
       const validModules = modules.filter((m) => m && typeof m === "object").length;
+      const prioritizedSkills =
+        step?.input?.prioritizedSkills ||
+        step?.input?.context?.prioritizedSkills ||
+        output?.prioritizedSkills ||
+        {};
+      const moduleRanks = modules.map((module) => getModulePriorityRank(module, prioritizedSkills));
+      const orderingValid = moduleRanks.every((rank, idx) => idx === 0 || rank >= moduleRanks[idx - 1]);
+      const topMustHaveSkills = normalizePrioritySkillsList(prioritizedSkills.mustHave);
+      const firstModuleSkills = Array.isArray(modules[0]?.skillsCovered) ? modules[0].skillsCovered : [];
+      const firstModuleRank = modules.length > 0 ? moduleRanks[0] : 3;
+      const mustHaveSatisfied = topMustHaveSkills.length === 0 || firstModuleRank === 0;
+      const score = validModules > 0 ? 92 : 20;
+      const finalScore = validModules > 0 && orderingValid && mustHaveSatisfied ? score : Math.min(score, 45);
       return {
-        pass: validModules > 0,
-        score: validModules > 0 ? 92 : 20,
-        reason: validModules > 0 ? "Roadmap modules generated" : "No roadmap modules generated",
-        issues: validModules > 0 ? [] : ["modules array is empty or invalid"],
+        pass: validModules > 0 && orderingValid && mustHaveSatisfied,
+        score: finalScore,
+        reason: validModules > 0
+          ? orderingValid && mustHaveSatisfied
+            ? "Roadmap modules generated in prioritized order"
+            : "Roadmap modules generated but ordering does not prioritize must-have skills"
+          : "No roadmap modules generated",
+        issues: [
+          ...(validModules > 0 ? [] : ["modules array is empty or invalid"]),
+          ...(orderingValid ? [] : ["modules are not ordered by skill priority"]),
+          ...(mustHaveSatisfied ? [] : ["first module does not cover must-have skills"]),
+        ],
         canRecover: true,
+        scoreBand: getValidationScoreBand(finalScore),
       };
     }
 
     if (step.agent === "validate-roadmap") {
       const hasSignal = typeof output.pass === "boolean" || typeof output.score === "number";
+      const score = hasSignal ? 90 : 50;
       return {
         pass: hasSignal,
-        score: hasSignal ? 90 : 50,
+        score,
         reason: hasSignal ? "Validation output present" : "Validation output incomplete",
         issues: hasSignal ? [] : ["validate-roadmap output missing pass/score"],
         canRecover: false,
+        scoreBand: getValidationScoreBand(score),
       };
     }
 
@@ -2220,6 +2564,7 @@ Return ONLY valid JSON:
         issues,
         validation,
         executionResults,
+        memoryInsights: context?.memoryInsights || {},
       });
 
       if (!strategy) {
@@ -2288,19 +2633,23 @@ Return ONLY valid JSON:
     if (this.isRoadmapGoal(goal)) {
       const modules = this.getRoadmapModulesFromResults(results);
       if (Array.isArray(modules) && modules.length > 0) {
+        const score = 95;
         return {
           pass: true,
           canRecover: false,
-          score: 95,
+          score,
+          scoreBand: getValidationScoreBand(score),
           reason: "Roadmap generation output is present and non-empty",
           suggestions: [],
         };
       }
 
+      const score = 15;
       return {
         pass: false,
         canRecover: true,
-        score: 15,
+        score,
+        scoreBand: getValidationScoreBand(score),
         reason: "Roadmap generation output is missing modules",
         suggestions: ["Ensure generate-roadmap executes and returns a non-empty modules array"],
       };
@@ -2346,10 +2695,17 @@ Return JSON:
           expectedFormat: "text",
         });
 
+        const score = Math.round((Number(finalValidation.score || 0) + guardrail.score) / 2);
+        const scoreBand = getValidationScoreBand(score);
+
         return {
           ...finalValidation,
-          pass: Boolean(finalValidation.pass) && guardrail.pass,
-          score: Math.round((Number(finalValidation.score || 0) + guardrail.score) / 2),
+          pass: Boolean(finalValidation.pass) && guardrail.pass && score >= VALIDATION_SCORE_THRESHOLDS.retry,
+          score,
+          scoreBand,
+          degraded: scoreBand === "degraded",
+          trusted: scoreBand === "trusted",
+          canRecover: score < VALIDATION_SCORE_THRESHOLDS.retry ? true : Boolean(finalValidation.canRecover),
           guardrail,
         };
       }
@@ -2360,6 +2716,7 @@ Return JSON:
     return {
       pass: Object.keys(results).length > 0,
       score: 70,
+      scoreBand: getValidationScoreBand(70),
       reason: "Basic validation passed",
       canRecover: false,
     };

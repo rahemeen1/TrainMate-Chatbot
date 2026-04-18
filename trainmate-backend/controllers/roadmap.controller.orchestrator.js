@@ -12,6 +12,7 @@ import { initializeAgentRegistry } from '../services/agentRegistry.js';
 import { generateRoadmapPDF } from '../services/pdfService.js';
 import { handleRoadmapGenerated } from '../services/notificationService.js';
 import { buildLearningProfile } from '../services/learningProfileService.js';
+import { policyEngine } from '../services/policy/policyEngine.service.js';
 
 // Initialize agents on startup
 let agentsInitialized = false;
@@ -85,6 +86,13 @@ export const generateUserRoadmap = async (req, res) => {
     if (!user.onboarding?.onboardingCompleted || !user.cvUrl) {
       console.warn('⚠️  Onboarding incomplete or CV missing');
       return res.status(400).json({ error: 'Onboarding incomplete' });
+    }
+
+    if (!user.onboarding?.cvValidation?.isValidCV) {
+      console.warn('⚠️  CV validation missing at onboarding stage');
+      return res.status(400).json({
+        error: 'CV validation required. Please re-upload a valid CV from onboarding.',
+      });
     }
 
     // Check existing roadmap
@@ -162,14 +170,14 @@ export const generateUserRoadmap = async (req, res) => {
     console.log('\n📄 STEP 2: Parsing CV...');
 
     const cvParseResult = await parseCvFromUrl(user.cvUrl);
-    const cvText = cvParseResult?.rawText || '';
-
-    if (!cvText || typeof cvText !== 'string' || cvText.trim().length < 50) {
-      throw new Error('❌ CV extraction failed or insufficient data');
-    }
-
-    console.log('✅ CV parsed:', cvText.length, 'chars');
+    const cvText = cvParseResult?.redactedText || cvParseResult?.rawText || '';
     const structuredCv = cvParseResult?.structured || null;
+
+    console.log('✅ CV validation trusted from onboarding:', {
+      score: user.onboarding?.cvValidation?.score ?? null,
+      confidence: user.onboarding?.cvValidation?.confidence ?? null,
+      validatedAt: user.onboarding?.cvValidation?.validatedAt ?? null,
+    });
 
     // Build learning profile
     console.log('\n🧩 Building learning profile...');
@@ -361,6 +369,54 @@ export const generateUserRoadmap = async (req, res) => {
         // Silently fail lock release
       }
     }
+  }
+};
+
+/**
+ * Validate uploaded CV before onboarding completion.
+ * @route POST /api/roadmap/validate-cv
+ * @body  { cvUrl, trainingOn? }
+ */
+export const validateUploadedCv = async (req, res) => {
+  try {
+    const { cvUrl, trainingOn } = req.body || {};
+
+    if (!cvUrl || typeof cvUrl !== 'string') {
+      return res.status(400).json({
+        error: 'cvUrl is required for CV validation',
+      });
+    }
+
+    const cvParseResult = await parseCvFromUrl(cvUrl);
+    const rawText = cvParseResult?.rawText || '';
+    const structuredCv = cvParseResult?.structured || null;
+
+    const cvValidation = await policyEngine.decide('cvValidation', {
+      cvUrl,
+      rawText,
+      structuredCv,
+      fileMeta: cvParseResult?.fileMeta || {},
+      trainingOn: trainingOn || 'General',
+    });
+
+    if (!cvValidation?.isValidCV) {
+      return res.status(400).json({
+        success: false,
+        error: cvValidation?.reason || 'Uploaded document does not look like a CV',
+        cvValidation,
+      });
+    }
+
+    return res.json({
+      success: true,
+      cvValidation,
+    });
+  } catch (error) {
+    console.error('❌ CV validation endpoint failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'CV validation failed',
+    });
   }
 };
 

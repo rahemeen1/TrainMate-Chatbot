@@ -24,6 +24,8 @@ class PolicyEngine {
         return this.decidePlanGeneration(context);
       case "skillExtraction":
         return this.decideSkillExtraction(context);
+      case "cvValidation":
+        return this.decideCvValidation(context);
       case "quizOutcome":
         return this.decideQuizOutcome(context);
       case "notification":
@@ -122,6 +124,250 @@ class PolicyEngine {
     };
   }
 
+  async decideCvValidation(context = {}) {
+    const cvUrl = String(context.cvUrl || "");
+    const rawText = String(context.rawText || "");
+    const structuredCv = context.structuredCv && typeof context.structuredCv === "object"
+      ? context.structuredCv
+      : null;
+    const fileMeta = context.fileMeta && typeof context.fileMeta === "object"
+      ? context.fileMeta
+      : {};
+
+    const normalizedFileType = String(
+      fileMeta.fileType || cvUrl.split("?")[0].split(".").pop() || ""
+    ).toLowerCase();
+    const supportedTypes = new Set(["pdf", "docx"]);
+    const downloadedBytes = Number(
+      fileMeta.downloadedBytes ?? fileMeta.contentLength ?? fileMeta.sizeBytes ?? 0
+    );
+    const wordCount = rawText.trim() ? rawText.trim().split(/\s+/).length : 0;
+    const lines = rawText
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    const sectionKeywords = [
+      "education",
+      "experience",
+      "skills",
+      "projects",
+      "internship",
+      "certifications",
+      "summary",
+      "profile",
+      "work experience",
+    ];
+
+    const matchedSections = sectionKeywords.filter((keyword) => {
+      const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(`\\b${escaped}\\b`, "i").test(rawText);
+    }).length;
+
+    const bulletLines = lines.filter((line) => /^([\-*•]|\d+[.)])\s+/.test(line)).length;
+    const dateSignals = (rawText.match(/\b(?:19|20)\d{2}\b/g) || []).length +
+      (rawText.match(/\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{4}\b/gi) || []).length;
+    const structuredSignals = [
+      Array.isArray(structuredCv?.skills) ? structuredCv.skills.length : 0,
+      Array.isArray(structuredCv?.roles) ? structuredCv.roles.length : 0,
+      Array.isArray(structuredCv?.education) ? structuredCv.education.length : 0,
+      Array.isArray(structuredCv?.projects) ? structuredCv.projects.length : 0,
+      Array.isArray(structuredCv?.certifications) ? structuredCv.certifications.length : 0,
+    ].reduce((sum, value) => sum + value, 0);
+
+    const avgLineLength = lines.length > 0
+      ? lines.reduce((sum, line) => sum + line.length, 0) / lines.length
+      : 0;
+
+    console.log("[POLICY][CV] Starting CV validation", {
+      fileType: normalizedFileType || "unknown",
+      downloadedBytes: downloadedBytes || null,
+      wordCount,
+      structuredSignals,
+    });
+
+    const issues = [];
+    if (!supportedTypes.has(normalizedFileType)) {
+      issues.push("Unsupported file type. Expected PDF or DOCX.");
+    }
+    if (downloadedBytes && downloadedBytes < 10 * 1024) {
+      issues.push("File is too small to be a real CV.");
+    }
+    if (downloadedBytes && downloadedBytes > 5 * 1024 * 1024) {
+      issues.push("File is too large to be a typical CV.");
+    }
+    if (wordCount < 200) {
+      issues.push("Extracted text is too short for a real CV.");
+    }
+
+    const hardFailure = issues.length > 0;
+    const keywordScore = Math.min(30, matchedSections * 10);
+    const structureScore = Math.min(30, bulletLines >= 3 ? 15 : bulletLines * 4) + Math.min(20, structuredSignals * 4);
+    const lengthScore = wordCount >= 400 ? 30 : wordCount >= 250 ? 24 : wordCount >= 200 ? 18 : wordCount >= 120 ? 10 : 0;
+    const dateScore = Math.min(10, dateSignals * 2);
+    const paragraphPenalty = avgLineLength > 160 && bulletLines < 3 ? 15 : 0;
+
+    const heuristicScore = Math.max(0, Math.min(100, lengthScore + keywordScore + structureScore + dateScore - paragraphPenalty));
+    const heuristicConfidence = Math.max(0, Math.min(1, heuristicScore / 100));
+    const heuristicValid = heuristicScore >= 55 && wordCount >= 120 && matchedSections >= 1 && structuredSignals >= 1;
+
+    console.log("[POLICY][CV] Heuristic summary", {
+      heuristicScore,
+      heuristicValid,
+      matchedSections,
+      bulletLines,
+      dateSignals,
+      structuredSignals,
+      issues: issues.length,
+    });
+
+    if (hardFailure) {
+      const reason = issues[0];
+      console.warn("[POLICY][CV] Rejected by hard checks", {
+        reason,
+        issues,
+      });
+      return {
+        isValidCV: false,
+        confidence: 0,
+        score: Math.max(0, Math.min(45, heuristicScore)),
+        reason,
+        issues,
+        evidence: {
+          fileType: normalizedFileType || "unknown",
+          wordCount,
+          matchedSections,
+          bulletLines,
+          dateSignals,
+          structuredSignals,
+        },
+        classificationSource: "heuristic",
+        recommendedAction: "reject",
+      };
+    }
+
+    const sanitizedDocumentText = this.sanitizePromptText(rawText).slice(0, 5000);
+
+    const classifierPrompt = `You are a document validation agent for a training platform.
+
+Decide whether this document is a real resume/CV or not.
+
+Return JSON only:
+{
+  "isCV": true/false,
+  "confidence": 0-1,
+  "reason": "short explanation",
+  "missingSignals": ["signal1"],
+  "observedSignals": ["signal1"],
+  "score": 0-100
+}
+
+DOCUMENT METADATA:
+- fileType: ${normalizedFileType || "unknown"}
+- downloadedBytes: ${downloadedBytes || "unknown"}
+- wordCount: ${wordCount}
+- matchedSections: ${matchedSections}
+- bulletLines: ${bulletLines}
+- dateSignals: ${dateSignals}
+- structuredSignals: ${structuredSignals}
+
+DOCUMENT TEXT (TRUNCATED):
+${sanitizedDocumentText}
+`;
+
+    let semantic = null;
+    try {
+      semantic = await this.generateJsonWithFallback(classifierPrompt, {
+        purpose: "cv validation",
+      });
+    } catch {
+      semantic = null;
+    }
+
+    const llmConfidence = semantic && Number.isFinite(Number(semantic.confidence))
+      ? Math.max(0, Math.min(1, Number(semantic.confidence)))
+      : null;
+    const llmScore = semantic && Number.isFinite(Number(semantic.score))
+      ? Math.max(0, Math.min(100, Number(semantic.score)))
+      : null;
+
+    const hasSemantic = semantic && typeof semantic.isCV === "boolean";
+    const finalConfidence = hasSemantic && llmConfidence != null ? llmConfidence : heuristicConfidence;
+    const combinedScore = hasSemantic && llmScore != null
+      ? Math.round(llmScore * 0.6 + heuristicScore * 0.4)
+      : heuristicScore;
+    const finalIsValid = hasSemantic ? Boolean(semantic.isCV) : heuristicValid;
+    const reason = hasSemantic && semantic?.reason
+      ? semantic.reason
+      : heuristicValid
+        ? "Heuristic CV validation passed"
+        : "Heuristic CV validation failed";
+
+    const finalIssues = [
+      ...(issues || []),
+      ...(heuristicValid ? [] : ["Document structure and content do not look like a CV"]),
+      ...(hasSemantic && Array.isArray(semantic?.missingSignals) ? semantic.missingSignals : []),
+    ];
+
+    const isAccepted =
+      finalIsValid &&
+      finalConfidence >= 0.6 &&
+      combinedScore >= 65;
+
+    console.log("[POLICY][CV] Final decision", {
+      accepted: isAccepted,
+      classificationSource: hasSemantic ? "llm" : "heuristic",
+      confidence: Number(finalConfidence.toFixed(2)),
+      score: combinedScore,
+      finalIsValid,
+      issues: finalIssues.length,
+      reason,
+    });
+
+    return {
+      isValidCV: isAccepted,
+      confidence: Number(finalConfidence.toFixed(2)),
+      score: combinedScore,
+      reason,
+      issues: Array.from(new Set(finalIssues.filter(Boolean))),
+      evidence: {
+        fileType: normalizedFileType || "unknown",
+        downloadedBytes: downloadedBytes || null,
+        wordCount,
+        matchedSections,
+        bulletLines,
+        dateSignals,
+        structuredSignals,
+      },
+      classificationSource: hasSemantic ? "llm" : "heuristic",
+      recommendedAction: isAccepted ? "accept" : "reject",
+    };
+  }
+
+  sanitizePromptText(text) {
+    return String(text || "")
+      .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[REDACTED_EMAIL]")
+      .replace(/\+?\d[\d\s().-]{7,}\d/g, "[REDACTED_PHONE]")
+      .replace(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g, "[REDACTED_DATE]")
+      .replace(/\b\d{5,6}\b/g, "[REDACTED_ID]");
+  }
+
+  maskEmail(email) {
+    const value = String(email || "").trim();
+    if (!value.includes("@")) return "[REDACTED_EMAIL]";
+    const [localPart, domain] = value.split("@");
+    const safeLocal = localPart.length > 2
+      ? `${localPart[0]}***${localPart[localPart.length - 1]}`
+      : "***";
+    return `${safeLocal}@${domain}`;
+  }
+
+  anonymizeName(name) {
+    const value = String(name || "").trim();
+    if (!value) return "Learner";
+    return `${value.charAt(0)}***`;
+  }
+
   extractJsonFromText(text) {
     if (!text || typeof text !== "string") return null;
 
@@ -204,6 +450,74 @@ class PolicyEngine {
     ].join(" | ");
   }
 
+  buildMemoryInsights(memory = {}) {
+    if (!memory || typeof memory !== "object") {
+      return {
+        totalRuns: 0,
+        successRuns: 0,
+        failedRuns: 0,
+        avgValidationScore: null,
+        plannerFallbackRuns: 0,
+        plannerFallbackRate: null,
+        repeatedFailedAgents: [],
+        retryPolicyHint: "normal",
+      };
+    }
+
+    const recentRuns = Array.isArray(memory.recentRuns) ? memory.recentRuns.slice(-10) : [];
+    const totalRuns = recentRuns.length;
+    const successRuns = recentRuns.filter((run) => run && run.success === true).length;
+    const failedRuns = recentRuns.filter((run) => run && run.success === false).length;
+    const validationScores = recentRuns
+      .map((run) => Number(run?.validationScore))
+      .filter((value) => Number.isFinite(value));
+
+    const agentFailureCounts = new Map();
+    let plannerFallbackRuns = 0;
+
+    for (const run of recentRuns) {
+      const plannerMode = String(run?.plannerMode || "").toLowerCase();
+      if (plannerMode === "fallback" || run?.plannerFallbackUsed === true) {
+        plannerFallbackRuns += 1;
+      }
+
+      const failedAgents = Array.isArray(run?.failedAgents) ? run.failedAgents : [];
+      for (const agent of failedAgents) {
+        const key = String(agent || "").trim();
+        if (!key) continue;
+        agentFailureCounts.set(key, (agentFailureCounts.get(key) || 0) + 1);
+      }
+    }
+
+    const repeatedFailedAgents = Array.from(agentFailureCounts.entries())
+      .filter(([, count]) => count >= 2)
+      .sort((a, b) => b[1] - a[1])
+      .map(([agent]) => agent);
+
+    const plannerFallbackRate = totalRuns > 0 ? Math.round((plannerFallbackRuns / totalRuns) * 100) : null;
+    const avgValidationScore = validationScores.length
+      ? Math.round(validationScores.reduce((sum, value) => sum + value, 0) / validationScores.length)
+      : null;
+
+    const retryPolicyHint = plannerFallbackRate != null && plannerFallbackRate >= 30
+      ? "conservative"
+      : repeatedFailedAgents.length > 0
+        ? "targeted"
+        : "normal";
+
+    return {
+      totalRuns,
+      successRuns,
+      failedRuns,
+      avgValidationScore,
+      plannerFallbackRuns,
+      plannerFallbackRate,
+      repeatedFailedAgents,
+      retryPolicyHint,
+      recentFailureRate: totalRuns > 0 ? Math.round((failedRuns / totalRuns) * 100) : null,
+    };
+  }
+
   extractKeywords(text) {
     return String(text || "")
       .toLowerCase()
@@ -244,6 +558,17 @@ class PolicyEngine {
     const normalizedConstraints = this.normalizeConstraintEnvelope(context.constraints);
     const memory = await this.loadLongTermMemory(context);
     const memorySummary = this.summarizeMemory(memory || context.orchestrationMemory || {});
+    const memoryInsights = this.buildMemoryInsights(memory || context.orchestrationMemory || {});
+
+    console.log("[POLICY][PLAN] Planner request", {
+      goal,
+      availableAgents: availableAgents.length,
+      maxLatency: normalizedConstraints.maxLatency,
+      costSensitivity: normalizedConstraints.costSensitivity,
+      memoryFailureRate: memoryInsights.recentFailureRate,
+      memoryFallbackRate: memoryInsights.plannerFallbackRate,
+      retryPolicyHint: memoryInsights.retryPolicyHint,
+    });
 
     const plannerPrompt = `You are an expert orchestration planner. Analyze this goal and create an optimal execution plan.
 
@@ -255,6 +580,10 @@ CONTEXT:
 - Available agents: ${availableAgents.join(", ")}
 - Constraints: ${JSON.stringify(normalizedConstraints)}
 - Memory insights: ${memorySummary}
+- Memory failure patterns: ${JSON.stringify(memoryInsights)}
+
+Use the memory failure patterns to avoid repeating previously weak plans or unstable execution paths.
+If planner fallback rate is high, keep the plan simpler and more deterministic.
 
 Return ONLY valid JSON:
 {
@@ -396,14 +725,19 @@ Return JSON only:
     const adaptiveSignals = context.adaptiveSignals || {};
     const notificationLearning = context.notificationLearning || {};
 
+    const safeUserName = this.anonymizeName(context.userName);
+    const safeCompanyName = this.sanitizePromptText(context.companyName || "Unknown Company");
+    const safeTrainingTopic = this.sanitizePromptText(context.trainingTopic || "General");
+    const safeCurrentModule = this.sanitizePromptText(context.activeModule?.moduleTitle || "None");
+
     const prompt = `You are an intelligent notification strategist for a corporate training platform called TrainMate.
 
 Analyze this user context and make smart notification decisions:
 
 USER PROFILE:
-- Name: ${context.userName}
-- Company: ${context.companyName}
-- Training Topic: ${context.trainingTopic}
+- Name: ${safeUserName}
+- Company: ${safeCompanyName}
+- Training Topic: ${safeTrainingTopic}
 - Last Login: ${context.engagementData?.lastLoginAt?.toLocaleString?.() || "Unknown"}
 - Learning Streak: ${context.engagementData?.learningStreak || 0} days
 - Modules Completed: ${context.engagementData?.modulesCompleted || 0}
@@ -411,7 +745,7 @@ USER PROFILE:
 - Email Open Rate: ${context.engagementData?.emailOpenRate || 0}%
 - Attendance Rate: ${context.engagementData?.attendanceRate || 0}%
 - Time Spent Learning: ${context.engagementData?.timeSpentLearning || 0} minutes
-- Current Module: ${context.activeModule?.moduleTitle || "None"}
+- Current Module: ${safeCurrentModule}
 
 NOTIFICATION CONTEXT:
 - Notification Type: ${context.notificationType}
@@ -542,15 +876,21 @@ Return JSON only:
       };
     }
 
+    const safeUserName = this.anonymizeName(userName || "Trainee");
+    const safeEmail = this.maskEmail(userEmail);
+    const safeCompanyName = this.sanitizePromptText(companyName || "Unknown");
+    const safeTrainingTopic = this.sanitizePromptText(trainingTopic || "General");
+    const safeModuleTitle = this.sanitizePromptText(activeModuleTitle || "N/A");
+
     const prompt = `You are a calendar scheduling decision agent for TrainMate.
 
 USER:
-- Name: ${userName || "Trainee"}
-- Email: ${userEmail}
-- Company: ${companyName || "Unknown"}
+  - Name: ${safeUserName}
+  - Email: ${safeEmail}
+  - Company: ${safeCompanyName}
 - Notification type: ${notificationType}
-- Training topic: ${trainingTopic || "General"}
-- Active module: ${activeModuleTitle || "N/A"}
+  - Training topic: ${safeTrainingTopic}
+  - Active module: ${safeModuleTitle}
 - Module count: ${Number(moduleCount || 0)}
 - Estimated days for active module: ${Number(estimatedDays || 0)}
 - Timezone: ${timezone}
@@ -609,20 +949,60 @@ Return JSON only:
       maxRetries = 1,
       validation = {},
       error = null,
+      memoryInsights = {},
+      step = {},
     } = context;
 
     if (attempt >= maxRetries) {
+      console.warn("[POLICY][STEP-RECOVERY] Retry budget exhausted", {
+        agent: step?.agent || "unknown",
+        attempt,
+        maxRetries,
+      });
       return { action: "fail", inputPatch: null };
     }
 
     const issues = Array.isArray(validation?.issues) ? validation.issues : [];
     const severityHint = Number(validation?.score || 0) < 30;
     if (severityHint && attempt + 1 >= maxRetries) {
+      console.warn("[POLICY][STEP-RECOVERY] Failing due to high severity near retry limit", {
+        agent: step?.agent || "unknown",
+        score: validation?.score,
+        attempt,
+        maxRetries,
+      });
       return { action: "fail", inputPatch: null };
     }
 
     if (error && /missing dependencies|not found/i.test(String(error.message || ""))) {
+      console.warn("[POLICY][STEP-RECOVERY] Non-recoverable dependency error", {
+        agent: step?.agent || "unknown",
+        error: error.message,
+      });
       return { action: "fail", inputPatch: null };
+    }
+
+    const repeatedFailures = Array.isArray(memoryInsights?.repeatedFailedAgents)
+      ? memoryInsights.repeatedFailedAgents
+      : [];
+    const stepAgent = String(step?.agent || "").trim();
+    const memoryConservative = memoryInsights?.retryPolicyHint === "conservative";
+    const targetedFailure = stepAgent && repeatedFailures.includes(stepAgent);
+
+    if (memoryConservative && Number(validation?.score || 0) < 70 && attempt >= 1) {
+      console.log("[POLICY][STEP-RECOVERY] Conservative retry selected", {
+        agent: stepAgent || "unknown",
+        score: validation?.score,
+        attempt,
+        retryPolicyHint: memoryInsights?.retryPolicyHint,
+      });
+      return {
+        action: "retry",
+        inputPatch: {
+          _policyRecoveryHint: `Use a simpler, more deterministic retry for ${stepAgent || "this step"}`,
+        },
+        backoffMs: 1500,
+      };
     }
 
     const inputPatch = issues.length > 0
@@ -632,6 +1012,7 @@ Return JSON only:
     return {
       action: "retry",
       inputPatch,
+      backoffMs: targetedFailure ? 1500 : 1000,
     };
   }
 
@@ -640,7 +1021,26 @@ Return JSON only:
       targetAgent,
       latestOutput,
       issues = [],
+      memoryInsights = {},
     } = context;
+
+    const repeatedFailures = Array.isArray(memoryInsights?.repeatedFailedAgents)
+      ? memoryInsights.repeatedFailedAgents
+      : [];
+    const repeatedFailureCount = repeatedFailures.includes(targetAgent) ? 1 : 0;
+
+    if (repeatedFailureCount > 0 && memoryInsights?.retryPolicyHint === "conservative") {
+      console.log("[POLICY][RECOVERY] Escalating to fallback", {
+        targetAgent,
+        retryPolicyHint: memoryInsights?.retryPolicyHint,
+      });
+      return {
+        strategy: "fallback",
+        modifiedInput: {
+          _policyRecoveryHint: `Repeated failures detected for ${targetAgent || "this agent"}; use a simpler fallback path.`,
+        },
+      };
+    }
 
     const recoveryPrompt = `An agent failed validation. Suggest recovery strategy.
 
@@ -652,6 +1052,11 @@ ${issues.join("\n") || "No issues provided"}
 
 TARGET AGENT:
 ${targetAgent || "unknown"}
+
+MEMORY FAILURE PATTERNS:
+${JSON.stringify(memoryInsights || {})}
+
+If this target agent has repeatedly failed across runs, prefer a conservative retry or fallback path.
 
 Return JSON:
 {
@@ -665,6 +1070,10 @@ Return JSON:
       });
 
       if (strategy && ["retry", "skip", "fallback"].includes(strategy.strategy)) {
+        console.log("[POLICY][RECOVERY] Strategy selected", {
+          targetAgent,
+          strategy: strategy.strategy,
+        });
         return {
           strategy: strategy.strategy,
           modifiedInput:
@@ -694,6 +1103,7 @@ Return JSON:
       constraints,
       availableAgents = [],
       contextSnapshot = {},
+      memoryInsights = {},
     } = context;
 
     const completedAgents = Object.keys(executionResults?.results || {});
@@ -716,6 +1126,9 @@ PLAN CORRECTIONS APPLIED: ${JSON.stringify(planCorrections || []).slice(0, 1200)
 CONSTRAINTS: ${JSON.stringify(constraints || {})}
 AVAILABLE AGENTS: ${availableAgents.join(", ")}
 CONTEXT SNAPSHOT: ${JSON.stringify(contextSnapshot || {}).slice(0, 1000)}
+MEMORY FAILURE PATTERNS: ${JSON.stringify(memoryInsights || {})}
+
+Prefer to de-prioritize agents that have repeatedly failed in recent runs unless the failure reason has clearly changed.
 
 Return JSON only:
 {
@@ -758,11 +1171,23 @@ Return JSON only:
       reason: validation?.reason || "Validation failed; replan with stronger execution coverage",
       addAgents: failedAgents.filter((name) => availableAgents.includes(name)),
       removeAgents: [],
-      prioritizeAgents: failedAgents.filter((name) => availableAgents.includes(name)),
+      prioritizeAgents: [
+        ...failedAgents.filter((name) => availableAgents.includes(name)),
+        ...Array.isArray(memoryInsights?.repeatedFailedAgents)
+          ? memoryInsights.repeatedFailedAgents.filter((name) => availableAgents.includes(name))
+          : [],
+      ],
       errorStrategy: "retry",
       refineContext: {
-        focusTopics: [],
-        hints: ["Increase grounding and completeness in next cycle"],
+        focusTopics: Array.isArray(memoryInsights?.repeatedFailedAgents)
+          ? memoryInsights.repeatedFailedAgents.slice(0, 5)
+          : [],
+        hints: [
+          "Increase grounding and completeness in next cycle",
+          ...(Array.isArray(memoryInsights?.repeatedFailedAgents) && memoryInsights.repeatedFailedAgents.length > 0
+            ? [`De-prioritize repeated failure agents: ${memoryInsights.repeatedFailedAgents.slice(0, 3).join(", ")}`]
+            : []),
+        ],
       },
     };
   }

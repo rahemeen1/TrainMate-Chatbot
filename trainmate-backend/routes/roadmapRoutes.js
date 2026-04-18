@@ -1,5 +1,5 @@
 import express from "express";
-import { generateUserRoadmap } from "../controllers/roadmap.controller.orchestrator.js";
+import { generateUserRoadmap, validateUploadedCv } from "../controllers/roadmap.controller.orchestrator.js";
 import { regenerateRoadmapModule } from "../controllers/roadmap.controller.js";
 
 const router = express.Router();
@@ -16,6 +16,22 @@ router.post("/generate", async (req, res) => {
     console.error("🔥 Route-level error:", error);
     res.status(500).json({
       error: "Roadmap route failed"
+    });
+  }
+});
+
+/**
+ * @route   POST /api/roadmap/validate-cv
+ * @desc    Validate if uploaded document is a real CV
+ * @body    { cvUrl, trainingOn? }
+ */
+router.post("/validate-cv", async (req, res) => {
+  try {
+    await validateUploadedCv(req, res);
+  } catch (error) {
+    console.error("🔥 CV validation route-level error:", error);
+    res.status(500).json({
+      error: "CV validation route failed"
     });
   }
 });

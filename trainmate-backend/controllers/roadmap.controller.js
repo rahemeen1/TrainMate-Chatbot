@@ -603,6 +603,12 @@ export const generateUserRoadmap = async (req, res) => {
       return res.status(400).json({ error: "Onboarding incomplete" });
     }
 
+    if (!user.onboarding?.cvValidation?.isValidCV) {
+      return res.status(400).json({
+        error: "CV validation required. Please re-upload a valid CV from onboarding.",
+      });
+    }
+
     const existingRoadmapSnap = await userRef.collection("roadmap").get();
     if (!existingRoadmapSnap.empty) {
       return res.json({
@@ -678,14 +684,14 @@ console.log("🎯 Training duration from onboarding:", trainingDurationFromOnboa
     -------------------------------------------------- */
     console.log("📄 Parsing CV with agentic parser:", user.cvUrl);
     const cvParseResult = await parseCvFromUrl(user.cvUrl);
-    const cvText = cvParseResult?.rawText || "";
-
-    if (!cvText || typeof cvText !== "string") {
-      throw new Error("❌ CV text extraction failed");
-    }
-
-    console.log("✅ CV text extracted, length:", cvText.length);
+    const cvText = cvParseResult?.redactedText || cvParseResult?.rawText || "";
     const structuredCv = cvParseResult?.structured || null;
+
+    console.log("✅ CV validation trusted from onboarding:", {
+      score: user.onboarding?.cvValidation?.score ?? null,
+      confidence: user.onboarding?.cvValidation?.confidence ?? null,
+      validatedAt: user.onboarding?.cvValidation?.validatedAt ?? null,
+    });
 
     /* --------------------------------------------------
        4️⃣ 🤖 Agentic Skill Extraction (CV + Company Docs)

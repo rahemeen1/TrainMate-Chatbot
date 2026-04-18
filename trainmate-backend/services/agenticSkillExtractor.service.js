@@ -14,6 +14,14 @@ const MAX_AGENTIC_TEXT_CHARS = 24000;
 const CHUNK_SIZE = 5500;
 const CHUNK_OVERLAP = 300;
 
+function sanitizePromptText(text) {
+  return String(text || "")
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[REDACTED_EMAIL]")
+    .replace(/\+?\d[\d\s().-]{7,}\d/g, "[REDACTED_PHONE]")
+    .replace(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g, "[REDACTED_DATE]")
+    .replace(/\b\d{5,6}\b/g, "[REDACTED_ID]");
+}
+
 export const extractSkillsAgentically = async ({
   cvText = "",
   companyDocsText = "",
@@ -241,7 +249,7 @@ async function extractSkillsFromLongText({
     return [];
   }
 
-  const boundedText = fullText.slice(0, MAX_AGENTIC_TEXT_CHARS);
+  const boundedText = sanitizePromptText(fullText).slice(0, MAX_AGENTIC_TEXT_CHARS);
   const chunks = splitIntoChunks(boundedText, CHUNK_SIZE, CHUNK_OVERLAP);
   const collected = [];
   const scopeInstruction =
@@ -301,6 +309,19 @@ Return ONLY valid JSON:
   }
 
   const merged = normalizeSkills(collected);
+  const technicalKeywordSignals = extractionType === "company"
+    ? extractTechnicalKeywordSignals(boundedText)
+    : [];
+  const mergedWithSignals = normalizeSkills([...merged, ...technicalKeywordSignals]);
+
+  if (technicalKeywordSignals.length > 0) {
+    console.log(`🔎 ${taskName}: retained ${technicalKeywordSignals.length} technical keyword signals`);
+  }
+
+  if (mergedWithSignals.length > 0) {
+    return mergedWithSignals;
+  }
+
   if (merged.length > 0) {
     return merged;
   }
@@ -310,7 +331,49 @@ Return ONLY valid JSON:
     return extractFallbackSkills(boundedText, { strict: true });
   }
 
+  if (technicalKeywordSignals.length > 0) {
+    return technicalKeywordSignals;
+  }
+
   return [];
+}
+
+function extractTechnicalKeywordSignals(text = "") {
+  const source = String(text || "");
+  if (!source.trim()) return [];
+
+  const keywordPatterns = [
+    [/\bretrieval\s*augmented\s*generation\b|\brag\b/i, "Retrieval Augmented Generation (RAG)"],
+    [/\bagentic\s*ai\b/i, "Agentic AI"],
+    [/\breact\b/i, "ReAct Reasoning Loop"],
+    [/\bself\s*-?rag\b/i, "Self-RAG Verification"],
+    [/\bvector\s*database(s)?\b/i, "Vector Databases"],
+    [/\bpinecone\b/i, "Pinecone"],
+    [/\bembedding(s)?\b/i, "Embeddings"],
+    [/\bcosine\s*similarity\b/i, "Cosine Similarity"],
+    [/\bhnsw\b/i, "HNSW Indexing"],
+    [/\bprompt\s*engineering\b/i, "Prompt Engineering"],
+    [/\bcontext\s*injection\b|\baugmentation\b/i, "Context Augmentation"],
+    [/\bmetadata\s*filtering\b/i, "Metadata Filtering"],
+    [/\blangchain\b/i, "LangChain"],
+    [/\bcrewai\b/i, "CrewAI"],
+    [/\bautogen\b/i, "Microsoft AutoGen"],
+    [/\blora\b/i, "LoRA Adapters"],
+    [/\bkubernetes\b/i, "Kubernetes"],
+    [/\bdocker\b/i, "Docker"],
+    [/\bllama\s*3\b/i, "Llama 3"],
+    [/\bgpt\s*-?4o\b/i, "GPT-4o"],
+    [/\bclaude\s*3\.5\b/i, "Claude 3.5"],
+  ];
+
+  const detected = [];
+  for (const [pattern, label] of keywordPatterns) {
+    if (pattern.test(source)) {
+      detected.push(label);
+    }
+  }
+
+  return normalizeSkills(detected);
 }
 
 async function inferSkillsFromTopicAgentically(trainingOn = "General", expertise = 1) {
@@ -643,17 +706,19 @@ function cleanSkillToken(value) {
 function isLikelySkillCandidate(value) {
   const item = String(value || "").trim();
   if (!item) return false;
-  if (item.length > 80) return false;
+  const technicalSignal = /(rag|agentic|vector|embedding|cosine|hnsw|retrieval|augmentation|prompt|llm|langchain|crewai|autogen|lora|kubernetes|docker|pinecone|react)/i.test(item);
+  if (item.length > 80 && !technicalSignal) return false;
   if (/\b(education|coursework|experience|project|summary|objective|responsibilities)\b/i.test(item)) return false;
   if (/\b(quick to learn|passionate|adaptable|hands-on experience|senior with)\b/i.test(item)) return false;
   if (/\b(19|20)\d{2}\b/.test(item)) return false;
   if (/\s{2,}/.test(item)) return false;
-  if (/[.!?]/.test(item)) return false;
+  if (/[.!?]/.test(item) && !technicalSignal) return false;
   if (/^[a-z\s]{30,}$/i.test(item) && item.split(" ").length > 5) return false;
 
   // Allow common short and multi-word domain skills.
   const words = item.split(/\s+/).length;
-  if (words > 6) return false;
+  if (words > 6 && !technicalSignal) return false;
+  if (words > 10) return false;
 
   return true;
 }
