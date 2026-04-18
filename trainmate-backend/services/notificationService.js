@@ -17,6 +17,277 @@ dotenv.config();
 const DEFAULT_TIMEZONE = process.env.DEFAULT_TIMEZONE || "Asia/Karachi";
 const DEFAULT_REMINDER_TIME = process.env.DAILY_REMINDER_TIME || "15:00";
 
+function clamp01(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return 0;
+  return Math.max(0, Math.min(1, num));
+}
+
+function toDateSafe(value) {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  if (typeof value?.toDate === "function") {
+    try {
+      return value.toDate();
+    } catch {
+      return null;
+    }
+  }
+  const dt = new Date(value);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+}
+
+function getHoursSince(dateValue) {
+  const dt = toDateSafe(dateValue);
+  if (!dt) return null;
+  return (Date.now() - dt.getTime()) / (1000 * 60 * 60);
+}
+
+function normalizeRatePercent(value, fallback = 0) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return fallback;
+  return Math.max(0, Math.min(100, num));
+}
+
+function isCriticalNotificationType(notificationType = "") {
+  const type = String(notificationType || "").toUpperCase();
+  return type === "ROADMAP_GENERATED" || type === "QUIZ_UNLOCK";
+}
+
+function getUserRef(companyId, deptId, userId) {
+  return db
+    .collection("freshers")
+    .doc(companyId)
+    .collection("departments")
+    .doc(deptId)
+    .collection("users")
+    .doc(userId);
+}
+
+function buildEngagementSnapshot(userData = {}) {
+  const emailOpenRate = normalizeRatePercent(userData.emailOpenRate, 0);
+  const attendanceRate = normalizeRatePercent(
+    userData.attendanceRate ?? userData.trainingAttendanceRate ?? userData.moduleAttendanceRate,
+    0
+  );
+  const learningStreak = Number(userData.learningStreak || 0);
+  const averageQuizScore = normalizeRatePercent(userData.averageQuizScore, 0);
+  const timeSpentLearning = Number(userData.timeSpentLearning || 0);
+  const daysSinceLastLoginRaw = getHoursSince(userData.lastLoginAt);
+  const daysSinceLastLogin = Number.isFinite(daysSinceLastLoginRaw)
+    ? Number((daysSinceLastLoginRaw / 24).toFixed(1))
+    : null;
+
+  const learningActivitySignal = clamp01(timeSpentLearning / 90);
+  const engagementScore = clamp01(
+    emailOpenRate / 100 * 0.4 +
+      attendanceRate / 100 * 0.25 +
+      learningActivitySignal * 0.2 +
+      clamp01(learningStreak / 7) * 0.15
+  );
+
+  return {
+    emailOpenRate,
+    attendanceRate,
+    learningStreak,
+    averageQuizScore,
+    timeSpentLearning,
+    daysSinceLastLogin,
+    engagementScore: Number((engagementScore * 100).toFixed(1)),
+  };
+}
+
+function buildAdaptiveSignals({ learning = {}, engagement = {} }) {
+  const openRateFloor = Number(process.env.NOTIFICATION_IGNORE_OPEN_RATE || 20);
+  const attendanceFloor = Number(process.env.NOTIFICATION_IGNORE_ATTENDANCE_RATE || 45);
+  const inactiveDaysFloor = Number(process.env.NOTIFICATION_IGNORE_INACTIVE_DAYS || 3);
+
+  const consecutiveIgnored = Number(learning?.consecutiveIgnored || 0);
+  const lowEngagementNow =
+    Number(engagement?.emailOpenRate || 0) <= openRateFloor &&
+    Number(engagement?.attendanceRate || 0) <= attendanceFloor &&
+    Number(engagement?.daysSinceLastLogin || 0) >= inactiveDaysFloor;
+
+  const userIgnoredLast3Notifications = consecutiveIgnored >= 3;
+  const recommendedCadenceHours = userIgnoredLast3Notifications
+    ? Number(process.env.NOTIFICATION_COOLDOWN_HOURS_IGNORED || 72)
+    : lowEngagementNow
+    ? Number(process.env.NOTIFICATION_COOLDOWN_HOURS_LOW_ENGAGEMENT || 36)
+    : Number(process.env.NOTIFICATION_COOLDOWN_HOURS_DEFAULT || 24);
+
+  const lastSentHoursAgo = getHoursSince(learning?.lastSentAt);
+  const inCooldown = Number.isFinite(lastSentHoursAgo)
+    ? lastSentHoursAgo < recommendedCadenceHours
+    : false;
+
+  return {
+    userIgnoredLast3Notifications,
+    lowEngagementNow,
+    recommendedCadenceHours,
+    lastSentHoursAgo: Number.isFinite(lastSentHoursAgo) ? Number(lastSentHoursAgo.toFixed(1)) : null,
+    inCooldown,
+  };
+}
+
+async function loadNotificationLearningContext(companyId, deptId, userId) {
+  if (!companyId || !deptId || !userId) {
+    return {
+      engagementData: null,
+      notificationLearning: null,
+      adaptiveSignals: null,
+    };
+  }
+
+  try {
+    const userSnap = await getUserRef(companyId, deptId, userId).get();
+    if (!userSnap.exists) {
+      return {
+        engagementData: null,
+        notificationLearning: null,
+        adaptiveSignals: null,
+      };
+    }
+
+    const userData = userSnap.data() || {};
+    const notificationLearning = userData.notificationLearning || {};
+    const engagementData = buildEngagementSnapshot(userData);
+    const adaptiveSignals = buildAdaptiveSignals({
+      learning: notificationLearning,
+      engagement: engagementData,
+    });
+
+    return {
+      engagementData,
+      notificationLearning,
+      adaptiveSignals,
+    };
+  } catch (error) {
+    console.warn("⚠️ Failed to load notification learning context:", error.message);
+    return {
+      engagementData: null,
+      notificationLearning: null,
+      adaptiveSignals: null,
+    };
+  }
+}
+
+function applyAdaptiveDecisionLayer({ decision = {}, context = {}, adaptiveSignals = {}, learning = {} }) {
+  const normalized = {
+    shouldSend: Boolean(decision?.shouldSend),
+    sendEmail: decision?.sendEmail ?? true,
+    createCalendarEvent: decision?.createCalendarEvent ?? true,
+    reason: decision?.reason || "Policy decision",
+  };
+
+  const notificationType = String(context?.notificationType || "").toUpperCase();
+  const critical = isCriticalNotificationType(notificationType);
+
+  if (!critical && adaptiveSignals?.userIgnoredLast3Notifications) {
+    return {
+      ...normalized,
+      shouldSend: false,
+      sendEmail: false,
+      createCalendarEvent: false,
+      reason: "Adaptive throttle: user ignored last 3 notifications",
+      adaptiveRule: "ignored_streak_throttle",
+    };
+  }
+
+  if (!critical && adaptiveSignals?.inCooldown) {
+    return {
+      ...normalized,
+      shouldSend: false,
+      sendEmail: false,
+      createCalendarEvent: false,
+      reason: `Adaptive cooldown active (${adaptiveSignals.recommendedCadenceHours}h)` ,
+      adaptiveRule: "cadence_cooldown",
+    };
+  }
+
+  const dynamicUrgency = adaptiveSignals?.lowEngagementNow ? "low" : decision?.urgencyLevel || "medium";
+
+  return {
+    ...normalized,
+    urgencyLevel: dynamicUrgency,
+    adaptiveRule: "none",
+    learningSnapshot: {
+      consecutiveIgnored: Number(learning?.consecutiveIgnored || 0),
+      totalSent: Number(learning?.totalSent || 0),
+      totalSkipped: Number(learning?.totalSkipped || 0),
+    },
+  };
+}
+
+async function recordNotificationLearningOutcome({
+  companyId,
+  deptId,
+  userId,
+  notificationType,
+  outcome,
+  reason = null,
+  adaptiveSignals = null,
+  engagementData = null,
+}) {
+  if (!companyId || !deptId || !userId) return;
+
+  try {
+    const userRef = getUserRef(companyId, deptId, userId);
+    const snap = await userRef.get();
+    if (!snap.exists) return;
+
+    const userData = snap.data() || {};
+    const prev = userData.notificationLearning || {};
+    const totalSent = Number(prev.totalSent || 0);
+    const totalSkipped = Number(prev.totalSkipped || 0);
+    const totalFailed = Number(prev.totalFailed || 0);
+    const consecutiveIgnoredPrev = Number(prev.consecutiveIgnored || 0);
+
+    const normalizedOutcome = String(outcome || "unknown").toLowerCase();
+    const likelyIgnored =
+      normalizedOutcome === "sent" &&
+      Boolean(adaptiveSignals?.lowEngagementNow) &&
+      Number(engagementData?.emailOpenRate || 0) <= Number(process.env.NOTIFICATION_IGNORE_OPEN_RATE || 20);
+
+    const next = {
+      totalSent: normalizedOutcome === "sent" ? totalSent + 1 : totalSent,
+      totalSkipped: normalizedOutcome === "skipped" ? totalSkipped + 1 : totalSkipped,
+      totalFailed: normalizedOutcome === "failed" ? totalFailed + 1 : totalFailed,
+      consecutiveIgnored:
+        normalizedOutcome === "sent"
+          ? likelyIgnored
+            ? consecutiveIgnoredPrev + 1
+            : 0
+          : normalizedOutcome === "skipped"
+          ? consecutiveIgnoredPrev
+          : 0,
+      lastOutcome: normalizedOutcome,
+      lastOutcomeReason: reason || null,
+      lastNotificationType: notificationType || "unknown",
+      lastDecisionAt: new Date(),
+      lastEngagementScore: Number(engagementData?.engagementScore || prev.lastEngagementScore || 0),
+      ignoredHeuristicEnabled: true,
+      lastIgnoredHeuristic: likelyIgnored,
+      updatedAt: new Date(),
+    };
+
+    if (normalizedOutcome === "sent") {
+      next.lastSentAt = new Date();
+    }
+
+    if (normalizedOutcome === "skipped") {
+      next.lastSkippedAt = new Date();
+    }
+
+    if (normalizedOutcome === "failed") {
+      next.lastFailureAt = new Date();
+    }
+
+    await userRef.set({ notificationLearning: next }, { merge: true });
+  } catch (error) {
+    console.warn("⚠️ Failed to record notification learning outcome:", error.message);
+  }
+}
+
 function isInvalidGrantError(error) {
   const message = String(error?.message || "").toLowerCase();
   const status = Number(error?.code || error?.status || 0);
@@ -238,9 +509,21 @@ function getReminderOverrides() {
 }
 
 async function getNotificationDecision(context = {}) {
+  const learningContext = await loadNotificationLearningContext(
+    context.companyId,
+    context.deptId,
+    context.userId
+  );
+
   try {
     const decision = await policyEngine.decide("notification", {
       ...context,
+      engagementData: {
+        ...(learningContext.engagementData || {}),
+        ...(context.engagementData || {}),
+      },
+      adaptiveSignals: learningContext.adaptiveSignals || {},
+      notificationLearning: learningContext.notificationLearning || {},
       constraints: context.constraints || {
         maxLatency: 2000,
         costSensitivity: "medium",
@@ -248,7 +531,19 @@ async function getNotificationDecision(context = {}) {
     });
 
     if (decision && typeof decision.shouldSend === "boolean") {
-      return decision;
+      const adapted = applyAdaptiveDecisionLayer({
+        decision,
+        context,
+        adaptiveSignals: learningContext.adaptiveSignals || {},
+        learning: learningContext.notificationLearning || {},
+      });
+
+      return {
+        ...decision,
+        ...adapted,
+        adaptiveSignals: learningContext.adaptiveSignals || null,
+        engagementData: learningContext.engagementData || null,
+      };
     }
   } catch (error) {
     console.warn("⚠️ Failed to get orchestrator notification strategy:", error.message);
@@ -259,6 +554,33 @@ async function getNotificationDecision(context = {}) {
     sendEmail: true,
     createCalendarEvent: true,
     reason: "Fallback strategy",
+    adaptiveSignals: learningContext.adaptiveSignals || null,
+    engagementData: learningContext.engagementData || null,
+  };
+}
+
+async function getCalendarDecision(context = {}) {
+  try {
+    const decision = await policyEngine.decide("calendarDecision", {
+      ...context,
+      constraints: context.constraints || {
+        maxLatency: 2000,
+        costSensitivity: "medium",
+      },
+    });
+
+    if (decision && typeof decision.shouldCreateCalendarEvent === "boolean") {
+      return decision;
+    }
+  } catch (error) {
+    console.warn("⚠️ Failed to get calendar decision strategy:", error.message);
+  }
+
+  return {
+    shouldCreateCalendarEvent: true,
+    reason: "Fallback calendar strategy",
+    reminderTime: DEFAULT_REMINDER_TIME,
+    urgency: "medium",
   };
 }
 
@@ -278,6 +600,7 @@ export async function createRoadmapDailyReminderEvent({
   startDate = new Date(),
   totalModules,
   estimatedDays,
+  reminderTime = DEFAULT_REMINDER_TIME,
   timeZone = DEFAULT_TIMEZONE,
 }) {
   try {
@@ -286,7 +609,7 @@ export async function createRoadmapDailyReminderEvent({
     const { client: userAuth, isUsingFallback, authSource } = await getUserOAuthClient(companyId, deptId, userId);
     const calendar = google.calendar({ version: "v3", auth: userAuth });
 
-    const startDateTime = buildDateTime(startDate, DEFAULT_REMINDER_TIME);
+    const startDateTime = buildDateTime(startDate, reminderTime);
     const endDateTime = new Date(startDateTime.getTime() + 60 * 60 * 1000); // 1 hour duration
     const recurrenceDays = Math.max(1, Number(estimatedDays) || 1);
 
@@ -337,7 +660,7 @@ export async function createRoadmapDailyReminderEvent({
     console.log(`   Module: ${activeModuleTitle}`);
     console.log(`   Recurrence days: ${recurrenceDays}`);
     console.log(`   Auth source: ${authSource}`);
-    console.log(`   Time: ${DEFAULT_REMINDER_TIME} daily`);
+    console.log(`   Time: ${reminderTime} daily`);
 
     return response.data.id;
   } catch (error) {
@@ -513,9 +836,13 @@ export async function handleRoadmapGenerated({
   try {
     const result = {
       emailSent: false,
+      emailError: null,
+      calendarAttempted: false,
       calendarEventCreated: false,
       calendarEventId: null,
       calendarError: null,
+      decision: null,
+      calendarDecision: null,
     };
 
     console.log(`\n🚀 Handling roadmap generation for ${userEmail}`);
@@ -538,8 +865,25 @@ export async function handleRoadmapGenerated({
       timezone: process.env.DEFAULT_TIMEZONE || "Asia/Karachi",
     });
 
+    result.decision = {
+      shouldSend: Boolean(decision?.shouldSend),
+      sendEmail: Boolean(decision?.sendEmail),
+      createCalendarEvent: Boolean(decision?.createCalendarEvent),
+      reason: decision?.reason || null,
+    };
+
     if (!decision.shouldSend) {
       console.log(`⏭️ Skipping roadmap notifications: ${decision.reason}`);
+      await recordNotificationLearningOutcome({
+        companyId,
+        deptId,
+        userId,
+        notificationType: "ROADMAP_GENERATED",
+        outcome: "skipped",
+        reason: decision.reason,
+        adaptiveSignals: decision.adaptiveSignals,
+        engagementData: decision.engagementData,
+      });
       return result;
     }
 
@@ -558,13 +902,31 @@ export async function handleRoadmapGenerated({
       result.emailSent = true;
       } catch (emailErr) {
         console.error(`❌ Roadmap email failed:`, emailErr.message);
+        result.emailError = emailErr.message;
       }
     }
 
-    // 2️⃣ Create ONE recurring daily reminder event
-    if (decision.createCalendarEvent) {
+    // 2️⃣ Calendar decision agent decides if/when to create recurring event
+    const activeModule = modules?.[0] || null;
+    const calendarDecision = await getCalendarDecision({
+      notificationType: "ROADMAP_GENERATED",
+      userEmail,
+      userName,
+      companyName,
+      trainingTopic,
+      activeModuleTitle: activeModule?.moduleTitle || "",
+      moduleCount: Array.isArray(modules) ? modules.length : 0,
+      estimatedDays: Number(activeModule?.estimatedDays || 0),
+      timezone: process.env.DEFAULT_TIMEZONE || "Asia/Karachi",
+      emailSent: result.emailSent,
+      upstreamDecision: result.decision,
+    });
+
+    result.calendarDecision = calendarDecision;
+
+    if (decision.createCalendarEvent && calendarDecision.shouldCreateCalendarEvent) {
+      result.calendarAttempted = true;
       try {
-        const activeModule = modules[0];
         const calendarEventId = await createRoadmapDailyReminderEvent({
           companyId,
           deptId,
@@ -576,6 +938,7 @@ export async function handleRoadmapGenerated({
           startDate: new Date(),
           totalModules: modules.length,
           estimatedDays: activeModule.estimatedDays || 30,
+          reminderTime: calendarDecision.reminderTime || DEFAULT_REMINDER_TIME,
           timeZone: process.env.DEFAULT_TIMEZONE || "Asia/Karachi",
         });
         console.log(`✅ Daily reminder event created`);
@@ -585,12 +948,37 @@ export async function handleRoadmapGenerated({
         console.error(`❌ Calendar event failed:`, calendarErr.message);
         result.calendarError = calendarErr.message;
       }
+    } else if (!decision.createCalendarEvent) {
+      result.calendarError = "Calendar creation disabled by notification policy";
+    } else {
+      result.calendarError = calendarDecision.reason || "Calendar creation skipped by calendar decision agent";
     }
 
     console.log(`\n✅ Roadmap generation notification complete for ${userEmail}`);
+
+    const sentSomething = Boolean(result.emailSent || result.calendarEventCreated);
+    await recordNotificationLearningOutcome({
+      companyId,
+      deptId,
+      userId,
+      notificationType: "ROADMAP_GENERATED",
+      outcome: sentSomething ? "sent" : "failed",
+      reason: sentSomething ? "Notification delivered" : (result.emailError || result.calendarError || "Notification not delivered"),
+      adaptiveSignals: decision.adaptiveSignals,
+      engagementData: decision.engagementData,
+    });
+
     return result;
   } catch (error) {
     console.error(`❌ Roadmap notification handler failed:`, error.message);
+    await recordNotificationLearningOutcome({
+      companyId,
+      deptId,
+      userId,
+      notificationType: "ROADMAP_GENERATED",
+      outcome: "failed",
+      reason: error.message,
+    });
     throw error;
   }
 }
@@ -631,6 +1019,16 @@ export async function handleQuizUnlock({
 
     if (!decision.shouldSend || !decision.sendEmail) {
       console.log(`⏭️ Skipping quiz unlock notification: ${decision.reason}`);
+      await recordNotificationLearningOutcome({
+        companyId,
+        deptId,
+        userId,
+        notificationType: "QUIZ_UNLOCK",
+        outcome: "skipped",
+        reason: decision.reason,
+        adaptiveSignals: decision.adaptiveSignals,
+        engagementData: decision.engagementData,
+      });
       return;
     }
 
@@ -643,8 +1041,26 @@ export async function handleQuizUnlock({
     });
 
     console.log(`\n✅ Quiz unlock notification sent to ${userEmail}`);
+    await recordNotificationLearningOutcome({
+      companyId,
+      deptId,
+      userId,
+      notificationType: "QUIZ_UNLOCK",
+      outcome: "sent",
+      reason: "Quiz unlock email sent",
+      adaptiveSignals: decision.adaptiveSignals,
+      engagementData: decision.engagementData,
+    });
   } catch (error) {
     console.error(`❌ Quiz unlock notification failed:`, error.message);
+    await recordNotificationLearningOutcome({
+      companyId,
+      deptId,
+      userId,
+      notificationType: "QUIZ_UNLOCK",
+      outcome: "failed",
+      reason: error.message,
+    });
     throw error;
   }
 }
@@ -687,6 +1103,16 @@ export async function handleActiveModuleChange({
 
     if (!decision.shouldSend) {
       console.log(`⏭️ Skipping module change notification: ${decision.reason}`);
+      await recordNotificationLearningOutcome({
+        companyId,
+        deptId,
+        userId,
+        notificationType: "ACTIVE_MODULE_CHANGE",
+        outcome: "skipped",
+        reason: decision.reason,
+        adaptiveSignals: decision.adaptiveSignals,
+        engagementData: decision.engagementData,
+      });
       return;
     }
 
@@ -720,8 +1146,26 @@ export async function handleActiveModuleChange({
     }
 
     console.log(`\n✅ Module change handled for ${userEmail}`);
+    await recordNotificationLearningOutcome({
+      companyId,
+      deptId,
+      userId,
+      notificationType: "ACTIVE_MODULE_CHANGE",
+      outcome: "sent",
+      reason: "Module change notification handled",
+      adaptiveSignals: decision.adaptiveSignals,
+      engagementData: decision.engagementData,
+    });
   } catch (error) {
     console.error(`❌ Module change handler failed:`, error.message);
+    await recordNotificationLearningOutcome({
+      companyId,
+      deptId,
+      userId,
+      notificationType: "ACTIVE_MODULE_CHANGE",
+      outcome: "failed",
+      reason: error.message,
+    });
     throw error;
   }
 }

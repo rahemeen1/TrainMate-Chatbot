@@ -321,8 +321,27 @@ useEffect(() => {
   };
 
   const handleKeyDown = (e) => {
-    // Send on Ctrl+Enter or Command+Enter
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+    if (e.key !== "Enter" || mode === "read") return;
+
+    if (e.ctrlKey || e.metaKey) {
+      const target = e.target;
+      const start = target.selectionStart ?? input.length;
+      const end = target.selectionEnd ?? input.length;
+      const nextValue = `${input.slice(0, start)}\n${input.slice(end)}`;
+
+      e.preventDefault();
+      setInput(nextValue);
+
+      requestAnimationFrame(() => {
+        target.selectionStart = target.selectionEnd = start + 1;
+        target.style.height = "auto";
+        target.style.height = Math.min(target.scrollHeight, 120) + "px";
+      });
+      return;
+    }
+
+    // Send on Enter
+    if (!e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
@@ -621,7 +640,7 @@ useEffect(() => {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={mode === "read" ? "Read only chat" : "Type a message... (Ctrl+Enter to send)"}
+            placeholder={mode === "read" ? "Read only chat" : "Type a message... (Enter to send, Ctrl+Enter for a new line)"}
             rows={1}
             className="flex-1 px-4 py-2 rounded bg-[#021B36] border border-cyan-400/40 resize-none overflow-hidden min-h-[42px] max-h-[120px]"
             style={{

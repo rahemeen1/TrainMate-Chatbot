@@ -357,8 +357,19 @@ export async function getSuperAdminAgentHealth(req, res) {
     const runtimeMap = aggregateRuntimeMetrics(history);
     const agentRows = buildAgentRows(AGENT_CATALOG, runtimeMap);
     const summary = summarizeRows(agentRows);
+    const hasRuntimeMetrics = agentRows.some((a) => a.hasRuntimeData);
 
-    return res.status(200).json({
+    // Store snapshot to Firestore for persistence
+    const { storeAgentHealthSnapshot, getLatestAgentHealthSnapshot } =
+      await import("../../services/agentHealthStorage.service.js");
+
+    // Avoid polluting storage with empty/no-runtime snapshots.
+    if (hasRuntimeMetrics) {
+      await storeAgentHealthSnapshot(agentRows, summary);
+    }
+
+    // If no runtime data, try to get latest stored snapshot as fallback
+    let finalData = {
       success: true,
       generatedAt: new Date().toISOString(),
       historyWindow: history.length,
@@ -368,7 +379,31 @@ export async function getSuperAdminAgentHealth(req, res) {
         : `Runtime metrics unavailable (${loadError?.message || "orchestrator not initialized"})`,
       ...summary,
       agents: agentRows,
-    });
+      dataSource: "runtime",
+    };
+
+    // If no runtime data available, use stored data as fallback
+    if (!orchestrator || !hasRuntimeMetrics) {
+      const storedResult = await getLatestAgentHealthSnapshot();
+      const stored = storedResult?.data;
+      const hasStoredAgents = Array.isArray(stored?.agents) && stored.agents.length > 0;
+      const hasStoredKpis = stored?.kpis && typeof stored.kpis === "object";
+
+      if (storedResult.success && hasStoredAgents && hasStoredKpis) {
+        finalData = {
+          ...finalData,
+          ...stored,
+          dataSource: "stored",
+          runtimeMessage: `Using stored snapshot from ${stored.timestamp || "previous run"}`,
+        };
+      } else {
+        finalData.runtimeMessage =
+          finalData.runtimeMessage ||
+          "Runtime unavailable and no valid stored snapshot found";
+      }
+    }
+
+    return res.status(200).json(finalData);
   } catch (error) {
     console.error("Error building super admin agent health:", error);
     return res.status(500).json({

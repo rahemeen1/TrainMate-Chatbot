@@ -2,7 +2,7 @@ import axios from "axios";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { extractFileText } from "../utils/TextExtractor.js";
 
-console.log("DEBUG: Using API Key ->", process.env.GEMINI_API_KEY);
+console.log("DEBUG: GEMINI_API_KEY status ->", process.env.GEMINI_API_KEY ? "SET" : "NOT_SET");
 
 let cvModel = null;
 
@@ -104,6 +104,7 @@ export const parseCvFromUrl = async (cvUrl) => {
     for (let attempt = 0; attempt < CV_MAX_RETRIES; attempt += 1) {
       const prompt = `
 You are an expert CV parser. Extract structured information from the redacted CV text.
+Extract professional skills across all domains - technical, financial, HR, business, etc.
 
 CV TEXT (REDACTED):
 ${redactedText}
@@ -111,7 +112,7 @@ ${redactedText}
 Return JSON only in this format:
 {
   "summary": "string",
-  "skills": ["string"],
+  "skills": ["skill 1", "skill 2", "skill 3"],
   "roles": [
     {
       "title": "string",
@@ -132,8 +133,16 @@ Return JSON only in this format:
   "tools": ["string"]
 }
 
-Rules:
-- Keep arrays concise and deduplicated
+Rules for SKILLS field:
+- Extract professional, domain-specific skills that are reusable competencies
+- TECHNICAL SKILLS: Programming languages (Python, Java), frameworks (React, Django), tools (Docker, Git), databases (SQL, MongoDB), Cloud (AWS, Azure)
+- ACCOUNTING SKILLS: Financial Modeling, Excel, Tax, Audit, Reconciliation, QuickBooks, SAP, Tally, GAAP, GST, Balance Sheet Analysis
+- HR SKILLS: Recruitment, HRIS, Payroll, Employee Relations, Training & Development, Compensation, Labor Law, Performance Management
+- BUSINESS SKILLS: Project Management, Leadership, Strategic Planning, Risk Management, Client Management, CRM, Negotiation
+- MARKETING SKILLS: Digital Marketing, SEO, Social Media, Analytics, Google Analytics, Content Marketing, Email Marketing
+- DO NOT include: job titles, company names, degree names, certification names as skills, or soft skill descriptions
+- Keep skill names concise and normalized
+- Remove duplicates
 - If a section is missing, return an empty array
 - Output valid JSON only
 `;

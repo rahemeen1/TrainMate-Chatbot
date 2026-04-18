@@ -26,7 +26,7 @@ export const getCompanyUsers = async (req, res) => {
   }
 };
 
-// Delete user (Auth + Firestore)
+// Delete user (Auth + Firestore + all subcollections like roadmaps, chats, accomplishments, etc.)
 export const deleteUser = async (req, res) => {
   try {
     const { email } = req.params;
@@ -48,16 +48,35 @@ export const deleteUser = async (req, res) => {
     try {
       const user = await admin.auth().getUserByEmail(email);
       await admin.auth().deleteUser(user.uid);
+      console.log(`✅ Deleted user from Firebase Auth: ${email}`);
     } catch (authErr) {
       if (authErr.code !== "auth/user-not-found") {
         throw authErr; // Re-throw if not "user not found" error
       }
-      console.log(`User not found in Firebase Auth: ${email}. Continuing with Firestore deletion.`);
+      console.log(`⚠️ User not found in Firebase Auth: ${email}. Continuing with Firestore deletion.`);
     }
 
-    // Delete from Firestore
-    const deletePromises = usersSnap.docs.map((docSnap) => docSnap.ref.delete());
-    await Promise.all(deletePromises);
+    // Delete from Firestore (including all subcollections: roadmap, chats, accomplishments, learningProfile, etc.)
+    for (const docSnap of usersSnap.docs) {
+      console.log(`🗑️ Deleting user and all data for: ${email}`);
+      
+      // Use recursiveDelete to delete document and all subcollections
+      // This includes:
+      // - roadmap (learning paths and modules)
+      // - chats (conversation history)
+      // - accomplishments
+      // - learningProfile (learning preferences and progress)
+      // - notificationPreferences
+      // - quizAttempts (quiz history and scores)
+      // - Any other subcollections
+      await db.recursiveDelete(docSnap.ref);
+      
+      console.log(`✅ User deleted with all subcollections: ${email}`);
+    }
+
+    // Note: Pinecone data (vector embeddings) is company-scoped, not user-scoped
+    // It will be cleaned up when the company is deleted. Individual user deletion
+    // doesn't need to clean Pinecone since documents are indexed by docId (company docs), not userId.
 
     // Track deleted users count in company document
     if (companyId) {
@@ -78,9 +97,13 @@ export const deleteUser = async (req, res) => {
       }
     }
 
-    res.status(200).json({ message: "User deleted successfully" });
+    res.status(200).json({ 
+      message: "User and all associated data (roadmaps, chats, accomplishments, etc.) deleted successfully",
+      email: email,
+      deletedAt: new Date().toISOString()
+    });
   } catch (err) {
-    console.error(err);
+    console.error("❌ Error deleting user:", err);
     res.status(500).json({ error: err.message });
   }
 };
