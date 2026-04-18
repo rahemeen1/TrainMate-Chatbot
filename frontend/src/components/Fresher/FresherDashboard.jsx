@@ -52,6 +52,7 @@ export default function FresherDashboard() {
   const [generatingRoadmap, setGeneratingRoadmap] = useState(false);
   const [missedDateInfo, setMissedDateInfo] = useState(null);
   const [showMissedDates, setShowMissedDates] = useState(true);
+  const [onboardingNotice, setOnboardingNotice] = useState("");
 
   const state = location.state || {};
 
@@ -291,8 +292,14 @@ useEffect(() => {
         setUserData(data);
         setCompanyName(data.companyName);
 
-        //  Onboarding check
-        if (!data.onboarding || !data.onboarding.onboardingCompleted) {
+        const shouldForceOnboarding = Boolean(state.forceOnboarding);
+        const noticeFromState = state.onboardingNotice || "";
+        if (shouldForceOnboarding && noticeFromState) {
+          setOnboardingNotice(noticeFromState);
+        }
+
+        // Onboarding check (or forced CV re-upload)
+        if (shouldForceOnboarding || !data.onboarding || !data.onboarding.onboardingCompleted) {
           setShowOnboarding(true);
         }
       } catch (err) {
@@ -326,6 +333,7 @@ if (loading) {
         companyId={companyId}
         deptId={deptId}
         companyName={companyName}
+        onboardingNotice={onboardingNotice}
         onFinish={async () => {
           const userRef = doc(
             db,
@@ -339,6 +347,7 @@ if (loading) {
           const snap = await getDoc(userRef);
           setUserData(snap.data());
           setShowOnboarding(false);
+          setOnboardingNotice("");
         }}
       />
     );

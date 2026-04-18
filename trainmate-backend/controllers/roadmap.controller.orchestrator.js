@@ -12,6 +12,7 @@ import { initializeAgentRegistry } from '../services/agentRegistry.js';
 import { generateRoadmapPDF } from '../services/pdfService.js';
 import { handleRoadmapGenerated } from '../services/notificationService.js';
 import { buildLearningProfile } from '../services/learningProfileService.js';
+import { policyEngine } from '../services/policy/policyEngine.service.js';
 
 // Initialize agents on startup
 let agentsInitialized = false;
@@ -24,6 +25,58 @@ async function ensureAgentsInitialized() {
 }
 
 const ROADMAP_LOCK_TTL_MS = 5 * 60 * 1000;
+
+const BEGINNER_KEYWORDS = ['fundamental', 'fundamentals', 'foundation', 'foundations', 'basic', 'basics', 'intro', 'introduction', 'core'];
+const INTERMEDIATE_KEYWORDS = ['intermediate', 'applied', 'practical', 'implementation', 'orchestration', 'integration'];
+const ADVANCED_KEYWORDS = ['advanced', 'optimization', 'scaling', 'scale', 'deployment', 'production', 'distributed', 'agentic', 'multi-agent'];
+
+function keywordScore(text, keywords) {
+  const normalized = String(text || '').toLowerCase();
+  return keywords.reduce((score, keyword) => (normalized.includes(keyword) ? score + 1 : score), 0);
+}
+
+function inferDifficultyRank(module, fallbackRank = Number.MAX_SAFE_INTEGER) {
+  const title = String(module?.moduleTitle || '');
+  const description = String(module?.description || '');
+  const searchable = `${title} ${description}`;
+
+  // Prefer explicit numbering when the title follows "Module N" format.
+  const moduleNumberMatch = title.match(/\bmodule\s*(\d+)\b/i);
+  if (moduleNumberMatch) {
+    const parsed = Number(moduleNumberMatch[1]);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+
+  const advancedHits = keywordScore(searchable, ADVANCED_KEYWORDS);
+  if (advancedHits > 0) return 300 + (10 - Math.min(advancedHits, 10));
+
+  const intermediateHits = keywordScore(searchable, INTERMEDIATE_KEYWORDS);
+  if (intermediateHits > 0) return 200 + (10 - Math.min(intermediateHits, 10));
+
+  const beginnerHits = keywordScore(searchable, BEGINNER_KEYWORDS);
+  if (beginnerHits > 0) return 100 + (10 - Math.min(beginnerHits, 10));
+
+  return fallbackRank;
+}
+
+function orderModulesBasicToAdvanced(modules) {
+  if (!Array.isArray(modules)) return [];
+
+  return modules
+    .map((module, idx) => ({
+      module,
+      idx,
+      rank: inferDifficultyRank(module, 1000 + idx),
+    }))
+    .sort((a, b) => {
+      if (a.rank !== b.rank) return a.rank - b.rank;
+      const aDuration = Number(a.module?.estimatedDays || 0);
+      const bDuration = Number(b.module?.estimatedDays || 0);
+      if (aDuration !== bDuration) return aDuration - bDuration;
+      return a.idx - b.idx;
+    })
+    .map(({ module }) => module);
+}
 
 /**
  * Main roadmap generation endpoint
@@ -85,6 +138,13 @@ export const generateUserRoadmap = async (req, res) => {
     if (!user.onboarding?.onboardingCompleted || !user.cvUrl) {
       console.warn('⚠️  Onboarding incomplete or CV missing');
       return res.status(400).json({ error: 'Onboarding incomplete' });
+    }
+
+    if (!user.onboarding?.cvValidation?.isValidCV) {
+      console.warn('⚠️  CV validation missing at onboarding stage');
+      return res.status(400).json({
+        error: 'CV validation required. Please re-upload a valid CV from onboarding.',
+      });
     }
 
     // Check existing roadmap
@@ -162,14 +222,14 @@ export const generateUserRoadmap = async (req, res) => {
     console.log('\n📄 STEP 2: Parsing CV...');
 
     const cvParseResult = await parseCvFromUrl(user.cvUrl);
-    const cvText = cvParseResult?.rawText || '';
-
-    if (!cvText || typeof cvText !== 'string' || cvText.trim().length < 50) {
-      throw new Error('❌ CV extraction failed or insufficient data');
-    }
-
-    console.log('✅ CV parsed:', cvText.length, 'chars');
+    const cvText = cvParseResult?.redactedText || cvParseResult?.rawText || '';
     const structuredCv = cvParseResult?.structured || null;
+
+    console.log('✅ CV validation trusted from onboarding:', {
+      score: user.onboarding?.cvValidation?.score ?? null,
+      confidence: user.onboarding?.cvValidation?.confidence ?? null,
+      validatedAt: user.onboarding?.cvValidation?.validatedAt ?? null,
+    });
 
     // Build learning profile
     console.log('\n🧩 Building learning profile...');
@@ -220,7 +280,9 @@ export const generateUserRoadmap = async (req, res) => {
     console.log('   Quality validation:', orchestrationResult.metadata?.validationScore || 'unknown');
 
     // Extract final roadmap modules
-    const roadmapModules = orchestrationResult.finalOutput?.modules || [];
+    const generatedModules = orchestrationResult.finalOutput?.modules || [];
+
+    const roadmapModules = orderModulesBasicToAdvanced(generatedModules);
 
     if (!Array.isArray(roadmapModules) || roadmapModules.length === 0) {
       throw new Error('❌ Orchestration did not generate roadmap modules');
@@ -361,6 +423,54 @@ export const generateUserRoadmap = async (req, res) => {
         // Silently fail lock release
       }
     }
+  }
+};
+
+/**
+ * Validate uploaded CV before onboarding completion.
+ * @route POST /api/roadmap/validate-cv
+ * @body  { cvUrl, trainingOn? }
+ */
+export const validateUploadedCv = async (req, res) => {
+  try {
+    const { cvUrl, trainingOn } = req.body || {};
+
+    if (!cvUrl || typeof cvUrl !== 'string') {
+      return res.status(400).json({
+        error: 'cvUrl is required for CV validation',
+      });
+    }
+
+    const cvParseResult = await parseCvFromUrl(cvUrl);
+    const rawText = cvParseResult?.rawText || '';
+    const structuredCv = cvParseResult?.structured || null;
+
+    const cvValidation = await policyEngine.decide('cvValidation', {
+      cvUrl,
+      rawText,
+      structuredCv,
+      fileMeta: cvParseResult?.fileMeta || {},
+      trainingOn: trainingOn || 'General',
+    });
+
+    if (!cvValidation?.isValidCV) {
+      return res.status(400).json({
+        success: false,
+        error: cvValidation?.reason || 'Uploaded document does not look like a CV',
+        cvValidation,
+      });
+    }
+
+    return res.json({
+      success: true,
+      cvValidation,
+    });
+  } catch (error) {
+    console.error('❌ CV validation endpoint failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'CV validation failed',
+    });
   }
 };
 

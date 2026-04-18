@@ -3,6 +3,7 @@ import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db } from "../../firebase";
 import FresherShellLayout from "./FresherShellLayout";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import axios from "axios";
 
 export default function OnboardingPage({
   userId,
@@ -10,6 +11,7 @@ export default function OnboardingPage({
   deptId: propDeptId,
   onFinish,
   companyName: propCompanyName,
+  onboardingNotice,
 }) {
   const [loading, setLoading] = useState(true);
 
@@ -24,12 +26,30 @@ export default function OnboardingPage({
   const [step, setStep] = useState(1);
   const [cvFile, setCvFile] = useState(null);
   const [cvUploaded, setCvUploaded] = useState(false);
+  const [cvUploadUrl, setCvUploadUrl] = useState("");
+  const [cvValidationResult, setCvValidationResult] = useState(null);
+  const [cvValidationError, setCvValidationError] = useState(null);
+  const [validatingCv, setValidatingCv] = useState(false);
   const [expertise, setExpertise] = useState(null);
   const [saving, setSaving] = useState(false);
   const [savingError, setSavingError] = useState("");
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   const storage = getStorage();
+
+  const normalizeValidationIssues = (issues = [], reason = "") => {
+    const normalizedReason = String(reason || "").trim().toLowerCase();
+    const unique = new Set();
+
+    for (const issue of Array.isArray(issues) ? issues : []) {
+      const cleaned = String(issue || "").trim();
+      if (!cleaned) continue;
+      if (cleaned.toLowerCase() === normalizedReason) continue;
+      unique.add(cleaned);
+    }
+
+    return Array.from(unique);
+  };
 
   // =====================================================
   // 🔹 FETCH USER
@@ -80,6 +100,63 @@ export default function OnboardingPage({
     fetchUser();
   }, [userId, companyId, deptId, propCompanyName]);
 
+  const validateCvAndGoNext = async () => {
+    if (!cvFile) {
+      setSavingError("Please upload your CV first.");
+      return;
+    }
+
+    try {
+      setSavingError("");
+      setCvValidationError(null);
+      setValidatingCv(true);
+      setCvUploaded(false);
+      setCvUploadUrl("");
+      setCvValidationResult(null);
+
+      const extension = cvFile.name.split(".").pop();
+      const storageRef = ref(storage, `cvs/${companyId}/${deptId}/${userId}.${extension}`);
+      console.log("⬆️ Uploading CV to Storage:", storageRef.fullPath);
+      await uploadBytes(storageRef, cvFile);
+      const cvUrl = await getDownloadURL(storageRef);
+      console.log("✅ CV uploaded. URL:", cvUrl);
+
+      const validationResponse = await axios.post("http://localhost:5000/api/roadmap/validate-cv", {
+        cvUrl,
+        trainingOn,
+      });
+
+      const validatedCv = validationResponse?.data?.cvValidation || null;
+
+      setCvUploadUrl(cvUrl);
+      setCvValidationResult(validatedCv);
+      setCvUploaded(true);
+      setStep(2);
+
+      console.log("✅ CV validated at onboarding step 1:", validatedCv || {});
+    } catch (validationErr) {
+      const cvValidation = validationErr?.response?.data?.cvValidation;
+      const reason =
+        validationErr?.response?.data?.error ||
+        cvValidation?.reason ||
+        "Uploaded document does not look like a valid CV.";
+      const issues = normalizeValidationIssues(cvValidation?.issues, reason);
+
+      console.warn("⚠️ Onboarding CV validation failed:", { reason, cvValidation });
+
+      setCvUploaded(false);
+      setCvUploadUrl("");
+      setCvValidationResult(null);
+      setCvValidationError({
+        title: "CV Validation Failed",
+        actionText: "Uploaded file is not a valid CV. Please upload a professional CV and try again.",
+      });
+      setSavingError("");
+    } finally {
+      setValidatingCv(false);
+    }
+  };
+
   // =====================================================
   // 🔹 SAVE ONBOARDING WITH CV UPLOAD
   // =====================================================
@@ -89,24 +166,10 @@ export default function OnboardingPage({
       setSavingError("");
       setSaveSuccess(false);
 
-      let cvUrl = "";
-
-      // Upload CV if selected
-      if (cvFile) {
-        try {
-          const extension = cvFile.name.split(".").pop();
-          const storageRef = ref(storage, `cvs/${companyId}/${deptId}/${userId}.${extension}`);
-          console.log("⬆️ Uploading CV to Storage:", storageRef.fullPath);
-          await uploadBytes(storageRef, cvFile);
-          cvUrl = await getDownloadURL(storageRef);
-          console.log("✅ CV uploaded. URL:", cvUrl);
-          setCvUploaded(true);
-        } catch (uploadErr) {
-          console.error("❌ CV upload failed:", uploadErr);
-          setSavingError("Failed to upload CV. Please try again.");
-          setSaving(false);
-          return;
-        }
+      if (!cvUploaded || !cvUploadUrl) {
+        setSavingError("Please validate your CV in Step 1 before continuing.");
+        setSaving(false);
+        return;
       }
 
       // Save onboarding info + CV URL
@@ -124,13 +187,21 @@ export default function OnboardingPage({
         userRef,
         {
           onboarding: {
-            cvUploaded: !!cvUrl,
+            cvUploaded: !!cvUploadUrl,
+            cvValidation: {
+              isValidCV: true,
+              validatedAt: new Date(),
+              score: cvValidationResult?.score ?? null,
+              confidence: cvValidationResult?.confidence ?? null,
+              classificationSource: cvValidationResult?.classificationSource || null,
+              reason: cvValidationResult?.reason || "Validated during onboarding",
+            },
             expertise,
             onboardingCompleted: true,
             completedAt: new Date(),
           
           },
-          cvUrl: cvUrl || null,
+          cvUrl: cvUploadUrl || null,
         },
         { merge: true }
       );
@@ -173,6 +244,13 @@ export default function OnboardingPage({
       headerLabel="Onboarding"
     >
       <div className="p-4 md:p-10">
+        {onboardingNotice && (
+          <div className="mb-6 max-w-4xl mx-auto rounded-xl border border-yellow-400/40 bg-yellow-500/10 p-4">
+            <p className="text-yellow-300 font-semibold">⚠️ CV Re-upload Required</p>
+            <p className="text-[#FCEFC7] text-sm mt-1">{onboardingNotice}</p>
+          </div>
+        )}
+
         <div className="text-left mb-10">
           <h1 className="text-2xl font-bold text-[#00FFFF]">
             Welcome {userName}!
@@ -231,6 +309,11 @@ export default function OnboardingPage({
 
                     console.log("✅ Selected file:", file.name, file.type);
                     setCvFile(file);
+                    setCvUploaded(false);
+                    setCvUploadUrl("");
+                    setCvValidationResult(null);
+                    setCvValidationError(null);
+                    setSavingError("");
                   }}
                 />
               </label>
@@ -244,6 +327,24 @@ export default function OnboardingPage({
               <p className="text-[#AFCBE3] text-xs italic mt-2">
                 Accepted formats: .pdf, .doc, .docx
               </p>
+
+              {cvValidationError && (
+                <div className="mt-4 rounded-xl border border-red-500/50 bg-gradient-to-b from-red-500/10 to-red-600/10 p-5 text-left shadow-[0_8px_24px_rgba(239,68,68,0.12)]">
+                  <p className="text-red-300 font-semibold text-base">⚠️ {cvValidationError.title || "CV Validation Failed"}</p>
+                  <p className="text-[#FFD8D8] text-sm mt-3 font-semibold">
+                    {cvValidationError.actionText || "Please upload a professional CV and try again."}
+                  </p>
+                </div>
+              )}
+
+              {cvUploaded && cvValidationResult && (
+                <div className="mt-4 rounded-xl border border-green-500/50 bg-green-500/10 p-4">
+                  <p className="text-green-300 font-semibold">✅ CV validated successfully</p>
+                  <p className="text-[#D6FDE3] text-xs mt-1">
+                    Score: {cvValidationResult?.score ?? "N/A"} | Confidence: {cvValidationResult?.confidence ?? "N/A"}
+                  </p>
+                </div>
+              )}
             </>
           )}
 
@@ -278,7 +379,7 @@ export default function OnboardingPage({
           )}
 
           {/* ERROR MESSAGE */}
-          {savingError && (
+          {savingError && !cvValidationError && (
             <div className="mb-6 p-4 bg-red-500/20 border border-red-500 rounded-lg">
               <p className="text-red-300 font-semibold">⚠️ {savingError}</p>
             </div>
@@ -286,7 +387,7 @@ export default function OnboardingPage({
 
           {/* NAVIGATION */}
           <div className="flex justify-between mt-10">
-            {step > 1 && !saving && (
+            {step > 1 && !saving && !validatingCv && (
               <button
                 onClick={() => setStep(step - 1)}
                 className="px-5 py-2 bg-[#021B36] rounded-lg hover:bg-[#021B36]/80 transition"
@@ -297,17 +398,17 @@ export default function OnboardingPage({
 
             {step < 2 && (
               <button
-                onClick={() => setStep(step + 1)}
+                onClick={validateCvAndGoNext}
                 disabled={
-                  (step === 1 && !cvFile) || (step === 2 && expertise === null) || saving
+                  (step === 1 && !cvFile) || (step === 2 && expertise === null) || saving || validatingCv
                 }
                 className={`ml-auto px-6 py-2 rounded-lg font-semibold ${
-                  (step === 1 && !cvFile) || (step === 2 && expertise === null) || saving
+                  (step === 1 && !cvFile) || (step === 2 && expertise === null) || saving || validatingCv
                     ? "bg-gray-500 cursor-not-allowed"
                     : "bg-[#00FFFF] text-[#031C3A] hover:bg-[#00e0e0]"
                 }`}
               >
-                Continue →
+                {validatingCv ? "Validating CV..." : "Continue →"}
               </button>
             )}
 

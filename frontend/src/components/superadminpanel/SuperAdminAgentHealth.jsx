@@ -27,6 +27,13 @@ const fallbackData = {
   historyWindow: 0,
   runtimeAvailable: false,
   runtimeMessage: "Runtime metrics unavailable",
+  planner: {
+    runs: 0,
+    llmRuns: 0,
+    fallbackRuns: 0,
+    fallbackRate: null,
+    llmRate: null,
+  },
   kpis: {
     totalAgents: 0,
     instrumentedAgents: 0,
@@ -45,10 +52,10 @@ const fallbackData = {
 
 function MetricCard({ title, value, subtitle }) {
   return (
-    <div className="bg-[#031C3A]/70 border border-[#00FFFF30] rounded-xl p-4 sm:p-5">
-      <p className="text-sm text-[#9FC2DA]">{title}</p>
-      <p className="text-2xl font-bold text-[#E8F7FF] mt-1">{value}</p>
-      {subtitle ? <p className="text-xs text-[#7FA3BF] mt-1">{subtitle}</p> : null}
+    <div className="bg-[#031C3A]/70 border border-[#00FFFF30] rounded-xl p-3.5 sm:p-4">
+      <p className="text-xs text-[#9FC2DA]">{title}</p>
+      <p className="text-[1.6rem] font-bold text-[#E8F7FF] mt-1">{value}</p>
+      {subtitle ? <p className="text-xs text-[#7FA3BF] mt-1 leading-tight">{subtitle}</p> : null}
     </div>
   );
 }
@@ -184,14 +191,23 @@ export default function SuperAdminAgentHealth() {
         </div>
       ) : null}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-4">
+      <div className="flex flex-nowrap justify-center gap-3 overflow-x-auto pb-1 [&>*]:min-w-[190px]">
         <MetricCard title="Total Agents" value={data.kpis.totalAgents || 0} subtitle="Cataloged in platform" />
         <MetricCard title="Avg Accuracy" value={formatMetric(data.kpis.avgAccuracy, "%")} subtitle="Validation quality" />
         <MetricCard title="Success Rate" value={formatMetric(data.kpis.avgSuccessRate, "%")} subtitle="Execution completion" />
-        <MetricCard title="Avg Latency" value={formatMetric(data.kpis.avgLatencyMs, " ms")} subtitle="Per-step runtime" />
         <MetricCard title="Critical" value={data.kpis.criticalAgents || 0} subtitle="Needs immediate check" />
-        <MetricCard title="Warning" value={data.kpis.warningAgents || 0} subtitle="Below target quality" />
+        <MetricCard
+          title="Planner Fallback"
+          value={formatMetric(data.planner?.fallbackRate, "%")}
+          subtitle={`${data.planner?.fallbackRuns || 0}/${data.planner?.runs || 0} fallback plans`}
+        />
       </div>
+
+      {(data.planner?.fallbackRuns || 0) > 0 ? (
+        <div className="rounded-xl border border-[#F59E0B30] bg-[#F59E0B10] px-4 py-3 text-sm text-[#FCD34D]">
+          Planner fallback is active in {data.planner?.fallbackRate ?? 0}% of tracked runs. This can reduce roadmap quality and should be monitored.
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <SectionCard title="Segment Accuracy" subtitle="Average accuracy and success-rate by side">

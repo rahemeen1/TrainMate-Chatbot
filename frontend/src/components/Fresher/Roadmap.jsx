@@ -10,6 +10,60 @@ import TrainingLockedScreen from "./TrainingLockedScreen";
 import { getCompanyLicensePlan } from "../../services/companyLicense";
 import CompanyPageLoader from "../CompanySpecific/CompanyPageLoader";
 
+const BEGINNER_KEYWORDS = ["fundamental", "fundamentals", "foundation", "foundations", "basic", "basics", "intro", "introduction", "core"];
+const INTERMEDIATE_KEYWORDS = ["intermediate", "applied", "practical", "implementation", "orchestration", "integration"];
+const ADVANCED_KEYWORDS = ["advanced", "optimization", "scaling", "scale", "deployment", "production", "distributed", "agentic", "multi-agent"];
+
+const keywordScore = (text, keywords) => {
+  const normalized = String(text || "").toLowerCase();
+  return keywords.reduce((score, keyword) => (normalized.includes(keyword) ? score + 1 : score), 0);
+};
+
+const inferDifficultyRank = (module, fallbackRank = Number.MAX_SAFE_INTEGER) => {
+  const title = String(module?.moduleTitle || "");
+  const description = String(module?.description || "");
+  const searchable = `${title} ${description}`;
+
+  const moduleNumberMatch = title.match(/\bmodule\s*(\d+)\b/i);
+  if (moduleNumberMatch) {
+    const parsed = Number(moduleNumberMatch[1]);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+
+  const advancedHits = keywordScore(searchable, ADVANCED_KEYWORDS);
+  if (advancedHits > 0) return 300 + (10 - Math.min(advancedHits, 10));
+
+  const intermediateHits = keywordScore(searchable, INTERMEDIATE_KEYWORDS);
+  if (intermediateHits > 0) return 200 + (10 - Math.min(intermediateHits, 10));
+
+  const beginnerHits = keywordScore(searchable, BEGINNER_KEYWORDS);
+  if (beginnerHits > 0) return 100 + (10 - Math.min(beginnerHits, 10));
+
+  const storedOrder = Number(module?.order);
+  if (Number.isFinite(storedOrder) && storedOrder > 0) return 400 + storedOrder;
+
+  return fallbackRank;
+};
+
+const sortRoadmapModules = (modules) =>
+  (Array.isArray(modules) ? modules : [])
+    .map((module, idx) => ({
+      module,
+      idx,
+      rank: inferDifficultyRank(module, 1000 + idx),
+    }))
+    .sort((a, b) => {
+      if (a.rank !== b.rank) return a.rank - b.rank;
+      const aDuration = Number(a.module?.estimatedDays || 0);
+      const bDuration = Number(b.module?.estimatedDays || 0);
+      if (aDuration !== bDuration) return aDuration - bDuration;
+      return a.idx - b.idx;
+    })
+    .map(({ module }, index) => ({
+      ...module,
+      order: index + 1,
+    }));
+
 export default function Roadmap() {
   const BASE_MAX_QUIZ_ATTEMPTS = 3;
   const DEFAULT_QUIZ_UNLOCK_PERCENT = 70;
@@ -22,6 +76,7 @@ export default function Roadmap() {
   const [roadmapGeneratedAt, setRoadmapGeneratedAt] = useState(null);
   const [userData, setUserData] = useState(null);
   const [licensePlan, setLicensePlan] = useState("License Basic");
+  const [cvValidationWarning, setCvValidationWarning] = useState(null);
   const generationRequestedRef = useRef(false);
 
 const getModuleStartDate = (module) => {
@@ -183,16 +238,34 @@ const getModuleStartDate = (module) => {
             trainingOn,
           });
 
+          setCvValidationWarning(null);
+
           roadmapSnap = await getDocs(roadmapRef);
         }
-  const modules = roadmapSnap.docs
-  .map((doc) => ({ id: doc.id, ...doc.data() }))
-  .sort((a, b) => a.order - b.order);
+  const modules = sortRoadmapModules(
+    roadmapSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+  );
 
   setRoadmap(modules);
 
       } catch (err) {
         console.error(err);
+
+        const responseData = err?.response?.data;
+        const cvValidation = responseData?.cvValidation;
+        const isCvValidationFailure = Boolean(
+          err?.response?.status === 400 &&
+          cvValidation &&
+          cvValidation.recommendedAction === "reject"
+        );
+
+        if (isCvValidationFailure) {
+          setCvValidationWarning({
+            title: "Your uploaded file does not look like a CV",
+            message: responseData?.error || cvValidation?.reason || "Please upload a valid CV to continue.",
+            issues: Array.isArray(cvValidation?.issues) ? cvValidation.issues : [],
+          });
+        }
       } finally {
         setLoading(false);
       }
@@ -214,9 +287,9 @@ const getModuleStartDate = (module) => {
           "roadmap"
         );
         const roadmapSnap = await getDocs(roadmapRef);
-        const modules = roadmapSnap.docs
-          .map((doc) => ({ id: doc.id, ...doc.data() }))
-          .sort((a, b) => a.order - b.order);
+        const modules = sortRoadmapModules(
+          roadmapSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+        );
         setRoadmap(modules);
       } catch (err) {
         console.warn("⚠️ Roadmap refresh failed:", err);
@@ -437,6 +510,38 @@ if (!roadmap.length)
       contentClassName="p-4 md:p-8"
     >
       <div className="min-h-[60vh] flex flex-col items-center justify-center text-white p-8">
+        {cvValidationWarning && (
+          <div className="w-full max-w-2xl mb-6 rounded-xl border border-yellow-400/40 bg-yellow-500/10 p-4 text-left">
+            <p className="text-yellow-300 font-semibold mb-2">⚠️ {cvValidationWarning.title}</p>
+            <p className="text-[#FCEFC7] text-sm">{cvValidationWarning.message}</p>
+            {cvValidationWarning.issues.length > 0 && (
+              <ul className="mt-2 list-disc pl-5 text-xs text-[#FCEFC7]">
+                {cvValidationWarning.issues.slice(0, 3).map((issue, idx) => (
+                  <li key={idx}>{issue}</li>
+                ))}
+              </ul>
+            )}
+            <button
+              onClick={() =>
+                navigate("/fresher-dashboard", {
+                  state: {
+                    forceOnboarding: true,
+                    onboardingNotice: "Please re-upload a valid CV (PDF or DOCX) so we can generate your roadmap.",
+                    userId,
+                    companyId,
+                    deptId,
+                    companyName,
+                    email: location?.state?.email || userData?.email || localStorage.getItem("email"),
+                  },
+                })
+              }
+              className="mt-3 px-4 py-2 bg-yellow-300 text-[#031C3A] rounded font-semibold hover:bg-yellow-200 transition"
+            >
+              Re-upload CV Now
+            </button>
+          </div>
+        )}
+
         <div className="text-[#00FFFF] mb-4">
           <svg
             className="w-20 h-20 mx-auto animate-bounce"
@@ -476,6 +581,31 @@ if (!roadmap.length)
       contentClassName="p-4 md:p-8"
     >
       <div className="space-y-6">
+        {cvValidationWarning && (
+          <div className="rounded-xl border border-yellow-400/40 bg-yellow-500/10 p-4">
+            <p className="text-yellow-300 font-semibold">⚠️ {cvValidationWarning.title}</p>
+            <p className="text-[#FCEFC7] text-sm mt-1">{cvValidationWarning.message}</p>
+            <button
+              onClick={() =>
+                navigate("/fresher-dashboard", {
+                  state: {
+                    forceOnboarding: true,
+                    onboardingNotice: "Please re-upload a valid CV (PDF or DOCX) so we can generate your roadmap.",
+                    userId,
+                    companyId,
+                    deptId,
+                    companyName,
+                    email: location?.state?.email || userData?.email || localStorage.getItem("email"),
+                  },
+                })
+              }
+              className="mt-3 px-4 py-2 bg-yellow-300 text-[#031C3A] rounded font-semibold hover:bg-yellow-200 transition"
+            >
+              Re-upload CV
+            </button>
+          </div>
+        )}
+
         <h2 className="text-3xl font-bold text-[#00FFFF] mb-2">Your Personalized Roadmap</h2>
         {roadmapGeneratedAt && (
           <p className="text-sm text-[#AFCBE3] mb-6">

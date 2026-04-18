@@ -9,6 +9,52 @@ if (!process.env.GEMINI_API_KEY) {
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
+function normalizeSkillToken(skill) {
+  return String(skill || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9+#.\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizePrioritySkillsList(skills = []) {
+  return Array.from(
+    new Set(
+      (Array.isArray(skills) ? skills : [])
+        .map((skill) => String(skill || "").trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+function getModulePriorityRank(module = {}, prioritizedSkills = {}) {
+  const mustHave = new Set(normalizePrioritySkillsList(prioritizedSkills.mustHave).map(normalizeSkillToken));
+  const goodToHave = new Set(normalizePrioritySkillsList(prioritizedSkills.goodToHave).map(normalizeSkillToken));
+  const skills = Array.isArray(module?.skillsCovered) ? module.skillsCovered : [];
+
+  if (skills.length === 0) return 3;
+
+  return skills.reduce((bestRank, skill) => {
+    const normalized = normalizeSkillToken(skill);
+    const rank = mustHave.has(normalized) ? 0 : goodToHave.has(normalized) ? 1 : 2;
+    return Math.min(bestRank, rank);
+  }, 3);
+}
+
+function sortModulesByPriority(modules = [], prioritizedSkills = {}) {
+  return [...modules].sort((a, b) => {
+    const aRank = getModulePriorityRank(a, prioritizedSkills);
+    const bRank = getModulePriorityRank(b, prioritizedSkills);
+    if (aRank !== bRank) return aRank - bRank;
+
+    const aDays = Number(a?.estimatedDays || 1);
+    const bDays = Number(b?.estimatedDays || 1);
+    if (aDays !== bDays) return aDays - bDays;
+
+    return String(a?.moduleTitle || "").localeCompare(String(b?.moduleTitle || ""));
+  });
+}
+
 export const generateRoadmap = async ({
   cvText = "",
   pineconeContext = [],
@@ -16,6 +62,7 @@ export const generateRoadmap = async ({
   skillGap = [],
   learningProfile = null,
   planFocusAreas = [],
+  prioritizedSkills = { mustHave: [], goodToHave: [] },
   trainingOn,
   expertise,
   trainingLevel,
@@ -37,6 +84,10 @@ export const generateRoadmap = async ({
   console.log("   companyContext length →", companyContext?.length);
   console.log("   skillGap size    →", Array.isArray(skillGap) ? skillGap.length : 0);
   console.log("   planFocusAreas   →", Array.isArray(planFocusAreas) ? planFocusAreas.length : 0);
+  console.log("   prioritizedSkills →", {
+    mustHave: Array.isArray(prioritizedSkills?.mustHave) ? prioritizedSkills.mustHave.length : 0,
+    goodToHave: Array.isArray(prioritizedSkills?.goodToHave) ? prioritizedSkills.goodToHave.length : 0,
+  });
 
   if (!cvText || cvText.trim().length < 50) {
     console.warn("⚠️ CV text is very small or empty");
@@ -53,6 +104,10 @@ export const generateRoadmap = async ({
   const safeSkillGap = Array.isArray(skillGap) ? skillGap : [];
   const safeFocusAreas = Array.isArray(planFocusAreas) ? planFocusAreas : [];
   const safeLearningProfile = learningProfile || null;
+  const safePrioritizedSkills = {
+    mustHave: normalizePrioritySkillsList(prioritizedSkills?.mustHave),
+    goodToHave: normalizePrioritySkillsList(prioritizedSkills?.goodToHave),
+  };
   const structuredCv = safeLearningProfile?.structuredCv || null;
   const pineconeExcerpt = Array.isArray(pineconeContext)
     ? pineconeContext.map((c) => c.text || "").join("\n").slice(0, 1200)
@@ -114,6 +169,14 @@ TARGET: ${safeTrainingOn}
 EXPERTISE: ${safeExpertise}/5 (${safeLevel})
 DURATION: ${safeDuration}
 SKILL GAPS: ${safeSkillGap.slice(0, 10).join(", ") || "General"}
+
+PRIORITY RULES:
+- Must-have skills must appear first in the roadmap
+- Good-to-have skills should come after must-have skills
+- Optional skills should come last
+
+MUST-HAVE SKILLS: ${safePrioritizedSkills.mustHave.join(", ") || "None"}
+GOOD-TO-HAVE SKILLS: ${safePrioritizedSkills.goodToHave.join(", ") || "None"}
 
 Return ONLY valid JSON array:
 [
@@ -234,6 +297,8 @@ Rules:
       estimatedDays: module.estimatedDays ?? 1,
       skillsCovered: Array.isArray(module.skillsCovered) ? module.skillsCovered : []
     }));
+
+    roadmap = sortModulesByPriority(roadmap, safePrioritizedSkills);
 
     console.log("🧩 Roadmap modules generated:", roadmap.length);
 

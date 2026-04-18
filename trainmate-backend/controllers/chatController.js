@@ -91,17 +91,23 @@ function calculateSkillProgressFromActual(skillData) {
 }
 
 function calculateTrainingProgress(moduleData, startDateOverride) {
-  const totalDays = moduleData.estimatedDays;
+  const totalDays = Math.max(1, Number(moduleData?.estimatedDays) || 1);
 
-  const baseStart = startDateOverride || moduleData.createdAt;
+  const baseStart = moduleData?.startedAt || startDateOverride || moduleData?.createdAt;
   if (!baseStart) {
     return {
-      completedDays: 0,
+      completedDays: 1,
       remainingDays: totalDays,
     };
   }
 
   const startDate = baseStart.toDate ? baseStart.toDate() : new Date(baseStart);
+  if (!Number.isFinite(startDate.getTime())) {
+    return {
+      completedDays: 1,
+      remainingDays: totalDays,
+    };
+  }
 
   const today = new Date();
 
@@ -109,10 +115,17 @@ function calculateTrainingProgress(moduleData, startDateOverride) {
   startDate.setHours(0, 0, 0, 0);
   today.setHours(0, 0, 0, 0);
 
-  const diffDays =
-    Math.floor((today - startDate) / (1000 * 60 * 60 * 24)) + 1;
+  // If start date is in the future due to schedule/order drift, do not allow negative day values.
+  if (startDate > today) {
+    return {
+      completedDays: 1,
+      remainingDays: totalDays,
+    };
+  }
 
-  const completedDays = Math.min(diffDays, totalDays);
+  const diffDays = Math.floor((today - startDate) / (1000 * 60 * 60 * 24)) + 1;
+
+  const completedDays = Math.max(1, Math.min(diffDays, totalDays));
   const remainingDays = Math.max(totalDays - completedDays, 0);
 
   return {

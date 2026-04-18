@@ -207,6 +207,30 @@ function aggregateRuntimeMetrics(history) {
   return metricsMap;
 }
 
+function aggregatePlannerMetrics(history) {
+  const totals = {
+    runs: 0,
+    llmRuns: 0,
+    fallbackRuns: 0,
+  };
+
+  for (const execution of history) {
+    const mode = String(execution?.plannerMode || execution?.metadata?.plannerMode || "").toLowerCase();
+    if (!mode) continue;
+
+    totals.runs += 1;
+    if (mode === "fallback") totals.fallbackRuns += 1;
+    if (mode === "llm") totals.llmRuns += 1;
+  }
+
+  const fallbackRate = totals.runs > 0 ? round((totals.fallbackRuns / totals.runs) * 100, 1) : null;
+  return {
+    ...totals,
+    fallbackRate,
+    llmRate: totals.runs > 0 ? round((totals.llmRuns / totals.runs) * 100, 1) : null,
+  };
+}
+
 function buildAgentRows(catalog, runtimeMap) {
   return catalog.map((entry) => {
     const runtime = runtimeMap.get(entry.key);
@@ -355,17 +379,50 @@ export async function getSuperAdminAgentHealth(req, res) {
     const history = orchestrator ? orchestrator.getExecutionHistory(historyLimit) : [];
 
     const runtimeMap = aggregateRuntimeMetrics(history);
+    const plannerMetrics = aggregatePlannerMetrics(history);
     const agentRows = buildAgentRows(AGENT_CATALOG, runtimeMap);
+
+    const {
+      storeAgentHealthMetadata,
+      getLatestAgentHealthMetadata,
+      getAgentRunMetadata,
+    } = await import("../../services/agentHealthStorage.service.js");
+
+    const persistedRunsResult = await getAgentRunMetadata(
+      AGENT_CATALOG.map((agent) => agent.key)
+    );
+
+    if (persistedRunsResult.success && Array.isArray(persistedRunsResult.data)) {
+      const runMap = new Map(
+        persistedRunsResult.data.map((row) => [String(row.agentKey || ""), row])
+      );
+
+      for (const row of agentRows) {
+        const persisted = runMap.get(String(row.key || ""));
+        if (!persisted) continue;
+
+        const persistedTotalRuns = Number(persisted.totalRuns || 0);
+        if (Number.isFinite(persistedTotalRuns) && persistedTotalRuns > Number(row.runs || 0)) {
+          row.runs = persistedTotalRuns;
+        }
+
+        if (!row.lastRunAt && persisted.lastRunAt) {
+          row.lastRunAt = persisted.lastRunAt;
+        }
+      }
+    }
+
     const summary = summarizeRows(agentRows);
     const hasRuntimeMetrics = agentRows.some((a) => a.hasRuntimeData);
 
-    // Store snapshot to Firestore for persistence
-    const { storeAgentHealthSnapshot, getLatestAgentHealthSnapshot } =
-      await import("../../services/agentHealthStorage.service.js");
-
-    // Avoid polluting storage with empty/no-runtime snapshots.
+    // Store compact metadata only (throttled) to avoid DB bombardment.
     if (hasRuntimeMetrics) {
-      await storeAgentHealthSnapshot(agentRows, summary);
+      await storeAgentHealthMetadata({
+        ...summary,
+        planner: plannerMetrics,
+        runtimeAvailable: Boolean(orchestrator),
+        historyWindow: history.length,
+      });
     }
 
     // If no runtime data, try to get latest stored snapshot as fallback
@@ -378,21 +435,22 @@ export async function getSuperAdminAgentHealth(req, res) {
         ? "Runtime metrics loaded from orchestrator history"
         : `Runtime metrics unavailable (${loadError?.message || "orchestrator not initialized"})`,
       ...summary,
+      planner: plannerMetrics,
       agents: agentRows,
       dataSource: "runtime",
     };
 
     // If no runtime data available, use stored data as fallback
     if (!orchestrator || !hasRuntimeMetrics) {
-      const storedResult = await getLatestAgentHealthSnapshot();
+      const storedResult = await getLatestAgentHealthMetadata();
       const stored = storedResult?.data;
-      const hasStoredAgents = Array.isArray(stored?.agents) && stored.agents.length > 0;
       const hasStoredKpis = stored?.kpis && typeof stored.kpis === "object";
 
-      if (storedResult.success && hasStoredAgents && hasStoredKpis) {
+      if (storedResult.success && hasStoredKpis) {
         finalData = {
           ...finalData,
-          ...stored,
+          kpis: stored.kpis || finalData.kpis,
+          planner: stored.planner || finalData.planner,
           dataSource: "stored",
           runtimeMessage: `Using stored snapshot from ${stored.timestamp || "previous run"}`,
         };
