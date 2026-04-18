@@ -191,7 +191,7 @@ export default function SuperAdminAgentHealth() {
         </div>
       ) : null}
 
-      <div className="flex flex-nowrap justify-center gap-3 overflow-x-auto pb-1 [&>*]:min-w-[190px]">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
         <MetricCard title="Total Agents" value={data.kpis.totalAgents || 0} subtitle="Cataloged in platform" />
         <MetricCard title="Avg Accuracy" value={formatMetric(data.kpis.avgAccuracy, "%")} subtitle="Validation quality" />
         <MetricCard title="Success Rate" value={formatMetric(data.kpis.avgSuccessRate, "%")} subtitle="Execution completion" />
@@ -340,10 +340,8 @@ export default function SuperAdminAgentHealth() {
         </SectionCard>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-
-        <div>
-          <SectionCard title="Active Alerts" subtitle="Warning and critical agents">
+      <div>
+        <SectionCard title="Active Alerts" subtitle="Warning and critical agents">
             <div className="space-y-3 max-h-[480px] overflow-auto pr-1">
               {(data.alerts || []).length === 0 ? (
                 <div className="rounded-lg border border-[#00FFFF30] bg-[#021B36] p-3 text-sm text-[#9FC2DA]">
@@ -370,8 +368,7 @@ export default function SuperAdminAgentHealth() {
                 ))
               )}
             </div>
-          </SectionCard>
-        </div>
+        </SectionCard>
       </div>
     </div>
   );
