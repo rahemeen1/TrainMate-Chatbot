@@ -1,4 +1,76 @@
+//delete company controller 
 import { db, admin } from "../../config/firebase.js";
+
+const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+
+const buildAuthEmailIndex = async () => {
+  const emailToUid = new Map();
+  let pageToken;
+
+  do {
+    const page = await admin.auth().listUsers(1000, pageToken);
+    for (const user of page.users) {
+      const normalized = normalizeEmail(user.email);
+      if (normalized) {
+        emailToUid.set(normalized, user.uid);
+      }
+    }
+    pageToken = page.pageToken;
+  } while (pageToken);
+
+  return emailToUid;
+};
+
+const deleteAuthUserByIdentifier = async ({ uids = [], email, authEmailIndex }) => {
+  const uidCandidates = [...new Set(uids.filter(Boolean).map((value) => String(value).trim()))];
+
+  for (const uid of uidCandidates) {
+    try {
+      await admin.auth().deleteUser(uid);
+      return true;
+    } catch (authErr) {
+      if (authErr.code !== "auth/user-not-found") {
+        // Invalid UID and other UID-shape errors can happen with legacy data.
+        // Keep trying email-based fallbacks before failing the company deletion.
+        if (authErr.code !== "auth/invalid-uid") {
+          throw authErr;
+        }
+      }
+    }
+  }
+
+  const normalizedEmail = normalizeEmail(email);
+
+  if (normalizedEmail) {
+    const indexedUid = authEmailIndex?.get(normalizedEmail);
+    if (indexedUid) {
+      try {
+        await admin.auth().deleteUser(indexedUid);
+        authEmailIndex.delete(normalizedEmail);
+        return true;
+      } catch (authErr) {
+        if (authErr.code !== "auth/user-not-found") {
+          throw authErr;
+        }
+      }
+    }
+
+    try {
+      const authUser = await admin.auth().getUserByEmail(normalizedEmail);
+      await admin.auth().deleteUser(authUser.uid);
+      if (authEmailIndex) {
+        authEmailIndex.delete(normalizedEmail);
+      }
+      return true;
+    } catch (authErr) {
+      if (authErr.code !== "auth/user-not-found") {
+        throw authErr;
+      }
+    }
+  }
+
+  return false;
+};
 
 export const deleteCompany = async (req, res) => {
   try {
@@ -9,57 +81,58 @@ export const deleteCompany = async (req, res) => {
     const companySnap = await companyRef.get();
     const companyData = companySnap.exists ? companySnap.data() : null;
 
-    // 1️⃣ Find users only under freshers/{companyId}/departments/*/users/*
-    const departmentsSnap = await freshersCompanyRef.collection("departments").get();
-    const usersToDelete = [];
+    // 1️⃣ Collect every fresher/user doc that belongs to this company.
+    // We merge both strategies because some legacy docs may miss companyId.
+    const usersByPath = new Map();
 
-    for (const deptDoc of departmentsSnap.docs) {
-      const usersSnap = await deptDoc.ref.collection("users").get();
-      usersToDelete.push(...usersSnap.docs);
+    const usersSnap = await db.collectionGroup("users").where("companyId", "==", id).get();
+    for (const userDoc of usersSnap.docs) {
+      usersByPath.set(userDoc.ref.path, userDoc);
     }
 
-    // 2️⃣ Delete each user from Firebase Auth so they cannot login
+    const departmentsSnap = await freshersCompanyRef.collection("departments").get();
+    for (const deptDoc of departmentsSnap.docs) {
+      const deptUsersSnap = await deptDoc.ref.collection("users").get();
+      for (const userDoc of deptUsersSnap.docs) {
+        usersByPath.set(userDoc.ref.path, userDoc);
+      }
+    }
+
+    const usersToDelete = Array.from(usersByPath.values());
+
+    // 2️⃣ Delete each user from Firebase Auth so they cannot login again with the same email
+    const authEmailIndex = await buildAuthEmailIndex();
     let deletedAuthUsers = 0;
     for (const userDoc of usersToDelete) {
       const userData = userDoc.data();
-      const userEmail = userData?.email;
+      const deleted = await deleteAuthUserByIdentifier({
+        uids: [
+          userData?.authUid,
+          userData?.uid,
+          userData?.firebaseUid,
+          userData?.firebaseUID,
+          userData?.userId,
+          userDoc.id,
+        ],
+        email: userData?.email || userData?.userEmail || userData?.mail,
+        authEmailIndex,
+      });
 
-      if (!userEmail) {
-        continue;
-      }
-
-      try {
-        const authUser = await admin.auth().getUserByEmail(userEmail);
-        await admin.auth().deleteUser(authUser.uid);
+      if (deleted) {
         deletedAuthUsers += 1;
-      } catch (authErr) {
-        if (authErr.code !== "auth/user-not-found") {
-          throw authErr;
-        }
       }
     }
 
-    // 3️⃣ Hard delete company Firestore documents (full document + subcollections)
+    // 3️⃣ Delete company account in Firebase Auth
+    await deleteAuthUserByIdentifier({
+      uids: [id],
+      email: companyData?.email,
+      authEmailIndex,
+    });
+
+    // 4️⃣ Hard delete company Firestore documents (full document + subcollections)
     await db.recursiveDelete(freshersCompanyRef);
     await db.recursiveDelete(companyRef);
-
-    // 4️⃣ Delete company account in Firebase Auth
-    try {
-      await admin.auth().deleteUser(id);
-    } catch (authErr) {
-      if (authErr.code === "auth/user-not-found" && companyData?.email) {
-        try {
-          const companyAuthUser = await admin.auth().getUserByEmail(companyData.email);
-          await admin.auth().deleteUser(companyAuthUser.uid);
-        } catch (emailLookupErr) {
-          if (emailLookupErr.code !== "auth/user-not-found") {
-            throw emailLookupErr;
-          }
-        }
-      } else if (authErr.code !== "auth/user-not-found") {
-        throw authErr;
-      }
-    }
 
     res.json({
       message: "Company and all company users deleted successfully",

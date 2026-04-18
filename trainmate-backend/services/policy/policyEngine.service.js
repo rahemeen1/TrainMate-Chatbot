@@ -196,7 +196,7 @@ class PolicyEngine {
     if (downloadedBytes && downloadedBytes > 5 * 1024 * 1024) {
       issues.push("File is too large to be a typical CV.");
     }
-    if (wordCount < 200) {
+    if (wordCount < 100) {
       issues.push("Extracted text is too short for a real CV.");
     }
 
