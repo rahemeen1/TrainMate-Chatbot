@@ -14,7 +14,7 @@ import {
   Legend,
 } from "recharts";
 
-const COLORS = ["#00FFFF", "#34D399", "#A78BFA", "#F59E0B", "#60A5FA", "#F87171"];
+const COLORS = ["#00FFFF", "#EC4899", "#A78BFA", "#F59E0B", "#60A5FA", "#F87171"];
 
 const formatTimestamp = (timestamp) => {
   if (!timestamp) return "—";

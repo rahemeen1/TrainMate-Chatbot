@@ -276,12 +276,38 @@ const closeAddUserModal = () => {
 
          <div className="flex flex-col md:flex-row md:items-center gap-3 mb-4">
             <input
-      type="file"
-      ref={fileInputRef} // attach ref here
-      className="text-sm flex-1 bg-[#031C3A]/80 border border-[#00FFFF30] rounded-lg p-2.5"
-          disabled={isActionInProgress}
-      onChange={(e) => setDocFile(e.target.files[0])}
-    />
+              id="dept-doc-upload"
+              type="file"
+              ref={fileInputRef}
+              className="hidden"
+              disabled={isActionInProgress}
+              onChange={(e) => setDocFile(e.target.files[0])}
+            />
+
+            <div className="flex-1">
+              <label
+                htmlFor="dept-doc-upload"
+                className={`group inline-flex w-full items-center justify-between rounded-xl border px-4 py-3 text-sm font-semibold transition ${
+                  isActionInProgress
+                    ? "cursor-not-allowed border-gray-600 bg-gray-700/40 text-gray-300"
+                    : "cursor-pointer border-[#00FFFF4D] bg-[#031C3A]/85 text-[#DFFBFF] hover:border-[#00FFFF] hover:bg-[#05284F]"
+                }`}
+              >
+                <span className="inline-flex items-center gap-2">
+                  <span className="rounded-md bg-[#00FFFF1F] px-2 py-1 text-[#00FFFF]">Choose File</span>
+                  <span className="text-[#AFCBE3] group-hover:text-[#DDF6FF]">
+                    {docFile ? "File selected" : "Select a department document"}
+                  </span>
+                </span>
+                <span className="text-[#7DE7FF]">📎</span>
+              </label>
+
+              {docFile && (
+                <p className="mt-2 rounded-lg border border-[#00FFFF33] bg-[#031C3A]/70 px-3 py-2 text-xs text-[#CFEFFF] break-all">
+                  Selected: {docFile.name}
+                </p>
+              )}
+            </div>
 
            <button
   onClick={handleAddDoc}

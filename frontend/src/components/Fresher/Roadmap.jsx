@@ -22,6 +22,7 @@ export default function Roadmap() {
   const [roadmapGeneratedAt, setRoadmapGeneratedAt] = useState(null);
   const [userData, setUserData] = useState(null);
   const [licensePlan, setLicensePlan] = useState("License Basic");
+  const [cvValidationWarning, setCvValidationWarning] = useState(null);
   const generationRequestedRef = useRef(false);
 
 const getModuleStartDate = (module) => {
@@ -183,6 +184,8 @@ const getModuleStartDate = (module) => {
             trainingOn,
           });
 
+          setCvValidationWarning(null);
+
           roadmapSnap = await getDocs(roadmapRef);
         }
   const modules = roadmapSnap.docs
@@ -193,6 +196,22 @@ const getModuleStartDate = (module) => {
 
       } catch (err) {
         console.error(err);
+
+        const responseData = err?.response?.data;
+        const cvValidation = responseData?.cvValidation;
+        const isCvValidationFailure = Boolean(
+          err?.response?.status === 400 &&
+          cvValidation &&
+          cvValidation.recommendedAction === "reject"
+        );
+
+        if (isCvValidationFailure) {
+          setCvValidationWarning({
+            title: "Your uploaded file does not look like a CV",
+            message: responseData?.error || cvValidation?.reason || "Please upload a valid CV to continue.",
+            issues: Array.isArray(cvValidation?.issues) ? cvValidation.issues : [],
+          });
+        }
       } finally {
         setLoading(false);
       }
@@ -437,6 +456,38 @@ if (!roadmap.length)
       contentClassName="p-4 md:p-8"
     >
       <div className="min-h-[60vh] flex flex-col items-center justify-center text-white p-8">
+        {cvValidationWarning && (
+          <div className="w-full max-w-2xl mb-6 rounded-xl border border-yellow-400/40 bg-yellow-500/10 p-4 text-left">
+            <p className="text-yellow-300 font-semibold mb-2">⚠️ {cvValidationWarning.title}</p>
+            <p className="text-[#FCEFC7] text-sm">{cvValidationWarning.message}</p>
+            {cvValidationWarning.issues.length > 0 && (
+              <ul className="mt-2 list-disc pl-5 text-xs text-[#FCEFC7]">
+                {cvValidationWarning.issues.slice(0, 3).map((issue, idx) => (
+                  <li key={idx}>{issue}</li>
+                ))}
+              </ul>
+            )}
+            <button
+              onClick={() =>
+                navigate("/fresher-dashboard", {
+                  state: {
+                    forceOnboarding: true,
+                    onboardingNotice: "Please re-upload a valid CV (PDF or DOCX) so we can generate your roadmap.",
+                    userId,
+                    companyId,
+                    deptId,
+                    companyName,
+                    email: location?.state?.email || userData?.email || localStorage.getItem("email"),
+                  },
+                })
+              }
+              className="mt-3 px-4 py-2 bg-yellow-300 text-[#031C3A] rounded font-semibold hover:bg-yellow-200 transition"
+            >
+              Re-upload CV Now
+            </button>
+          </div>
+        )}
+
         <div className="text-[#00FFFF] mb-4">
           <svg
             className="w-20 h-20 mx-auto animate-bounce"
@@ -476,6 +527,31 @@ if (!roadmap.length)
       contentClassName="p-4 md:p-8"
     >
       <div className="space-y-6">
+        {cvValidationWarning && (
+          <div className="rounded-xl border border-yellow-400/40 bg-yellow-500/10 p-4">
+            <p className="text-yellow-300 font-semibold">⚠️ {cvValidationWarning.title}</p>
+            <p className="text-[#FCEFC7] text-sm mt-1">{cvValidationWarning.message}</p>
+            <button
+              onClick={() =>
+                navigate("/fresher-dashboard", {
+                  state: {
+                    forceOnboarding: true,
+                    onboardingNotice: "Please re-upload a valid CV (PDF or DOCX) so we can generate your roadmap.",
+                    userId,
+                    companyId,
+                    deptId,
+                    companyName,
+                    email: location?.state?.email || userData?.email || localStorage.getItem("email"),
+                  },
+                })
+              }
+              className="mt-3 px-4 py-2 bg-yellow-300 text-[#031C3A] rounded font-semibold hover:bg-yellow-200 transition"
+            >
+              Re-upload CV
+            </button>
+          </div>
+        )}
+
         <h2 className="text-3xl font-bold text-[#00FFFF] mb-2">Your Personalized Roadmap</h2>
         {roadmapGeneratedAt && (
           <p className="text-sm text-[#AFCBE3] mb-6">
