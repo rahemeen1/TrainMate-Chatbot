@@ -27,10 +27,10 @@ export default function FresherShellLayout({
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#031C3A] text-white">
+    <div className="min-h-screen bg-[#031C3A] text-white lg:relative">
       <div className="flex min-h-screen flex-col lg:flex-row">
-        <aside className="hidden lg:block lg:w-64 lg:flex-shrink-0">
-          <div className="h-full min-h-screen bg-[#021B36]/90 border-r border-[#00FFFF]/20 p-4 overflow-x-hidden">
+        <aside className="hidden lg:block lg:w-64 lg:flex-shrink-0 lg:fixed lg:inset-y-0 lg:left-0 lg:overflow-hidden">
+          <div className="h-full bg-[#021B36]/90 border-r border-[#00FFFF]/20 p-4 overflow-x-hidden">
             <FresherSideMenu
               userId={userId}
               companyId={companyId}
@@ -80,7 +80,7 @@ export default function FresherShellLayout({
           </div>
         </aside>
 
-        <main className={`flex-1 min-w-0 ${contentClassName}`}>
+        <main className={`flex-1 min-w-0 lg:ml-64 ${contentClassName}`}>
           <div className="mb-2 flex items-center justify-between px-4 pt-4 lg:hidden">
             <button
               type="button"

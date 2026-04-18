@@ -21,6 +21,22 @@ const cohere = new CohereClient({
   token: process.env.COHERE_API_KEY,
 });
 
+const DEFAULT_RETRIEVAL_SCORE_THRESHOLD = 0.65;
+
+function resolveRetrievalThreshold(value) {
+  const numericValue = Number(value);
+  if (Number.isFinite(numericValue) && numericValue >= 0 && numericValue <= 1) {
+    return numericValue;
+  }
+
+  const envValue = Number(process.env.PINECONE_RETRIEVAL_SCORE_THRESHOLD);
+  if (Number.isFinite(envValue) && envValue >= 0 && envValue <= 1) {
+    return envValue;
+  }
+
+  return DEFAULT_RETRIEVAL_SCORE_THRESHOLD;
+}
+
 /* --------------------------------------------------
    Retrieve department documents
 -------------------------------------------------- */
@@ -28,6 +44,7 @@ export const retrieveDeptDocsFromPinecone = async ({
   queryText,
   companyId,
   deptName,
+  minScore,
 }) => {
   console.log("\n================ PINECONE DEBUG START ================");
 
@@ -41,6 +58,7 @@ export const retrieveDeptDocsFromPinecone = async ({
   }
 
   const normalizedDept = deptName.toUpperCase();
+  const retrievalThreshold = resolveRetrievalThreshold(minScore);
 
   /* ---------------- 1️⃣ Embedding ---------------- */
   console.log("🔎 Generating Cohere embedding...");
@@ -73,10 +91,16 @@ export const retrieveDeptDocsFromPinecone = async ({
     includeMetadata: true,
   });
 
+  const filteredMatches = (response.matches || []).filter((match) => {
+    return typeof match?.score === "number" && match.score >= retrievalThreshold;
+  });
+
   console.log("✅ Pinecone matches →", response.matches?.length || 0);
+  console.log("🎯 Retrieval threshold →", retrievalThreshold);
+  console.log("✅ Matches after threshold →", filteredMatches.length);
   console.log("================ PINECONE DEBUG END ================\n");
 
-  return (response.matches || []).map((m) => ({
+  return filteredMatches.map((m) => ({
     text: m.metadata?.text || "",
     score: m.score,
   }));

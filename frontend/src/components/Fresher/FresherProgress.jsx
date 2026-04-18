@@ -30,6 +30,24 @@ export default function FresherProgress() {
 
   const isValidDate = (value) => value instanceof Date && !Number.isNaN(value.getTime());
 
+  const getModulePhaseNumber = (module, fallback = 1) => {
+    const title = String(module?.moduleTitle || "");
+    const titleMatch = title.match(/\bmodule\s*(\d+)\b/i);
+    if (titleMatch) {
+      const parsedFromTitle = Number(titleMatch[1]);
+      if (Number.isFinite(parsedFromTitle) && parsedFromTitle > 0) {
+        return parsedFromTitle;
+      }
+    }
+
+    const parsedOrder = Number(module?.order);
+    if (Number.isFinite(parsedOrder) && parsedOrder > 0) {
+      return parsedOrder;
+    }
+
+    return fallback;
+  };
+
   useEffect(() => {
     if (!userId || !companyId || !deptId) {
       navigate("/fresher-dashboard");
@@ -104,7 +122,8 @@ export default function FresherProgress() {
         setRoadmapModulesDetailed(modulesWithProgress);
 
         const events = [];
-        modulesWithProgress.forEach((module) => {
+        modulesWithProgress.forEach((module, index) => {
+          const phaseNumber = getModulePhaseNumber(module, index + 1);
           const startedAt = toDate(
             module.startedAt || module.FirstTimeCreatedAt || module.createdAt
           );
@@ -113,8 +132,8 @@ export default function FresherProgress() {
           if (isValidDate(startedAt)) {
             events.push({
               date: startedAt,
-              label: `Started Module ${module.order}: ${module.moduleTitle}`,
-              order: module.order ?? 0,
+              label: `Started Module ${phaseNumber}: ${module.moduleTitle}`,
+              order: phaseNumber,
               type: "start",
             });
           }
@@ -122,8 +141,8 @@ export default function FresherProgress() {
           if (isValidDate(completedAt)) {
             events.push({
               date: completedAt,
-              label: `Completed Module ${module.order}: ${module.moduleTitle}`,
-              order: module.order ?? 0,
+              label: `Completed Module ${phaseNumber}: ${module.moduleTitle}`,
+              order: phaseNumber,
               type: "complete",
             });
           }
@@ -150,8 +169,8 @@ export default function FresherProgress() {
         // ✅ Group modules by phase (order)
         const phaseMap = {};
 
-        modulesWithProgress.forEach((module) => {
-          const phase = module.order || 1; 
+        modulesWithProgress.forEach((module, index) => {
+          const phase = getModulePhaseNumber(module, index + 1);
           if (!phaseMap[phase]) phaseMap[phase] = [];
           phaseMap[phase].push(module);
         });
@@ -237,6 +256,16 @@ if (!userData) {
     </FresherShellLayout>
   );
 }
+
+  const hasPhaseProgress = Array.isArray(phaseProgress) && phaseProgress.length > 0;
+  const phaseChartData = hasPhaseProgress
+    ? phaseProgress.map((item, idx) => ({
+        name: item?.name || `Phase ${idx + 1}`,
+        progress: Number.isFinite(Number(item?.progress))
+          ? Math.max(0, Math.min(100, Number(item.progress)))
+          : 0,
+      }))
+    : [{ name: "No Data", progress: 0 }];
 
 
   return (
@@ -607,10 +636,12 @@ if (!userData) {
         <div className="bg-[#021B36]/80 p-6 rounded-xl border border-[#00FFFF30] mb-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl text-[#00FFFF] font-semibold">Phase-wise Progress</h2>
-            <span className="text-xs text-[#AFCBE3]">Modules grouped by phase</span>
+            <span className="text-xs text-[#AFCBE3]">
+              {hasPhaseProgress ? "Modules grouped by phase" : "No phase progress data yet"}
+            </span>
           </div>
           <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={phaseProgress}>
+            <BarChart data={phaseChartData}>
               <defs>
                 <linearGradient id="phaseGradient" x1="0" y1="0" x2="1" y2="1">
                   <stop offset="0%" stopColor="#00FFFF" />
@@ -620,16 +651,20 @@ if (!userData) {
               <XAxis
                 dataKey="name"
                 stroke="#AFCBE3"
+                tick={{ fill: "#AFCBE3", fontSize: 12 }}
                 tickLine={false}
                 axisLine={{ stroke: "#123456" }}
               />
               <YAxis
                 stroke="#AFCBE3"
+                tick={{ fill: "#AFCBE3", fontSize: 12 }}
                 tickLine={false}
                 axisLine={{ stroke: "#123456" }}
                 domain={[0, 100]}
+                allowDecimals={false}
               />
               <Tooltip
+                formatter={(value) => [`${value}%`, "Progress"]}
                 contentStyle={{
                   backgroundColor: "#021B36",
                   border: "1px solid #00FFFF33",
@@ -637,9 +672,14 @@ if (!userData) {
                 }}
                 cursor={{ fill: "#00FFFF12" }}
               />
-              <Bar dataKey="progress" fill="url(#phaseGradient)" radius={[8, 8, 0, 0]} />
+              <Bar dataKey="progress" fill="url(#phaseGradient)" radius={[8, 8, 0, 0]} minPointSize={2} />
             </BarChart>
           </ResponsiveContainer>
+          {!hasPhaseProgress && (
+            <p className="mt-3 text-xs text-[#AFCBE3]">
+              Graph will appear once module progress is available.
+            </p>
+          )}
         </div>
 
         <p className="text-center text-xs text-[#AFCBE3] mt-10">Powered by TrainMate</p>

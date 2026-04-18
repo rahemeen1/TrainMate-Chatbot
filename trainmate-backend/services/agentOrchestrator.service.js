@@ -87,6 +87,28 @@ const VALIDATION_SCORE_THRESHOLDS = {
   trusted: 85,
 };
 
+const DEFAULT_RETRIEVAL_THRESHOLD = 0.65;
+const RETRIEVAL_THRESHOLD_STEP = 0.05;
+const MAX_RETRIEVAL_THRESHOLD = 0.85;
+const AGENT_RETRIEVAL_BASE_THRESHOLDS = {
+  "extract-company-skills": 0.72,
+  "retrieve-documents": 0.6,
+};
+
+function resolveAgentRetrievalBaseThreshold(agentName) {
+  return AGENT_RETRIEVAL_BASE_THRESHOLDS[String(agentName || "")] ?? DEFAULT_RETRIEVAL_THRESHOLD;
+}
+
+function resolveRetrievalThreshold(baseThreshold = DEFAULT_RETRIEVAL_THRESHOLD, retryAttempt = 0) {
+  const numericBase = Number(baseThreshold);
+  const normalizedBase = Number.isFinite(numericBase) && numericBase >= 0 && numericBase <= 1
+    ? numericBase
+    : DEFAULT_RETRIEVAL_THRESHOLD;
+  const numericAttempt = Math.max(0, Number(retryAttempt) || 0);
+
+  return Math.min(MAX_RETRIEVAL_THRESHOLD, normalizedBase + numericAttempt * RETRIEVAL_THRESHOLD_STEP);
+}
+
 function getValidationScoreBand(score) {
   const numericScore = Number(score);
   if (!Number.isFinite(numericScore)) return "retry";
@@ -479,7 +501,7 @@ export class AgentOrchestrator {
       };
     });
 
-    this.registerAgent('extract-company-skills', async ({ previousResults, context }) => {
+    this.registerAgent('extract-company-skills', async ({ previousResults, context, retrievalConfig = {} }) => {
       console.log('    🤖 Company Skills Agent: Analyzing company docs...');
       const { companyDocsText, expertise, trainingOn, companyId, deptId } = context;
 
@@ -493,6 +515,7 @@ export class AgentOrchestrator {
             queryText: fallbackQuery,
             companyId,
             deptName: deptId,
+            minScore: retrievalConfig.minScore,
           });
           resolvedCompanyDocsText = (Array.isArray(docs) ? docs : [])
             .map((item) => item?.text || '')
@@ -665,7 +688,7 @@ Return JSON:
       };
     });
 
-    this.registerAgent('retrieve-documents', async ({ previousResults, context }) => {
+    this.registerAgent('retrieve-documents', async ({ previousResults, context, retrievalConfig = {} }) => {
       console.log('    🤖 Retrieval Agent: Fetching company documents...');
       const queries = previousResults['plan-retrieval']?.queries || [];
       const { companyId, deptId } = context;
@@ -677,6 +700,7 @@ Return JSON:
             queryText: query,
             companyId,
             deptName: deptId,
+            minScore: retrievalConfig.minScore,
           });
           allDocs.push(...docs);
         } catch (error) {
@@ -1403,6 +1427,17 @@ Return JSON only:
             });
           }
           step.critical = false;
+          step.retryPolicy = {
+            maxRetries: Math.max(2, Number(step?.retryPolicy?.maxRetries) || 1),
+            backoffMs: Math.max(0, Number(step?.retryPolicy?.backoffMs) || 1000),
+          };
+        }
+
+        if (step.agent === "extract-company-skills") {
+          step.retryPolicy = {
+            maxRetries: Math.max(2, Number(step?.retryPolicy?.maxRetries) || 1),
+            backoffMs: Math.max(0, Number(step?.retryPolicy?.backoffMs) || 1000),
+          };
         }
       }
     }
@@ -2040,6 +2075,11 @@ Return JSON only:
         let attemptQueued = false;
         try {
           const constraints = this.normalizeConstraintEnvelope(context?.constraints);
+          const baseRetrievalThreshold = step?.retryPolicy?.retrievalThreshold ?? resolveAgentRetrievalBaseThreshold(step.agent);
+          const retrievalThreshold = resolveRetrievalThreshold(
+            baseRetrievalThreshold,
+            attempts
+          );
           const executionPlan = {
             strategy: "single_pass",
             retrievalDepth: "standard",
@@ -2048,6 +2088,13 @@ Return JSON only:
 
           output = await agentDefinition.execute({
             ...stepInput,
+            retrievalConfig: {
+              minScore: retrievalThreshold,
+              retryAttempt: attempts,
+              baseThreshold: Number(baseRetrievalThreshold) || DEFAULT_RETRIEVAL_THRESHOLD,
+              maxThreshold: MAX_RETRIEVAL_THRESHOLD,
+              thresholdStep: RETRIEVAL_THRESHOLD_STEP,
+            },
             executionPlan,
             constraints,
           });
