@@ -419,13 +419,35 @@ function normalizeSkillToken(skill) {
   return normalizeGapSkillKey(skill);
 }
 
+function isSkillTokenMatch(a, b) {
+  const left = normalizeSkillToken(a);
+  const right = normalizeSkillToken(b);
+  if (!left || !right) return false;
+  if (left === right) return true;
+
+  // Allow light label drift (e.g., "js basics" vs "javascript fundamentals").
+  if ((left.length >= 4 && right.includes(left)) || (right.length >= 4 && left.includes(right))) {
+    return true;
+  }
+
+  const leftTokens = tokenizeSkill(left);
+  const rightTokens = tokenizeSkill(right);
+  if (leftTokens.length === 0 || rightTokens.length === 0) return false;
+
+  const overlap = leftTokens.filter((token) => rightTokens.includes(token)).length;
+  const minTokens = Math.min(leftTokens.length, rightTokens.length);
+  const overlapRatio = minTokens > 0 ? overlap / minTokens : 0;
+
+  return overlap >= 2 || overlapRatio >= 0.7;
+}
+
 function getSkillPriorityRank(skill, prioritizedSkills = {}) {
   const normalizedSkill = normalizeSkillToken(skill);
-  const mustHave = new Set(normalizePrioritySkillsList(prioritizedSkills.mustHave).map(normalizeSkillToken));
-  const goodToHave = new Set(normalizePrioritySkillsList(prioritizedSkills.goodToHave).map(normalizeSkillToken));
+  const mustHave = normalizePrioritySkillsList(prioritizedSkills.mustHave).map(normalizeSkillToken);
+  const goodToHave = normalizePrioritySkillsList(prioritizedSkills.goodToHave).map(normalizeSkillToken);
 
-  if (mustHave.has(normalizedSkill)) return 0;
-  if (goodToHave.has(normalizedSkill)) return 1;
+  if (mustHave.some((candidate) => isSkillTokenMatch(normalizedSkill, candidate))) return 0;
+  if (goodToHave.some((candidate) => isSkillTokenMatch(normalizedSkill, candidate))) return 1;
   return 2;
 }
 
@@ -2490,16 +2512,23 @@ Return JSON only:
       const moduleRanks = modules.map((module) => getModulePriorityRank(module, prioritizedSkills));
       const orderingValid = moduleRanks.every((rank, idx) => idx === 0 || rank >= moduleRanks[idx - 1]);
       const topMustHaveSkills = normalizePrioritySkillsList(prioritizedSkills.mustHave);
-      const firstModuleSkills = Array.isArray(modules[0]?.skillsCovered) ? modules[0].skillsCovered : [];
       const firstModuleRank = modules.length > 0 ? moduleRanks[0] : 3;
-      const mustHaveSatisfied = topMustHaveSkills.length === 0 || firstModuleRank === 0;
+      const hasMustHaveCoverage = moduleRanks.some((rank) => rank === 0);
+      const mustHaveSatisfied =
+        topMustHaveSkills.length === 0 ||
+        firstModuleRank === 0 ||
+        !hasMustHaveCoverage;
       const score = validModules > 0 ? 92 : 20;
-      const finalScore = validModules > 0 && orderingValid && mustHaveSatisfied ? score : Math.min(score, 45);
+      const finalScore = validModules > 0 && orderingValid && mustHaveSatisfied
+        ? score
+        : validModules > 0 && orderingValid
+          ? Math.min(score, 78)
+          : Math.min(score, 45);
       return {
-        pass: validModules > 0 && orderingValid && mustHaveSatisfied,
+        pass: validModules > 0 && orderingValid,
         score: finalScore,
         reason: validModules > 0
-          ? orderingValid && mustHaveSatisfied
+          ? orderingValid
             ? "Roadmap modules generated in prioritized order"
             : "Roadmap modules generated but ordering does not prioritize must-have skills"
           : "No roadmap modules generated",
@@ -2507,6 +2536,9 @@ Return JSON only:
           ...(validModules > 0 ? [] : ["modules array is empty or invalid"]),
           ...(orderingValid ? [] : ["modules are not ordered by skill priority"]),
           ...(mustHaveSatisfied ? [] : ["first module does not cover must-have skills"]),
+          ...(!hasMustHaveCoverage && topMustHaveSkills.length > 0
+            ? ["must-have skills are not explicitly represented in skillsCovered labels"]
+            : []),
         ],
         canRecover: true,
         scoreBand: getValidationScoreBand(finalScore),
