@@ -10,6 +10,60 @@ import TrainingLockedScreen from "./TrainingLockedScreen";
 import { getCompanyLicensePlan } from "../../services/companyLicense";
 import CompanyPageLoader from "../CompanySpecific/CompanyPageLoader";
 
+const BEGINNER_KEYWORDS = ["fundamental", "fundamentals", "foundation", "foundations", "basic", "basics", "intro", "introduction", "core"];
+const INTERMEDIATE_KEYWORDS = ["intermediate", "applied", "practical", "implementation", "orchestration", "integration"];
+const ADVANCED_KEYWORDS = ["advanced", "optimization", "scaling", "scale", "deployment", "production", "distributed", "agentic", "multi-agent"];
+
+const keywordScore = (text, keywords) => {
+  const normalized = String(text || "").toLowerCase();
+  return keywords.reduce((score, keyword) => (normalized.includes(keyword) ? score + 1 : score), 0);
+};
+
+const inferDifficultyRank = (module, fallbackRank = Number.MAX_SAFE_INTEGER) => {
+  const title = String(module?.moduleTitle || "");
+  const description = String(module?.description || "");
+  const searchable = `${title} ${description}`;
+
+  const moduleNumberMatch = title.match(/\bmodule\s*(\d+)\b/i);
+  if (moduleNumberMatch) {
+    const parsed = Number(moduleNumberMatch[1]);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+
+  const advancedHits = keywordScore(searchable, ADVANCED_KEYWORDS);
+  if (advancedHits > 0) return 300 + (10 - Math.min(advancedHits, 10));
+
+  const intermediateHits = keywordScore(searchable, INTERMEDIATE_KEYWORDS);
+  if (intermediateHits > 0) return 200 + (10 - Math.min(intermediateHits, 10));
+
+  const beginnerHits = keywordScore(searchable, BEGINNER_KEYWORDS);
+  if (beginnerHits > 0) return 100 + (10 - Math.min(beginnerHits, 10));
+
+  const storedOrder = Number(module?.order);
+  if (Number.isFinite(storedOrder) && storedOrder > 0) return 400 + storedOrder;
+
+  return fallbackRank;
+};
+
+const sortRoadmapModules = (modules) =>
+  (Array.isArray(modules) ? modules : [])
+    .map((module, idx) => ({
+      module,
+      idx,
+      rank: inferDifficultyRank(module, 1000 + idx),
+    }))
+    .sort((a, b) => {
+      if (a.rank !== b.rank) return a.rank - b.rank;
+      const aDuration = Number(a.module?.estimatedDays || 0);
+      const bDuration = Number(b.module?.estimatedDays || 0);
+      if (aDuration !== bDuration) return aDuration - bDuration;
+      return a.idx - b.idx;
+    })
+    .map(({ module }, index) => ({
+      ...module,
+      order: index + 1,
+    }));
+
 export default function Roadmap() {
   const BASE_MAX_QUIZ_ATTEMPTS = 3;
   const DEFAULT_QUIZ_UNLOCK_PERCENT = 70;
@@ -188,9 +242,9 @@ const getModuleStartDate = (module) => {
 
           roadmapSnap = await getDocs(roadmapRef);
         }
-  const modules = roadmapSnap.docs
-  .map((doc) => ({ id: doc.id, ...doc.data() }))
-  .sort((a, b) => a.order - b.order);
+  const modules = sortRoadmapModules(
+    roadmapSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+  );
 
   setRoadmap(modules);
 
@@ -233,9 +287,9 @@ const getModuleStartDate = (module) => {
           "roadmap"
         );
         const roadmapSnap = await getDocs(roadmapRef);
-        const modules = roadmapSnap.docs
-          .map((doc) => ({ id: doc.id, ...doc.data() }))
-          .sort((a, b) => a.order - b.order);
+        const modules = sortRoadmapModules(
+          roadmapSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+        );
         setRoadmap(modules);
       } catch (err) {
         console.warn("⚠️ Roadmap refresh failed:", err);

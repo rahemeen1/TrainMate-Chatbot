@@ -26,6 +26,58 @@ async function ensureAgentsInitialized() {
 
 const ROADMAP_LOCK_TTL_MS = 5 * 60 * 1000;
 
+const BEGINNER_KEYWORDS = ['fundamental', 'fundamentals', 'foundation', 'foundations', 'basic', 'basics', 'intro', 'introduction', 'core'];
+const INTERMEDIATE_KEYWORDS = ['intermediate', 'applied', 'practical', 'implementation', 'orchestration', 'integration'];
+const ADVANCED_KEYWORDS = ['advanced', 'optimization', 'scaling', 'scale', 'deployment', 'production', 'distributed', 'agentic', 'multi-agent'];
+
+function keywordScore(text, keywords) {
+  const normalized = String(text || '').toLowerCase();
+  return keywords.reduce((score, keyword) => (normalized.includes(keyword) ? score + 1 : score), 0);
+}
+
+function inferDifficultyRank(module, fallbackRank = Number.MAX_SAFE_INTEGER) {
+  const title = String(module?.moduleTitle || '');
+  const description = String(module?.description || '');
+  const searchable = `${title} ${description}`;
+
+  // Prefer explicit numbering when the title follows "Module N" format.
+  const moduleNumberMatch = title.match(/\bmodule\s*(\d+)\b/i);
+  if (moduleNumberMatch) {
+    const parsed = Number(moduleNumberMatch[1]);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+
+  const advancedHits = keywordScore(searchable, ADVANCED_KEYWORDS);
+  if (advancedHits > 0) return 300 + (10 - Math.min(advancedHits, 10));
+
+  const intermediateHits = keywordScore(searchable, INTERMEDIATE_KEYWORDS);
+  if (intermediateHits > 0) return 200 + (10 - Math.min(intermediateHits, 10));
+
+  const beginnerHits = keywordScore(searchable, BEGINNER_KEYWORDS);
+  if (beginnerHits > 0) return 100 + (10 - Math.min(beginnerHits, 10));
+
+  return fallbackRank;
+}
+
+function orderModulesBasicToAdvanced(modules) {
+  if (!Array.isArray(modules)) return [];
+
+  return modules
+    .map((module, idx) => ({
+      module,
+      idx,
+      rank: inferDifficultyRank(module, 1000 + idx),
+    }))
+    .sort((a, b) => {
+      if (a.rank !== b.rank) return a.rank - b.rank;
+      const aDuration = Number(a.module?.estimatedDays || 0);
+      const bDuration = Number(b.module?.estimatedDays || 0);
+      if (aDuration !== bDuration) return aDuration - bDuration;
+      return a.idx - b.idx;
+    })
+    .map(({ module }) => module);
+}
+
 /**
  * Main roadmap generation endpoint
  * 
@@ -228,7 +280,9 @@ export const generateUserRoadmap = async (req, res) => {
     console.log('   Quality validation:', orchestrationResult.metadata?.validationScore || 'unknown');
 
     // Extract final roadmap modules
-    const roadmapModules = orchestrationResult.finalOutput?.modules || [];
+    const generatedModules = orchestrationResult.finalOutput?.modules || [];
+
+    const roadmapModules = orderModulesBasicToAdvanced(generatedModules);
 
     if (!Array.isArray(roadmapModules) || roadmapModules.length === 0) {
       throw new Error('❌ Orchestration did not generate roadmap modules');

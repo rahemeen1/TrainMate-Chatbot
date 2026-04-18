@@ -573,3 +573,79 @@ Typical roadmap-generation run uses this subset:
 
 Agent available in registry but generally outside roadmap generation path:
 - evaluate-code
+
+## 12) Today's Production Updates (2026-04-18)
+
+This section records the runtime changes implemented today.
+
+### A. Company-skill extraction now preloads Pinecone docs when context is empty
+
+File: services/agentOrchestrator.service.js
+
+Problem observed:
+- Pinecone queries were returning matches, but `extract-company-skills` sometimes ran before `retrieve-documents` had injected context, so `companyDocsText` could be empty at extraction time.
+
+Implemented fix:
+1. In `extract-company-skills`, if `companyDocsText` is empty:
+- orchestrator now performs a focused Pinecone fetch directly (using company + department context),
+- concatenates retrieved text,
+- passes this resolved text to `extractSkillsAgentically(..., mode: company_only)`.
+
+Runtime effect:
+- Company extraction now uses real company docs earlier in the pipeline.
+- Reduces unintended fallback pressure toward topic inference when docs are actually available.
+
+New diagnostic log added:
+- `Company Skills Agent preload docs: { fetched, chars }`
+
+### B. Confidence and bucketing logs: debug-gated detail + always-on compact summary
+
+File: services/agentOrchestrator.service.js
+
+Current log model:
+1. Detailed confidence scoring logs remain behind env flag:
+- `DEBUG_CONFIDENCE_SCORING=true`
+- includes per-skill weighted scoring details and bucket-debug internals.
+
+2. Always-on summary log added (no env flag needed):
+- `Gap confidence summary: { prioritized, buckets, topScored }`
+
+Runtime effect:
+- Normal runs now visibly show confidence/bucket outcomes without noisy full debug traces.
+- Deep per-skill internals are still available when explicitly enabled.
+
+### C. Company-doc technical term retention improved (less over-compression)
+
+File: services/agenticSkillExtractor.service.js
+
+Problem observed:
+- Rich technical company docs were being over-compressed into a few generic skills.
+
+Implemented fix:
+1. Added technical keyword signal extraction from company-doc text.
+2. Merged those signals into extracted skills before final normalization.
+3. Relaxed strict filtering for technical multi-word terms so valid domain phrases are retained.
+4. Added extraction diagnostic log:
+- `retained N technical keyword signals`
+
+Examples of retained domain terms (when present in docs):
+- Retrieval Augmented Generation (RAG)
+- Agentic AI
+- ReAct Reasoning Loop
+- Self-RAG Verification
+- HNSW Indexing
+- Cosine Similarity
+- Embeddings
+- Vector Databases / Pinecone
+- LangChain / CrewAI / AutoGen
+
+Runtime effect:
+- Company skill extraction better reflects actual enterprise docs.
+- Improves downstream gap quality and roadmap relevance.
+
+### D. Validation/scoring thresholds remain unchanged
+
+No threshold behavior changes were made today. Active score-band policy remains:
+- `< 70` => retry
+- `70-85` => degraded
+- `> 85` => trusted
