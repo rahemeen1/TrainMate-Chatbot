@@ -37,11 +37,18 @@ jobs:
             exit 1
           fi
 
-      - name: Deploy to Firebase
-        uses: FirebaseExtended/action-hosting-deploy@v0
-        with:
-          entryPoint: ./frontend
-          repoToken: "${{ secrets.GITHUB_TOKEN }}"
-          firebaseServiceAccount: "${{ secrets.FIREBASE_SERVICE_ACCOUNT || secrets.FIREBASE_SERVICE_ACCOUNT_TRAINMATE_CHATBOT }}"
-          channelId: live
-          projectId: trainmate-chatbot
+      - name: Prepare Firebase credentials
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: "${{ secrets.FIREBASE_SERVICE_ACCOUNT != '' && secrets.FIREBASE_SERVICE_ACCOUNT || secrets.FIREBASE_SERVICE_ACCOUNT_TRAINMATE_CHATBOT }}"
+        run: |
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/firebase-service-account.json"
+          node -e "const fs=require('fs'); const p=process.env.RUNNER_TEMP + '/firebase-service-account.json'; const j=JSON.parse(fs.readFileSync(p,'utf8')); if(!j.project_id||!j.client_email||!j.private_key){throw new Error('Invalid Firebase service account JSON');} console.log('Firebase credentials loaded for project:', j.project_id);"
+
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools@13
+
+      - name: Deploy to Firebase Hosting
+        working-directory: ./frontend
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-service-account.json
+        run: firebase deploy --only hosting --project trainmate-chatbot --config firebase.json --non-interactive --debug
