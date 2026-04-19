@@ -405,7 +405,7 @@ Retrieval is done in two stages:
 - A retrieval score threshold is applied before results are returned.
 - The default minimum score starts at `0.65` and can be overridden through config.
 - Per-agent baselines are used now:
-  - `extract-company-skills` starts stricter at `0.72`
+  - `extract-company-skills` starts at `0.60`
   - `retrieve-documents` starts slightly looser at `0.60`
 - On retry, the orchestrator hardens the threshold by `0.05` per attempt, up to `0.85`.
 
@@ -451,6 +451,32 @@ $$
   - `70-85` => `degraded`
   - `> 85` => `trusted`
 - Retry logic is triggered for retry-band outputs on critical steps.
+
+Strict validation update for roadmap quality:
+- `validate-roadmap` now uses deterministic multi-gate validation rather than a single LLM-only pass/score.
+- Output includes gate-level diagnostics (`gates`), hard blockers (`hardFails`), and actionable feedback.
+- Step-level validation enforces `output.pass === true` for successful `validate-roadmap` completion.
+
+Hard fail gates (non-negotiable):
+1. Must-have skill coverage gate
+- coverage = `coveredMustHave / totalMustHave`
+- fail when `< 0.60`
+
+2. Empty or trivial module gate
+- fail when module count `< 2`
+- fail when modules are generic/trivial placeholders (for example: `Learn basics`, `Practice`, generic module naming)
+
+3. Duration realism gate
+- convert duration constraint to days and compare to generated total days
+- fail when mismatch is greater than `40%`
+
+4. Core category presence gate
+- infer required clusters from must-have/company skills (backend, frontend, ml, data, devops, accounting, communication)
+- fail when any required cluster is absent in generated modules
+
+Additional quality gates:
+- structure/progression gate (must-have coverage should appear earlier)
+- context alignment gate (module content should align with CV/company/training anchors)
 
 4. Final readiness score (0-100)
 - Final orchestration output is validated (`validateFinalOutput(...)`).
@@ -887,14 +913,20 @@ Agent key: validate-roadmap
 Input:
 - modules
 - allowed duration
+- must-have skills
+- CV + company context signals
 
 Decision logic:
-- Scores completeness, realism, progression, and coverage
-- Returns pass/fail with issues
+- Runs deterministic strict multi-gate validation
+- Applies hard-fail conditions for coverage, module quality, duration realism, and missing core categories
+- Evaluates structure progression and context alignment
+- Emits runtime gate diagnostics for observability
 
 Output:
 - pass
 - score
+- hardFails
+- gates
 - issues
 - improvements
 
@@ -979,6 +1011,16 @@ Output includes:
 - requiresRoadmapRegeneration
 - lockModule/contactAdmin flags
 
+Logic notes:
+- Decision is policy-driven via `policyEngine.decide("quizOutcome", input)`.
+- Input includes score, attempt number, score breakdown (MCQ/one-liner/coding), weak areas, module title, max attempts, and pass threshold.
+- If policy LLM output is unavailable or malformed, deterministic fallback logic is applied.
+- Fallback behavior can trigger retry allowance, module lock, and admin contact flags.
+
+Controller integration:
+- Quiz controller uses `makeAgenticDecision(...)` to call `quizOutcome` and apply the decision to learner state.
+- Decision affects retries, remediation guidance, lock behavior, and escalation.
+
 ---
 
 ### 5) stepRecovery and recoveryStrategy
@@ -1007,6 +1049,52 @@ Output:
 
 ### 7) chatResponse
 Creates a response plan, retrieves best context, runs multi-candidate response generation, judges best answer, and applies guardrails.
+
+---
+
+## I. Quiz Runtime Logic (Module + Final)
+
+### I.1 Module Quiz Path
+
+1. Quiz generation
+- Generated with module-specific context, critique loop, and structure checks.
+- Supports MCQ and one-liners always; coding questions are conditional by department rules.
+
+2. Time unlock gate
+- Module quiz unlock is time-gated at `70%` of module estimated duration from module start.
+
+3. Scoring and evaluation
+- MCQ: deterministic correct-index scoring.
+- One-liner: exact-match first, then LLM semantic evaluation fallback.
+- Coding (if present): evaluated via code evaluator service.
+
+4. Attempt decisioning
+- `quizOutcome` policy decides retries, lock/escalation, and regeneration/remediation hints.
+- Admin notifications may be created when retries are exhausted.
+
+### I.2 Final Assessment Path
+
+1. Eligibility
+- Final assessment opens only after all roadmap modules are completed.
+
+2. Attempts and deadlines
+- Attempts are tracked and bounded by final-assessment attempt limits.
+- Deadline and status checks prevent indefinite retry loops.
+
+3. Outcome handling
+- Pass: unlock certificate flow.
+- Fail after limits: create admin notification and keep progression guarded.
+
+4. Completion reporting
+- Generates training summary report payload.
+- Triggers notification/email/PDF summary flow where applicable.
+
+### I.3 Primary Files (Quiz)
+- `controllers/QuizController.js`
+- `services/policy/policyEngine.service.js` (`quizOutcome`)
+- `services/codeEvaluator.service.js`
+- `services/calendarService.js`
+- `services/emailService.js`
 
 ---
 
@@ -1076,7 +1164,7 @@ These are the important changes added most recently:
 - agent health snapshots are validated before display
 - fresher deletion now removes the user recursively from Firestore
 - chat unlock intent detection was tightened to reduce false positives
-
+- roadmap validation now uses strict deterministic multi-gate checks with hard-fail conditions
 ---
 
 ## H. One-Line Summary
