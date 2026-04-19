@@ -1,4 +1,3 @@
-//trainmate-backend/services/llmService.js
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import dotenv from "dotenv";
 
@@ -28,47 +27,16 @@ function normalizePrioritySkillsList(skills = []) {
   );
 }
 
-function tokenizeSkill(skill) {
-  return normalizeSkillToken(skill)
-    .split(" ")
-    .filter((token) => token.length >= 3);
-}
-
-function isSkillTokenMatch(a, b) {
-  const left = normalizeSkillToken(a);
-  const right = normalizeSkillToken(b);
-  if (!left || !right) return false;
-  if (left === right) return true;
-
-  if ((left.length >= 4 && right.includes(left)) || (right.length >= 4 && left.includes(right))) {
-    return true;
-  }
-
-  const leftTokens = tokenizeSkill(left);
-  const rightTokens = tokenizeSkill(right);
-  if (leftTokens.length === 0 || rightTokens.length === 0) return false;
-
-  const overlap = leftTokens.filter((token) => rightTokens.includes(token)).length;
-  const minTokens = Math.min(leftTokens.length, rightTokens.length);
-  const overlapRatio = minTokens > 0 ? overlap / minTokens : 0;
-
-  return overlap >= 2 || overlapRatio >= 0.7;
-}
-
 function getModulePriorityRank(module = {}, prioritizedSkills = {}) {
-  const mustHave = normalizePrioritySkillsList(prioritizedSkills.mustHave).map(normalizeSkillToken);
-  const goodToHave = normalizePrioritySkillsList(prioritizedSkills.goodToHave).map(normalizeSkillToken);
+  const mustHave = new Set(normalizePrioritySkillsList(prioritizedSkills.mustHave).map(normalizeSkillToken));
+  const goodToHave = new Set(normalizePrioritySkillsList(prioritizedSkills.goodToHave).map(normalizeSkillToken));
   const skills = Array.isArray(module?.skillsCovered) ? module.skillsCovered : [];
 
   if (skills.length === 0) return 3;
 
   return skills.reduce((bestRank, skill) => {
     const normalized = normalizeSkillToken(skill);
-    const rank = mustHave.some((candidate) => isSkillTokenMatch(normalized, candidate))
-      ? 0
-      : goodToHave.some((candidate) => isSkillTokenMatch(normalized, candidate))
-        ? 1
-        : 2;
+    const rank = mustHave.has(normalized) ? 0 : goodToHave.has(normalized) ? 1 : 2;
     return Math.min(bestRank, rank);
   }, 3);
 }
