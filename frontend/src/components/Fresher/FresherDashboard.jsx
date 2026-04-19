@@ -17,6 +17,8 @@ import { auth, db } from "../../firebase";
 import OnboardingPage from "./OnboardingPage";
 import FresherShellLayout from "./FresherShellLayout";
 
+const API_BASE_URL = (process.env.REACT_APP_API_BASE_URL || "").replace(/\/$/, "");
+
 // Custom scrollbar styles
 const scrollbarStyles = `
   .custom-scrollbar::-webkit-scrollbar {
@@ -99,7 +101,7 @@ const checkRoadmapExists = async () => {
 const fetchMissedDates = async () => {
   try {
     if (!companyId || !deptId || !userId) return;
-    const response = await fetch("http://localhost:5000/api/chat/missed-dates", {
+    const response = await fetch(`${API_BASE_URL}/api/chat/missed-dates`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId, companyId, deptId })

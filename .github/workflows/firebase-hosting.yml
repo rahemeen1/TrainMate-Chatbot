@@ -26,12 +26,21 @@ jobs:
         working-directory: ./frontend
         env:
           CI: "false"
+          REACT_APP_API_BASE_URL: "${{ secrets.REACT_APP_API_BASE_URL }}"
         run: npm run build
+
+      - name: Validate Firebase deploy secrets
+        run: |
+          if [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ] && [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT_TRAINMATE_CHATBOT }}" ]; then
+            echo "Missing Firebase service account secret."
+            echo "Set FIREBASE_SERVICE_ACCOUNT or FIREBASE_SERVICE_ACCOUNT_TRAINMATE_CHATBOT in GitHub repository secrets."
+            exit 1
+          fi
 
       - name: Deploy to Firebase
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: "${{ secrets.GITHUB_TOKEN }}"
-          firebaseServiceAccount: "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}"
+          firebaseServiceAccount: "${{ secrets.FIREBASE_SERVICE_ACCOUNT || secrets.FIREBASE_SERVICE_ACCOUNT_TRAINMATE_CHATBOT }}"
           channelId: live
           projectId: trainmate-chatbot
