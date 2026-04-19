@@ -17,7 +17,15 @@ import { auth, db } from "../../firebase";
 import OnboardingPage from "./OnboardingPage";
 import FresherShellLayout from "./FresherShellLayout";
 
-const API_BASE_URL = (process.env.REACT_APP_API_BASE_URL || "").replace(/\/$/, "");
+const toDateSafe = (value) => {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  if (value?.toDate) return value.toDate();
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
 
 // Custom scrollbar styles
 const scrollbarStyles = `
@@ -97,19 +105,125 @@ const checkRoadmapExists = async () => {
   }
 };
 
-// Fetch missed dates
+// Build dashboard stats from Firestore so production does not depend on the API route
 const fetchMissedDates = async () => {
   try {
     if (!companyId || !deptId || !userId) return;
-    const response = await fetch(`${API_BASE_URL}/api/chat/missed-dates`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, companyId, deptId })
-    });
-    const data = await response.json();
-    if (data.success) {
-      setMissedDateInfo(data);
+
+    const roadmapRef = collection(
+      db,
+      "freshers",
+      companyId,
+      "departments",
+      deptId,
+      "users",
+      userId,
+      "roadmap"
+    );
+
+    const roadmapSnap = await getDocs(roadmapRef);
+
+    if (roadmapSnap.empty) {
+      setMissedDateInfo({
+        success: true,
+        hasMissedDates: false,
+        missedDates: [],
+        firstMissedDate: null,
+        missedCount: 0,
+        activeDays: 0,
+        missedDays: 0,
+        totalExpectedDays: 0,
+        currentStreak: 0,
+        activeModuleName: "No roadmap",
+      });
+      return;
     }
+
+    const allModules = roadmapSnap.docs.map((moduleDoc) => ({
+      id: moduleDoc.id,
+      ...moduleDoc.data(),
+    }));
+
+    const roadmapGeneratedAt =
+      toDateSafe(userData?.roadmapAgentic?.generatedAt) ||
+      toDateSafe(userData?.roadmapGeneratedAt) ||
+      toDateSafe(allModules[0]?.startedAt) ||
+      toDateSafe(allModules[0]?.FirstTimeCreatedAt) ||
+      toDateSafe(allModules[0]?.createdAt);
+
+    const uniqueActiveDates = new Set();
+    for (const module of allModules) {
+      const chatSessionsRef = collection(
+        db,
+        "freshers",
+        companyId,
+        "departments",
+        deptId,
+        "users",
+        userId,
+        "roadmap",
+        module.id,
+        "chatSessions"
+      );
+      const chatSessionsSnap = await getDocs(chatSessionsRef);
+      chatSessionsSnap.docs.forEach((docSnap) => uniqueActiveDates.add(docSnap.id));
+    }
+
+    const activeDaysFromFirestore = uniqueActiveDates.size;
+    const estimatedTotalDaysFromRoadmap = allModules.reduce(
+      (sum, module) => sum + (Number(module.estimatedDays) || 1),
+      0
+    );
+
+    const sortedModules = [...allModules].sort((a, b) => {
+      const aOrder = Number(a.order) || 0;
+      const bOrder = Number(b.order) || 0;
+      return aOrder - bOrder;
+    });
+
+    const activeModule =
+      sortedModules.find((module) => module.status === "in-progress") ||
+      sortedModules.find((module) => module.status === "pending") ||
+      sortedModules[0];
+
+    const activeModuleName = activeModule?.moduleTitle || "No active module";
+
+    let missedDates = [];
+    if (roadmapGeneratedAt) {
+      const startDate = startOfDay(roadmapGeneratedAt);
+      const today = startOfDay(new Date());
+      const endDate = new Date(today);
+      endDate.setDate(endDate.getDate() - 1);
+
+      if (endDate >= startDate) {
+        const currentDate = new Date(startDate);
+        while (currentDate <= endDate) {
+          const dateKey = currentDate.toISOString().slice(0, 10);
+          if (!uniqueActiveDates.has(dateKey)) {
+            missedDates.push(dateKey);
+          }
+          currentDate.setDate(currentDate.getDate() + 1);
+        }
+      }
+    }
+
+    const trainingStats = userData?.trainingStats || {};
+    const activeDays = Number(trainingStats.activeDays) || activeDaysFromFirestore;
+    const totalExpectedDays = Number(trainingStats.totalExpectedDays) || estimatedTotalDaysFromRoadmap;
+    const missedDays = Number(trainingStats.missedDays) || missedDates.length;
+
+    setMissedDateInfo({
+      success: true,
+      hasMissedDates: missedDays > 0,
+      missedDates,
+      firstMissedDate: missedDates.length > 0 ? missedDates[0] : null,
+      missedCount: missedDays,
+      activeDays,
+      missedDays,
+      totalExpectedDays,
+      currentStreak: Number(trainingStats.currentStreak) || 0,
+      activeModuleName,
+    });
   } catch (err) {
     console.error("Error fetching missed dates:", err);
   }
@@ -211,9 +325,11 @@ useEffect(() => {
     navigate("/", { replace: true });
   } else {
     checkRoadmapExists();
-    fetchMissedDates();
+    if (userData) {
+      fetchMissedDates();
+    }
   }
-}, [userId, companyId, deptId, navigate]);
+}, [userId, companyId, deptId, navigate, userData]);
 
 // 10-minute timer for missed dates notification
 useEffect(() => {
