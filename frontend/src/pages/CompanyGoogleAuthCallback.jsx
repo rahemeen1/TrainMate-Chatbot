@@ -7,7 +7,6 @@ export default function CompanyGoogleAuthCallback() {
   const [searchParams] = useSearchParams();
   const [status, setStatus] = useState("Setting up Google Calendar...");
   const [errorType, setErrorType] = useState(null);
-  const [showInstructions, setShowInstructions] = useState(false);
 
   useEffect(() => {
     const handleCallback = async () => {
@@ -20,7 +19,6 @@ export default function CompanyGoogleAuthCallback() {
           if (error === "access_denied") {
             setErrorType("access_denied");
             setStatus("Access Denied - App Not Verified");
-            setShowInstructions(true);
             return;
           }
           setStatus(`OAuth error: ${error}`);
