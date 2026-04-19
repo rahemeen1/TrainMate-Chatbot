@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import Header from "./Header";
 import {
-  Check,
   MessageCircle,
   Sparkles,
 } from "lucide-react";
@@ -63,17 +62,17 @@ export default function ComparePlans() {
         }}
       />
 
-      <main className="relative z-10 mx-auto flex w-full max-w-6xl flex-col gap-12 px-6 pb-16 pt-32">
-        <section className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+      <main className="relative z-10 mx-auto flex w-full max-w-6xl flex-col gap-10 px-4 pb-12 pt-28 sm:gap-12 sm:px-6 sm:pb-16 sm:pt-32">
+        <section className="grid gap-6 sm:gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
           <div className="space-y-6 animate-fade-in-up">
             <div className="inline-flex items-center space-x-2 bg-[#00FFFF]/10 px-4 py-2 rounded-full text-[#00FFFF] text-sm font-medium backdrop-blur-sm shadow-[0_0_10px_#00FFFF40]">
               <Sparkles size={16} />
               <span>Feature Comparison</span>
             </div>
-            <h1 className="text-5xl font-bold text-white">
+            <h1 className="text-3xl font-bold leading-tight text-white sm:text-4xl lg:text-5xl">
               Compare what <span className="text-[#00FFFF]">Basic and Pro</span> unlock for your cohort.
             </h1>
-            <p className="max-w-xl text-lg text-gray-300 leading-relaxed">
+            <p className="max-w-xl text-base leading-relaxed text-gray-300 sm:text-lg">
               From core roadmap tracking to AI-driven assessments, choose the coverage you need to onboard at scale.
             </p>
             <div className="flex flex-wrap gap-3">
@@ -90,7 +89,7 @@ export default function ComparePlans() {
             </div>
           </div>
           <div className="relative animate-fade-in-up animation-delay-500">
-            <div className="relative bg-[#071A2E]/90 rounded-3xl border border-[#00FFFF]/20 shadow-[0_0_25px_#00FFFF]/30 p-8 space-y-6 backdrop-blur-lg">
+            <div className="relative bg-[#071A2E]/90 rounded-3xl border border-[#00FFFF]/20 shadow-[0_0_25px_#00FFFF]/30 p-5 space-y-6 backdrop-blur-lg sm:p-8">
               <div className="flex items-start space-x-4 animate-slide-in-right animation-delay-1000">
                 <div className="w-12 h-12 bg-[#00FFFF]/20 rounded-xl flex items-center justify-center flex-shrink-0">
                   <MessageCircle className="text-[#00FFFF]" size={24} />
@@ -129,18 +128,57 @@ export default function ComparePlans() {
           </div>
         </section>
 
-        <section className="rounded-3xl border border-white/10 bg-[#0B122B]/80 p-8 shadow-[0_25px_60px_rgba(0,0,0,0.45)]">
+        <section className="rounded-3xl border border-white/10 bg-[#0B122B]/80 p-5 shadow-[0_25px_60px_rgba(0,0,0,0.45)] sm:p-8">
           <div className="grid gap-6">
             <div className="flex flex-col gap-2">
-              <h2 className="text-2xl font-semibold text-white [font-family:'Space_Grotesk',sans-serif]">
+              <h2 className="text-xl font-semibold text-white [font-family:'Space_Grotesk',sans-serif] sm:text-2xl">
                 Feature-by-feature comparison
               </h2>
               <p className="text-sm text-white/70">
                 Everything you need to decide on the right level of AI support.
               </p>
             </div>
-            <div className="overflow-hidden rounded-2xl border border-white/10">
-              <div className="grid grid-cols-[1.3fr_0.35fr_0.35fr] gap-0 text-sm">
+            <div className="md:hidden space-y-3">
+              {featureRows.map((row) => (
+                <div
+                  key={`mobile-${row.title}`}
+                  className="rounded-2xl border border-white/10 bg-white/5 p-4"
+                >
+                  <p className="text-sm font-semibold leading-relaxed text-white break-words">
+                    {row.title}
+                  </p>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                    <div className="rounded-xl border border-white/10 bg-[#0C1930] px-3 py-2">
+                      <p className="text-white/60">Basic</p>
+                      {typeof row.basic === "string" ? (
+                        <p className="mt-1 font-medium text-[#00FFFF]">{row.basic}</p>
+                      ) : row.basic ? (
+                        <p className="mt-1 inline-block rounded-full bg-[#00FFFF]/20 px-2 py-1 text-[#00FFFF]">
+                          Included
+                        </p>
+                      ) : (
+                        <p className="mt-1 text-white/40">-</p>
+                      )}
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-[#0C1930] px-3 py-2">
+                      <p className="text-white/60">Pro</p>
+                      {typeof row.pro === "string" ? (
+                        <p className="mt-1 font-medium text-[#00FFFF]">{row.pro}</p>
+                      ) : row.pro ? (
+                        <p className="mt-1 inline-block rounded-full bg-[#00FFFF]/20 px-2 py-1 text-[#00FFFF]">
+                          Included
+                        </p>
+                      ) : (
+                        <p className="mt-1 text-white/40">-</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="hidden overflow-x-auto rounded-2xl border border-white/10 md:block">
+              <div className="grid min-w-[640px] grid-cols-[1.3fr_0.35fr_0.35fr] gap-0 text-sm">
                 <div className="bg-white/5 px-4 py-3 font-semibold text-white/80">
                   Capability
                 </div>
@@ -191,8 +229,8 @@ export default function ComparePlans() {
           </div>
         </section>
 
-        <section className="flex flex-col items-center gap-4 rounded-3xl border-2 border-[#00FFFF]/70 bg-gradient-to-br from-[#061528] via-[#0A1F38] to-[#0E2845] p-8 text-center shadow-[0_0_30px_rgba(0,255,255,0.4)] hover:shadow-[0_0_40px_rgba(0,255,255,0.6)] transition-all">
-          <h2 className="text-2xl font-semibold text-white [font-family:'Space_Grotesk',sans-serif]">
+        <section className="flex flex-col items-center gap-4 rounded-3xl border-2 border-[#00FFFF]/70 bg-gradient-to-br from-[#061528] via-[#0A1F38] to-[#0E2845] p-6 text-center shadow-[0_0_30px_rgba(0,255,255,0.4)] transition-all hover:shadow-[0_0_40px_rgba(0,255,255,0.6)] sm:p-8">
+          <h2 className="text-xl font-semibold text-white [font-family:'Space_Grotesk',sans-serif] sm:text-2xl">
             Need help choosing the right plan?
           </h2>
           <p className="max-w-2xl text-sm text-white/70">
@@ -201,7 +239,7 @@ export default function ComparePlans() {
           </p>
           <button
             onClick={() => setEngagementOpen(true)}
-            className="rounded-full bg-[#00FFFF] px-6 py-2 text-sm font-semibold text-[#020617] shadow-[0_0_18px_rgba(0,255,255,0.45)] transition hover:shadow-[0_0_28px_rgba(0,255,255,0.6)]"
+            className="w-full rounded-full bg-[#00FFFF] px-6 py-2 text-sm font-semibold text-[#020617] shadow-[0_0_18px_rgba(0,255,255,0.45)] transition hover:shadow-[0_0_28px_rgba(0,255,255,0.6)] sm:w-auto"
           >
             Get Started
           </button>
