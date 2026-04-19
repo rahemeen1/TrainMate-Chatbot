@@ -304,29 +304,7 @@ if (!userData) {
           </div>
         </div>
 
-        {/* Overall Progress */}
-        <div className="bg-gradient-to-br from-[#021B36]/90 to-[#031C3A]/70 p-6 rounded-xl border border-[#00FFFF30] mb-6 shadow-[0_0_18px_rgba(0,255,255,0.08)]">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
-            <div>
-              <h2 className="text-xl text-[#00FFFF] font-semibold">Overall Training Progress</h2>
-              <p className="text-sm text-[#AFCBE3] mt-1">Average completion across all modules</p>
-            </div>
-            <div className="text-3xl font-bold text-[#00FFFF]">
-              {animatedProgress}%
-            </div>
-          </div>
-          <div className="w-full h-3 bg-[#031C3A] rounded-full overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-[#00FFFF] via-[#00E5FF] to-green-400 transition-all"
-              style={{ width: `${animatedProgress}%` }}
-            />
-          </div>
-          <div className="mt-3 flex flex-wrap gap-3 text-xs text-[#AFCBE3]">
-            <span className="px-2 py-1 rounded-full bg-[#00FFFF]/10 border border-[#00FFFF25]">Live Progress</span>
-            <span className="px-2 py-1 rounded-full bg-[#031C3A]/70 border border-[#00FFFF18]">Updated on load</span>
-          </div>
-        </div>
-
+        
         {(() => {
           const isBasicLicense = licensePlan === "License Basic";
           const trainingStats = userData.trainingStats || {};

@@ -6,6 +6,22 @@ import { collection, getDocs, doc, updateDoc, getDoc } from "firebase/firestore"
 import FresherShellLayout from "./FresherShellLayout";
 import TrainingLockedScreen from "./TrainingLockedScreen";
 
+const sortByModuleOrder = (modules = []) =>
+  modules
+    .map((module, idx) => ({ module, idx }))
+    .sort((a, b) => {
+      const aOrder = Number(a.module?.order);
+      const bOrder = Number(b.module?.order);
+      const aHasOrder = Number.isFinite(aOrder);
+      const bHasOrder = Number.isFinite(bOrder);
+
+      if (aHasOrder && bHasOrder && aOrder !== bOrder) return aOrder - bOrder;
+      if (aHasOrder && !bHasOrder) return -1;
+      if (!aHasOrder && bHasOrder) return 1;
+      return a.idx - b.idx;
+    })
+    .map(({ module }) => module);
+
 export default function FresherTraining() {
   const DEFAULT_QUIZ_UNLOCK_PERCENT = 70;
   const { companyId, deptId, userId } = useParams();
@@ -67,7 +83,7 @@ export default function FresherTraining() {
         );
 
         const snap = await getDocs(roadmapRef);
-        const modules = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const modules = sortByModuleOrder(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
         setRoadmap(modules);
 
         if (selectedModuleId) {
@@ -172,6 +188,15 @@ export default function FresherTraining() {
   const moduleTimeRemaining = selectedModule ? getModuleTimeRemaining(selectedModule) : null;
 
   const getQuizTimeUnlock = (module) => {
+  // TEMPORARY TEST OVERRIDE: disable frontend 70% time-lock gate.
+  return {
+    isUnlocked: true,
+    unlockPercent: DEFAULT_QUIZ_UNLOCK_PERCENT,
+    remainingTime: null,
+    message: "Quiz is available (temporary override).",
+  };
+
+  /*
     if (!module) {
       return {
         isUnlocked: false,
@@ -230,6 +255,7 @@ export default function FresherTraining() {
       remainingTime,
       message: `Quiz unlocks after ${unlockPercent}% module time. Remaining: ${remainingTime}`,
     };
+	*/
   };
 
   const quizUnlockInfo = selectedModule ? getQuizTimeUnlock(selectedModule) : null;
@@ -322,6 +348,26 @@ return (
                     <li key={idx} className="text-red-300">{area}</li>
                   ))}
                 </ul>
+                {Array.isArray(weaknessAnalysis.focusAreas) && weaknessAnalysis.focusAreas.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-[#AFCBE3] text-sm font-semibold mb-2">Targeted study plan</p>
+                    <ul className="text-[#AFCBE3] text-sm space-y-1 list-disc list-inside">
+                      {weaknessAnalysis.focusAreas.map((area, idx) => (
+                        <li key={idx} className="text-cyan-200">{area}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {Array.isArray(weaknessAnalysis.recommendedActions) && weaknessAnalysis.recommendedActions.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-[#AFCBE3] text-sm font-semibold mb-2">Recommended next steps</p>
+                    <ul className="text-[#AFCBE3] text-sm space-y-1 list-disc list-inside">
+                      {weaknessAnalysis.recommendedActions.map((action, idx) => (
+                        <li key={idx} className="text-green-300">{action}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
               
               <p className="text-[#AFCBE3] text-sm">
