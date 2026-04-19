@@ -16,6 +16,7 @@ import {
 import { auth, db } from "../../firebase";
 import OnboardingPage from "./OnboardingPage";
 import FresherShellLayout from "./FresherShellLayout";
+import { apiUrl } from "../../services/api";
 
 const toDateSafe = (value) => {
   if (!value) return null;

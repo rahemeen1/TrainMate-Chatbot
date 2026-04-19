@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { apiUrl } from "../../services/api";
 
 const MENU_OPTIONS = [
   { label: "Dashboard", path: "/CompanySpecific/CompanyDashboard" },
@@ -35,7 +36,7 @@ export default function CompanySidebar({ companyId, companyName, className = "",
     const fetchPendingNotifications = async () => {
       try {
         const response = await fetch(
-          `http://localhost:5000/api/company/notifications/module-lock/${resolvedCompanyId}?status=pending`
+          apiUrl(`/api/company/notifications/module-lock/${resolvedCompanyId}?status=pending`)
         );
         const data = await response.json();
         if (!response.ok) return;

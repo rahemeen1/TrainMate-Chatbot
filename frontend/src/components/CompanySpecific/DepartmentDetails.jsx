@@ -4,6 +4,7 @@ import CompanyPageLoader from "./CompanyPageLoader";
 import CompanyShellLayout from "./CompanyShellLayout";
 import { collection, getDocs, query, orderBy, limit } from "firebase/firestore";
 import { db } from "../../firebase";
+import { apiUrl } from "../../services/api";
 
 import {
   fetchDepartmentUsers,
@@ -87,7 +88,7 @@ const isActionInProgress = uploadingDoc || addingUser;
       if (!companyId) return;
       try {
         setQuotaLoading(true);
-        const res = await fetch(`http://localhost:5000/api/company/${companyId}/user-quota`);
+        const res = await fetch(apiUrl(`/api/company/${companyId}/user-quota`));
         if (res.ok) {
           const quotaData = await res.json();
           setQuotaStatus(quotaData);
@@ -190,7 +191,7 @@ const isActionInProgress = uploadingDoc || addingUser;
       });
       setUsers(await fetchDepartmentUsers(companyId, deptId));
       // Refetch quota after adding user
-      const res = await fetch(`http://localhost:5000/api/company/${companyId}/user-quota`);
+      const res = await fetch(apiUrl(`/api/company/${companyId}/user-quota`));
       if (res.ok) {
         const quotaData = await res.json();
         setQuotaStatus(quotaData);

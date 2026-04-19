@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useParams } from "react-router-dom";
 import { doc, getDoc, collection, getDocs } from "firebase/firestore";
 import { db } from "../../firebase"; 
+import { apiUrl } from "../../services/api";
 import CompanyPageLoader from "./CompanyPageLoader";
 import CompanyShellLayout from "./CompanyShellLayout";
 export default function UserProfile() {
@@ -34,7 +35,7 @@ export default function UserProfile() {
 
       try {
         const res = await fetch(
-          `http://localhost:5000/api/company/notifications/${companyId}?status=all&types=module_lock,training_completion,training_summary_report`
+          apiUrl(`/api/company/notifications/${companyId}?status=all&types=module_lock,training_completion,training_summary_report`)
         );
         const data = await res.json();
         if (!res.ok) return;
@@ -54,7 +55,7 @@ export default function UserProfile() {
     try {
       setNotificationResolveLoading(true);
       const res = await fetch(
-        `http://localhost:5000/api/company/notifications/module-lock/${companyId}/${notificationIdFromQuery}`,
+        apiUrl(`/api/company/notifications/module-lock/${companyId}/${notificationIdFromQuery}`),
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -204,7 +205,7 @@ export default function UserProfile() {
       const shouldResolveNotification =
         notificationIdFromQuery && (!moduleIdFromQuery || moduleIdFromQuery === moduleId);
 
-      const res = await fetch("http://localhost:5000/api/roadmap/regenerate", {
+      const res = await fetch(apiUrl("/api/roadmap/regenerate"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -224,7 +225,7 @@ export default function UserProfile() {
       // Send email to user
       if (user?.email) {
         try {
-          await fetch("http://localhost:5000/api/email/admin-regenerated-roadmap", {
+          await fetch(apiUrl("/api/email/admin-regenerated-roadmap"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -257,7 +258,7 @@ export default function UserProfile() {
       const shouldResolveNotification =
         notificationIdFromQuery && (!moduleIdFromQuery || moduleIdFromQuery === moduleId);
 
-      const res = await fetch("http://localhost:5000/api/quiz/admin-unlock", {
+      const res = await fetch(apiUrl("/api/quiz/admin-unlock"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -277,7 +278,7 @@ export default function UserProfile() {
       // Send email to user
       if (user?.email) {
         try {
-          await fetch("http://localhost:5000/api/email/admin-granted-attempts", {
+          await fetch(apiUrl("/api/email/admin-granted-attempts"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -311,7 +312,7 @@ export default function UserProfile() {
       const shouldResolveNotification =
         notificationIdFromQuery && (!moduleIdFromQuery || moduleIdFromQuery === moduleId);
 
-      const res = await fetch("http://localhost:5000/api/quiz/admin-pass-module", {
+      const res = await fetch(apiUrl("/api/quiz/admin-pass-module"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

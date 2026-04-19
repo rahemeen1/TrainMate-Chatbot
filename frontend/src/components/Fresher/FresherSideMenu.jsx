@@ -3,6 +3,7 @@ import { signOut } from "firebase/auth";
 import { auth } from "../../firebase";
 import { useEffect, useState } from "react";
 import { db } from "../../firebase";
+import { apiUrl } from "../../services/api";
 import { doc, getDoc, collection, getDocs } from "firebase/firestore";
 import { getCompanyLicensePlan } from "../../services/companyLicense";
 
@@ -129,7 +130,7 @@ console.log(email);
     try {
       setClaimLoading(true);
       console.log("[FINAL-QUIZ][UI] Attempting to open final quiz from sidebar...");
-      const res = await fetch("http://localhost:5000/api/quiz/final/open", {
+      const res = await fetch(apiUrl("/api/quiz/final/open"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ companyId, deptId, userId }),

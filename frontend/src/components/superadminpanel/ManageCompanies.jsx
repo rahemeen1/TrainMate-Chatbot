@@ -1,6 +1,7 @@
 //ManageCompanies.jsx
 import { useState, useEffect } from "react";
 import axios from "axios";
+import { apiUrl } from "../../services/api";
 
 export default function ManageCompanies() {
   const [companies, setCompanies] = useState([]);
@@ -13,7 +14,7 @@ export default function ManageCompanies() {
   const fetchCompanies = async () => {
     console.log("Fetching companies...");
     try {
-      const res = await axios.get("http://localhost:5000/api/companies");
+      const res = await axios.get(apiUrl("/api/companies"));
       setCompanies(res.data);
       console.log("Companies fetched:", res.data);
     } catch (err) {
@@ -33,7 +34,7 @@ export default function ManageCompanies() {
     try {
     // 🔹 PUT request to backend
     const { data } = await axios.put(
-      `http://localhost:5000/api/companies/${id}/status`,
+      apiUrl(`/api/companies/${id}/status`),
       { status: newStatus }
     );
 
@@ -63,7 +64,7 @@ export default function ManageCompanies() {
     console.log("Updating company:", selected);
 
     try {
-      const res = await axios.put(`http://localhost:5000/api/companies/${id}`, {
+      const res = await axios.put(apiUrl(`/api/companies/${id}`), {
         name,
         email,
         phone,
@@ -90,7 +91,7 @@ export default function ManageCompanies() {
     console.log("Deleting company:", id);
 
     try {
-      const res = await axios.delete(`http://localhost:5000/api/companies/${id}`);
+      const res = await axios.delete(apiUrl(`/api/companies/${id}`));
       console.log("Delete response:", res.data);
 
       setCompanies((prev) => prev.filter((c) => c.id !== id));

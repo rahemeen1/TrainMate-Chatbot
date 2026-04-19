@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import FresherShellLayout from "./FresherShellLayout";
 import { db } from "../../firebase";
+import { apiUrl } from "../../services/api";
 import { collection, doc, getDoc, getDocs, setDoc } from "firebase/firestore";
 import { PaperAirplaneIcon, ArrowLeftIcon } from "@heroicons/react/24/solid";
 import { UserCircleIcon, CpuChipIcon } from "@heroicons/react/24/solid";
@@ -214,7 +215,7 @@ useEffect(() => {
     }
     // ❌ ELSE → CREATE CHAT → THEN LOAD
     else {
-      const res = await fetch("http://localhost:5000/api/chat/init", {
+      const res = await fetch(apiUrl("/api/chat/init"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, companyId, deptId })
@@ -270,7 +271,7 @@ useEffect(() => {
 
   /* ---------------- INIT NEW CHAT ---------------- */
   const initNewChat = async () => {
-    const res = await fetch("http://localhost:5000/api/chat/init", {
+    const res = await fetch(apiUrl("/api/chat/init"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId, companyId, deptId })
@@ -298,7 +299,7 @@ useEffect(() => {
     setTyping(true);
 
     try {
-      const res = await fetch("http://localhost:5000/api/chat", {
+      const res = await fetch(apiUrl("/api/chat"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, companyId, deptId, newMessage: input })
@@ -352,7 +353,7 @@ useEffect(() => {
 
     try {
       setFeedbackSubmitting(true);
-      const res = await fetch("http://localhost:5000/api/chat/feedback", {
+      const res = await fetch(apiUrl("/api/chat/feedback"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

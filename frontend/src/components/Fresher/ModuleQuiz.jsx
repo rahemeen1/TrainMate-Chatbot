@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import { doc, updateDoc, getDoc } from "firebase/firestore";
 import { db } from "../../firebase";
+import { apiUrl } from "../../services/api";
 import TrainingLockedScreen from "./TrainingLockedScreen";
 import { FEATURE_FLAGS, isFeatureAvailable } from "../../services/featureAccess";
 import { getCompanyLicensePlan } from "../../services/companyLicense";
@@ -149,7 +150,7 @@ export default function ModuleQuiz() {
 		setLoading(true);
 
 		try {
-			const res = await fetch("http://localhost:5000/api/quiz/generate", {
+			const res = await fetch(apiUrl("/api/quiz/generate"), {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ companyId, deptId, userId, moduleId }),
@@ -196,7 +197,7 @@ export default function ModuleQuiz() {
 		setSubmitting(true);
 
 		try {
-			const res = await fetch("http://localhost:5000/api/quiz/submit", {
+			const res = await fetch(apiUrl("/api/quiz/submit"), {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
@@ -268,7 +269,7 @@ export default function ModuleQuiz() {
 	
 		const reportProctoringViolation = async (payload) => {
 			try {
-				await fetch("http://localhost:5000/api/quiz/proctoring-violation", {
+				await fetch(apiUrl("/api/quiz/proctoring-violation"), {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify(payload),

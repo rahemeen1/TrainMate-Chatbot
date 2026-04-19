@@ -15,6 +15,7 @@ import {
   Legend,
 } from "recharts";
 import { db } from "../../firebase";
+import { apiUrl } from "../../services/api";
 import { useNavigate, useLocation } from "react-router-dom";
 import { doc, setDoc } from "firebase/firestore";
 import { CreditCard, Menu, X, Wallet } from "lucide-react";
@@ -474,7 +475,7 @@ console.log("companyId:", companyId);
     const loadPendingNotifications = async () => {
       try {
         const res = await fetch(
-          `http://localhost:5000/api/company/notifications/${companyId}?status=pending&types=module_lock,training_completion,training_summary_report`
+          apiUrl(`/api/company/notifications/${companyId}?status=pending&types=module_lock,training_completion,training_summary_report`)
         );
         const data = await res.json();
         if (!res.ok) return;

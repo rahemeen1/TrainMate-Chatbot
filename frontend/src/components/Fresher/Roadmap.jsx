@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useLocation, useNavigate, Navigate } from "react-router-dom";
 import { db } from "../../firebase";
+import { apiUrl } from "../../services/api";
 import { collection, getDocs, doc, getDoc, updateDoc } from "firebase/firestore";
 import axios from "axios";
 import FresherShellLayout from "./FresherShellLayout";
@@ -199,7 +200,7 @@ const getModuleStartDate = (module) => {
           const trainingOn = userData.trainingOn ?? "General";
           const trainingDuration = userData.trainingDuration;
 
-          await axios.post("http://localhost:5000/api/roadmap/generate", {
+          await axios.post(apiUrl("/api/roadmap/generate"), {
             companyId,
             deptId,
             userId,

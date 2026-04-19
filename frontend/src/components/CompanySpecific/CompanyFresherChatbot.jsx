@@ -1,6 +1,7 @@
 // frontend/src/components/CompanySpecific/CompanyFresherChatbot.jsx
 import { useState, useEffect, useRef } from "react";
 import axios from "axios";
+import { apiUrl } from "../../services/api";
 
 function renderStyledBotText(text) {
   if (!text) return null;
@@ -143,7 +144,7 @@ export default function CompanyFresherChatbot({ companyId, companyName }) {
 
     try {
       const response = await axios.post(
-        "http://localhost:5000/api/company-chat/chat",
+        apiUrl("/api/company-chat/chat"),
         {
           companyId,
           message: messageText,

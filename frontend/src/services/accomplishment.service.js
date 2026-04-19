@@ -1,4 +1,5 @@
 // src/services/accomplishment.service.js
+import { apiUrl } from "./api";
 
 export const generateAccomplishment = async ({
   companyId,
@@ -7,7 +8,7 @@ export const generateAccomplishment = async ({
   moduleId,
 }) => { 
   const res = await fetch(
-    "http://localhost:5000/api/accomplishments/generate",
+    apiUrl("/api/accomplishments/generate"),
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../../firebase";
+import { apiUrl } from "../../services/api";
 import { FEATURE_FLAGS, isFeatureAvailable } from "../../services/featureAccess";
 import { getCompanyLicensePlan } from "../../services/companyLicense";
 import CompanyPageLoader from "../CompanySpecific/CompanyPageLoader";
@@ -88,7 +89,7 @@ export default function FinalQuiz() {
       setErrorMessage("");
       try {
         console.log("[FINAL-QUIZ][UI] Generating final quiz...");
-        const res = await fetch("http://localhost:5000/api/quiz/final/generate", {
+        const res = await fetch(apiUrl("/api/quiz/final/generate"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ companyId, deptId, userId }),
@@ -225,7 +226,7 @@ export default function FinalQuiz() {
     setTimerRunning(false);
     try {
       console.log("[FINAL-QUIZ][UI] Submitting final quiz...", { triggeredByTimer });
-      const res = await fetch("http://localhost:5000/api/quiz/final/submit", {
+      const res = await fetch(apiUrl("/api/quiz/final/submit"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

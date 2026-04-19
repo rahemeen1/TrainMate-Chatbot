@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { db } from "../../firebase";
+import { apiUrl } from "../../services/api";
 import { doc, getDoc } from "firebase/firestore";
 import FresherShellLayout from "./FresherShellLayout";
 import { motion } from "framer-motion";
@@ -78,7 +79,7 @@ export default function ViewModuleDetails() {
           setAiLoading(true);
           setAiError(false);
 
-          const res = await fetch("http://localhost:5000/api/module/explain", {
+          const res = await fetch(apiUrl("/api/module/explain"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({

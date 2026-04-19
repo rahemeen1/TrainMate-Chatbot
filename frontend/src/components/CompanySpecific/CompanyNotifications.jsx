@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import CompanyPageLoader from "./CompanyPageLoader";
 import CompanyShellLayout from "./CompanyShellLayout";
+import { apiUrl } from "../../services/api";
 
 export default function CompanyNotifications() {
   const location = useLocation();
@@ -19,7 +20,7 @@ export default function CompanyNotifications() {
     try {
       setLoading(true);
       setError("");
-      const res = await fetch(`http://localhost:5000/api/company/notifications/${companyId}?status=pending&types=module_lock,training_completion,training_summary_report`);
+      const res = await fetch(apiUrl(`/api/company/notifications/${companyId}?status=pending&types=module_lock,training_completion,training_summary_report`));
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Failed to load notifications");
       setNotifications(data.notifications || []);

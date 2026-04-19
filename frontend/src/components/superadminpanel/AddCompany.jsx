@@ -1,5 +1,6 @@
 //AddCompany.jsx
 import { useState } from "react";
+import { apiUrl } from "../../services/api";
 
 export default function AddCompanyForm() {
   const [name, setName] = useState("");
@@ -43,7 +44,7 @@ export default function AddCompanyForm() {
   }
 
   try {
-    const res = await fetch("http://localhost:5000/api/add-company", {
+    const res = await fetch(apiUrl("/api/add-company"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

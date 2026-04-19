@@ -22,6 +22,7 @@ import {
 
 import { db, auth } from "../../firebase";
 import { createUserWithEmailAndPassword } from "firebase/auth";
+import { apiUrl } from "../../services/api";
 const storage = getStorage(); 
 
 
@@ -93,7 +94,7 @@ export const addDepartmentDoc = async ({ companyId, deptName, file }) => {
     });
 
     // 6️⃣ Optional: send to backend for ingestion
-    await fetch("http://localhost:5000/api/ingest/document", {
+    await fetch(apiUrl("/api/ingest/document"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -141,7 +142,7 @@ export const deleteDepartmentDoc = async ({
       await deleteObject(fileRef);
       console.log("✅ Storage file deleted:", cleanedPath);
     }
-await fetch("http://localhost:5000/api/ingest/document", {
+await fetch(apiUrl("/api/ingest/document"), {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -273,7 +274,7 @@ export const addFresherUser = async ({
 
   try {
     const response = await fetch(
-      "http://localhost:5000/api/company/users/credentials-email",
+      apiUrl("/api/company/users/credentials-email"),
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -300,7 +301,7 @@ export const addFresherUser = async ({
 
   try {
     const notificationResponse = await fetch(
-      "http://localhost:5000/api/company/users/initialize-notifications",
+      apiUrl("/api/company/users/initialize-notifications"),
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },

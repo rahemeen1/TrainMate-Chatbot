@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db } from "../../firebase";
+import { apiUrl } from "../../services/api";
 import FresherShellLayout from "./FresherShellLayout";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import axios from "axios";
@@ -121,7 +122,7 @@ export default function OnboardingPage({
       const cvUrl = await getDownloadURL(storageRef);
       console.log("✅ CV uploaded. URL:", cvUrl);
 
-      const validationResponse = await axios.post("http://localhost:5000/api/roadmap/validate-cv", {
+      const validationResponse = await axios.post(apiUrl("/api/roadmap/validate-cv"), {
         cvUrl,
         trainingOn,
       });

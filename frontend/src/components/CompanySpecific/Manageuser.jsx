@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { db } from "../../firebase";
+import { apiUrl } from "../../services/api";
 import {
   collectionGroup,
   getDocs,
@@ -103,7 +104,7 @@ export default function ManageUser() {
       if (!companyId) return;
       try {
         setQuotaLoading(true);
-        const res = await fetch(`http://localhost:5000/api/company/${companyId}/user-quota`);
+        const res = await fetch(apiUrl(`/api/company/${companyId}/user-quota`));
         if (res.ok) {
           const quotaData = await res.json();
           setQuotaStatus(quotaData);
@@ -150,9 +151,9 @@ export default function ManageUser() {
       setDeleteSuccessMsg("");
       
       const deleteRes = await fetch(
-        `http://localhost:5000/api/company/users/${encodeURIComponent(
+        apiUrl(`/api/company/users/${encodeURIComponent(
           user.email
-        )}`,
+        )}`),
         { method: "DELETE" }
       );
 
@@ -168,7 +169,7 @@ export default function ManageUser() {
       // Refetch quota after deletion with delay to allow backend tracking to complete
       setTimeout(async () => {
         try {
-          const res = await fetch(`http://localhost:5000/api/company/${companyId}/user-quota`);
+          const res = await fetch(apiUrl(`/api/company/${companyId}/user-quota`));
           if (res.ok) {
             const quotaData = await res.json();
             setQuotaStatus(quotaData);

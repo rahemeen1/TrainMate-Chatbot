@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { apiUrl } from "../../services/api";
 
 
 export default function SuperAdminSettings() {
@@ -10,7 +11,7 @@ export default function SuperAdminSettings() {
 
   const getAdmins = async () => {
     try {
-      const res = await fetch("http://localhost:5000/api/superadmins");
+      const res = await fetch(apiUrl("/api/superadmins"));
       const data = await res.json();
       setAdmins(data.admins || []);
     } catch (err) {
@@ -46,7 +47,7 @@ export default function SuperAdminSettings() {
             newPassword: editData.newPassword,
           };
 
-    const res = await fetch(`http://localhost:5000/api/superadmins/${id}`, {
+    const res = await fetch(apiUrl(`/api/superadmins/${id}`), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),

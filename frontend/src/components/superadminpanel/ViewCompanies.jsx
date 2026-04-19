@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { apiUrl } from "../../services/api";
 
 export default function ViewCompanies() {
   const [companies, setCompanies] = useState([]);
@@ -7,7 +8,7 @@ export default function ViewCompanies() {
   const fetchCompanies = async () => {
     try {
       console.log("✅ Fetching companies...");
-      const res = await fetch("http://localhost:5000/api/companies");
+      const res = await fetch(apiUrl("/api/companies"));
       const data = await res.json();
       console.log("✅ Backend response:", data);
 
