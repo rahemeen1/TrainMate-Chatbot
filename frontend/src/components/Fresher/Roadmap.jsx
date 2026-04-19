@@ -10,59 +10,21 @@ import TrainingLockedScreen from "./TrainingLockedScreen";
 import { getCompanyLicensePlan } from "../../services/companyLicense";
 import CompanyPageLoader from "../CompanySpecific/CompanyPageLoader";
 
-const BEGINNER_KEYWORDS = ["fundamental", "fundamentals", "foundation", "foundations", "basic", "basics", "intro", "introduction", "core"];
-const INTERMEDIATE_KEYWORDS = ["intermediate", "applied", "practical", "implementation", "orchestration", "integration"];
-const ADVANCED_KEYWORDS = ["advanced", "optimization", "scaling", "scale", "deployment", "production", "distributed", "agentic", "multi-agent"];
-
-const keywordScore = (text, keywords) => {
-  const normalized = String(text || "").toLowerCase();
-  return keywords.reduce((score, keyword) => (normalized.includes(keyword) ? score + 1 : score), 0);
-};
-
-const inferDifficultyRank = (module, fallbackRank = Number.MAX_SAFE_INTEGER) => {
-  const title = String(module?.moduleTitle || "");
-  const description = String(module?.description || "");
-  const searchable = `${title} ${description}`;
-
-  const moduleNumberMatch = title.match(/\bmodule\s*(\d+)\b/i);
-  if (moduleNumberMatch) {
-    const parsed = Number(moduleNumberMatch[1]);
-    if (Number.isFinite(parsed) && parsed > 0) return parsed;
-  }
-
-  const advancedHits = keywordScore(searchable, ADVANCED_KEYWORDS);
-  if (advancedHits > 0) return 300 + (10 - Math.min(advancedHits, 10));
-
-  const intermediateHits = keywordScore(searchable, INTERMEDIATE_KEYWORDS);
-  if (intermediateHits > 0) return 200 + (10 - Math.min(intermediateHits, 10));
-
-  const beginnerHits = keywordScore(searchable, BEGINNER_KEYWORDS);
-  if (beginnerHits > 0) return 100 + (10 - Math.min(beginnerHits, 10));
-
-  const storedOrder = Number(module?.order);
-  if (Number.isFinite(storedOrder) && storedOrder > 0) return 400 + storedOrder;
-
-  return fallbackRank;
-};
-
 const sortRoadmapModules = (modules) =>
   (Array.isArray(modules) ? modules : [])
-    .map((module, idx) => ({
-      module,
-      idx,
-      rank: inferDifficultyRank(module, 1000 + idx),
-    }))
+    .map((module, idx) => ({ module, idx }))
     .sort((a, b) => {
-      if (a.rank !== b.rank) return a.rank - b.rank;
-      const aDuration = Number(a.module?.estimatedDays || 0);
-      const bDuration = Number(b.module?.estimatedDays || 0);
-      if (aDuration !== bDuration) return aDuration - bDuration;
+      const aOrder = Number(a.module?.order);
+      const bOrder = Number(b.module?.order);
+      const aHasOrder = Number.isFinite(aOrder);
+      const bHasOrder = Number.isFinite(bOrder);
+
+      if (aHasOrder && bHasOrder && aOrder !== bOrder) return aOrder - bOrder;
+      if (aHasOrder && !bHasOrder) return -1;
+      if (!aHasOrder && bHasOrder) return 1;
       return a.idx - b.idx;
     })
-    .map(({ module }, index) => ({
-      ...module,
-      order: index + 1,
-    }));
+    .map(({ module }) => module);
 
 export default function Roadmap() {
   const BASE_MAX_QUIZ_ATTEMPTS = 3;
@@ -100,6 +62,14 @@ const getModuleStartDate = (module) => {
 };
 
   const checkQuizTimeUnlock = (module) => {
+  // TEMPORARY TEST OVERRIDE: disable frontend 70% time-lock messaging/state.
+  return {
+    isUnlocked: true,
+    remainingTime: null,
+    message: "Quiz is available (temporary override).",
+  };
+
+  /*
     const startDate = getModuleStartDate(module);
     const estimatedDays = Number(module?.estimatedDays) || 1;
     const configuredUnlockPercent = Number(userData?.quizPolicy?.quizUnlockPercent);
@@ -146,6 +116,7 @@ const getModuleStartDate = (module) => {
       remainingTime: remainingTimeStr,
       message: `Quiz will be available after you've spent ${unlockPercent}% of the module time. Unlock in: ${remainingTimeStr}`,
     };
+	*/
   };
 
   // Update overall progress after marking module done

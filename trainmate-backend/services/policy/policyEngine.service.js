@@ -196,7 +196,7 @@ class PolicyEngine {
     if (downloadedBytes && downloadedBytes > 5 * 1024 * 1024) {
       issues.push("File is too large to be a typical CV.");
     }
-    if (wordCount < 200) {
+    if (wordCount < 100) {
       issues.push("Extracted text is too short for a real CV.");
     }
 
@@ -620,6 +620,7 @@ Return ONLY valid JSON:
       oneLinerScore = 0,
       codingScore = null,
       weakAreas = [],
+      skillSignals = {},
       moduleTitle = "",
       timeRemaining = null,
       previousAttempts = [],
@@ -652,6 +653,10 @@ ${codingScore !== null ? `- Coding Score: ${codingScore}%` : ""}
 ${attemptsHistory ? `PREVIOUS ATTEMPTS: ${attemptsHistory}` : "This is the first attempt"}
 
 ${weakAreas.length > 0 ? `WEAK AREAS: ${weakAreas.join(", ")}` : ""}
+
+${Array.isArray(skillSignals?.mustHaveWeakSkills) && skillSignals.mustHaveWeakSkills.length > 0 ? `MUST-HAVE WEAK SKILLS: ${skillSignals.mustHaveWeakSkills.join(", ")}` : ""}
+
+${Array.isArray(skillSignals?.goodToHaveWeakSkills) && skillSignals.goodToHaveWeakSkills.length > 0 ? `GOOD-TO-HAVE WEAK SKILLS: ${skillSignals.goodToHaveWeakSkills.join(", ")}` : ""}
 
 ${timeRemaining ? `TIME REMAINING IN MODULE: ${timeRemaining}` : "No time constraint"}
 
@@ -696,8 +701,10 @@ Return JSON only:
     }
 
     const scoreGap = quizPassThreshold - score;
-    const allowRetry = attemptNumber < maxAttempts && scoreGap < 30;
-    const needsRegeneration = scoreGap > 20 && attemptNumber < maxAttempts;
+    const mustHaveWeakSkills = Array.isArray(skillSignals?.mustHaveWeakSkills) ? skillSignals.mustHaveWeakSkills : [];
+    const hasMustHaveWeakness = mustHaveWeakSkills.length > 0;
+    const allowRetry = attemptNumber < maxAttempts && (scoreGap < 30 || hasMustHaveWeakness);
+    const needsRegeneration = attemptNumber < maxAttempts && (scoreGap > 20 || hasMustHaveWeakness);
 
     return {
       allowRetry,

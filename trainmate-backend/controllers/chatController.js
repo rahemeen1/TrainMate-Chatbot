@@ -109,21 +109,21 @@ function calculateTrainingProgress(moduleData, startDateOverride) {
     };
   }
 
-  const today = new Date();
-
-  // normalize both to midnight (CRITICAL)
-  startDate.setHours(0, 0, 0, 0);
-  today.setHours(0, 0, 0, 0);
+  // Keep day progression in the same timezone used for chat-session day keys.
+  const startKey = getDateKey(startDate);
+  const todayKey = getDateKey(new Date());
+  const startAnchor = new Date(`${startKey}T00:00:00Z`);
+  const todayAnchor = new Date(`${todayKey}T00:00:00Z`);
 
   // If start date is in the future due to schedule/order drift, do not allow negative day values.
-  if (startDate > today) {
+  if (startAnchor > todayAnchor) {
     return {
       completedDays: 1,
       remainingDays: totalDays,
     };
   }
 
-  const diffDays = Math.floor((today - startDate) / (1000 * 60 * 60 * 24)) + 1;
+  const diffDays = Math.floor((todayAnchor - startAnchor) / (1000 * 60 * 60 * 24)) + 1;
 
   const completedDays = Math.max(1, Math.min(diffDays, totalDays));
   const remainingDays = Math.max(totalDays - completedDays, 0);

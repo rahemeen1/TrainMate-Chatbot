@@ -63,6 +63,12 @@ export default function FinalQuizResults() {
             <p className="text-sm text-[#AFCBE3] leading-relaxed">
               {results.message || (results.passed ? "You passed the final quiz." : "You did not pass this attempt.")}
             </p>
+            {!results.passed && results.remediationPlan?.summary && (
+              <div className="mt-3 p-3 rounded-lg border border-cyan-400/20 bg-cyan-500/5">
+                <p className="text-cyan-300 text-sm font-semibold mb-1">Recommended focus</p>
+                <p className="text-[#AFCBE3] text-sm">{results.remediationPlan.summary}</p>
+              </div>
+            )}
             {attemptsExhausted && (
               <p className="mt-2 text-red-300 text-sm font-semibold">
                 You have used all 2 attempts. Final quiz is now locked for this cycle. Please contact your admin for next steps.

@@ -87,6 +87,28 @@ const VALIDATION_SCORE_THRESHOLDS = {
   trusted: 85,
 };
 
+const DEFAULT_RETRIEVAL_THRESHOLD = 0.65;
+const RETRIEVAL_THRESHOLD_STEP = 0.05;
+const MAX_RETRIEVAL_THRESHOLD = 0.85;
+const AGENT_RETRIEVAL_BASE_THRESHOLDS = {
+  "extract-company-skills": 0.6,
+  "retrieve-documents": 0.6,
+};
+
+function resolveAgentRetrievalBaseThreshold(agentName) {
+  return AGENT_RETRIEVAL_BASE_THRESHOLDS[String(agentName || "")] ?? DEFAULT_RETRIEVAL_THRESHOLD;
+}
+
+function resolveRetrievalThreshold(baseThreshold = DEFAULT_RETRIEVAL_THRESHOLD, retryAttempt = 0) {
+  const numericBase = Number(baseThreshold);
+  const normalizedBase = Number.isFinite(numericBase) && numericBase >= 0 && numericBase <= 1
+    ? numericBase
+    : DEFAULT_RETRIEVAL_THRESHOLD;
+  const numericAttempt = Math.max(0, Number(retryAttempt) || 0);
+
+  return Math.min(MAX_RETRIEVAL_THRESHOLD, normalizedBase + numericAttempt * RETRIEVAL_THRESHOLD_STEP);
+}
+
 function getValidationScoreBand(score) {
   const numericScore = Number(score);
   if (!Number.isFinite(numericScore)) return "retry";
@@ -393,42 +415,265 @@ function normalizePrioritySkillsList(skills = []) {
   );
 }
 
-function normalizeSkillToken(skill) {
-  return normalizeGapSkillKey(skill);
+function parseDurationToDays(value) {
+  if (value === null || value === undefined) return null;
+
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return value;
+  }
+
+  const text = String(value).toLowerCase().trim();
+  if (!text) return null;
+
+  const numericOnly = Number(text);
+  if (Number.isFinite(numericOnly) && numericOnly > 0) {
+    return numericOnly;
+  }
+
+  const rangeMatch = text.match(/(\d+(?:\.\d+)?)\s*[-to]+\s*(\d+(?:\.\d+)?)/i);
+  const baseNumber = rangeMatch
+    ? (Number(rangeMatch[1]) + Number(rangeMatch[2])) / 2
+    : Number((text.match(/\d+(?:\.\d+)?/) || [])[0]);
+
+  if (!Number.isFinite(baseNumber) || baseNumber <= 0) return null;
+
+  if (/month/.test(text)) return baseNumber * 30;
+  if (/week/.test(text)) return baseNumber * 7;
+  if (/day/.test(text)) return baseNumber;
+
+  return baseNumber;
 }
 
-function getSkillPriorityRank(skill, prioritizedSkills = {}) {
-  const normalizedSkill = normalizeSkillToken(skill);
-  const mustHave = new Set(normalizePrioritySkillsList(prioritizedSkills.mustHave).map(normalizeSkillToken));
-  const goodToHave = new Set(normalizePrioritySkillsList(prioritizedSkills.goodToHave).map(normalizeSkillToken));
-
-  if (mustHave.has(normalizedSkill)) return 0;
-  if (goodToHave.has(normalizedSkill)) return 1;
-  return 2;
+function moduleTextBlob(module = {}) {
+  const title = String(module?.moduleTitle || "");
+  const description = String(module?.description || "");
+  const skills = Array.isArray(module?.skillsCovered) ? module.skillsCovered.join(" ") : "";
+  return normalizeGapSkillKey(`${title} ${description} ${skills}`);
 }
 
-function getModulePriorityRank(module = {}, prioritizedSkills = {}) {
-  const skills = Array.isArray(module?.skillsCovered) ? module.skillsCovered : [];
-  if (skills.length === 0) return 3;
+function skillCoverageMatch(moduleBlob = "", skill = "") {
+  const normalizedSkill = normalizeGapSkillKey(skill);
+  if (!normalizedSkill) return false;
+  if (moduleBlob.includes(normalizedSkill)) return true;
 
-  return skills.reduce((bestRank, skill) => {
-    const rank = getSkillPriorityRank(skill, prioritizedSkills);
-    return Math.min(bestRank, rank);
-  }, 3);
+  const stopWords = new Set([
+    "and",
+    "or",
+    "the",
+    "for",
+    "with",
+    "from",
+    "into",
+    "over",
+    "under",
+    "through",
+    "using",
+  ]);
+
+  const tokens = tokenizeSkill(skill)
+    .map((token) => String(token || "").trim())
+    .filter((token) => token.length >= 4 && !stopWords.has(token));
+
+  if (tokens.length === 0) return false;
+
+  const matched = tokens.filter((token) => moduleBlob.includes(token)).length;
+  return matched / tokens.length >= 0.6;
 }
 
-function sortModulesByPriority(modules = [], prioritizedSkills = {}) {
-  return [...modules].sort((a, b) => {
-    const aRank = getModulePriorityRank(a, prioritizedSkills);
-    const bRank = getModulePriorityRank(b, prioritizedSkills);
-    if (aRank !== bRank) return aRank - bRank;
+function isTrivialModule(module = {}) {
+  const title = normalizeGapSkillKey(module?.moduleTitle || "");
+  const description = normalizeGapSkillKey(module?.description || "");
+  const combined = `${title} ${description}`.trim();
+  if (!combined) return true;
 
-    const aDays = Number(a?.estimatedDays || 1);
-    const bDays = Number(b?.estimatedDays || 1);
-    if (aDays !== bDays) return aDays - bDays;
+  const titlePatterns = [
+    /^learn\s+basics?$/,
+    /^basics?$/,
+    /^practice$/,
+    /^introduction$/,
+    /^overview$/,
+    /^module\s*\d+$/,
+  ];
 
-    return String(a?.moduleTitle || "").localeCompare(String(b?.moduleTitle || ""));
-  });
+  const descriptionPatterns = [
+    /^practice$/,
+    /^general\s+practice$/,
+    /^basic\s+practice$/,
+    /^intro(?:duction)?$/,
+  ];
+
+  if (titlePatterns.some((pattern) => pattern.test(title))) {
+    return true;
+  }
+
+  if (descriptionPatterns.some((pattern) => pattern.test(description))) {
+    return true;
+  }
+
+  // Catch highly generic combined phrasing even when title/description split differently.
+  return /\blearn\s+basics?\b/.test(combined) && /\bpractice\b/.test(combined);
+}
+
+const CORE_SKILL_CATEGORIES = {
+  backend: ["backend", "api", "node", "express", "server", "database", "sql", "microservice"],
+  frontend: ["frontend", "react", "ui", "css", "html", "javascript", "typescript"],
+  ml: ["machine learning", "ml", "model", "neural", "tensorflow", "pytorch", "scikit"],
+  data: ["data", "analytics", "etl", "warehouse", "bi", "visualization"],
+  devops: ["devops", "docker", "kubernetes", "ci", "cd", "deployment", "monitoring"],
+  accounting: ["accounting", "bookkeeping", "financial", "audit", "tax", "invoice", "reconciliation"],
+  communication: ["communication", "stakeholder", "reporting", "presentation", "collaboration"],
+};
+
+function detectSkillCategories(text = "") {
+  const normalized = normalizeGapSkillKey(text);
+  const categories = new Set();
+
+  for (const [category, keywords] of Object.entries(CORE_SKILL_CATEGORIES)) {
+    if (keywords.some((keyword) => normalized.includes(normalizeGapSkillKey(keyword)))) {
+      categories.add(category);
+    }
+  }
+
+  return categories;
+}
+
+function buildStrictRoadmapValidation({ modules = [], mustHaveSkills = [], context = {}, previousResults = {} }) {
+  const issues = [];
+  const hardFails = [];
+  const improvements = [];
+
+  const validModules = (Array.isArray(modules) ? modules : []).filter((m) => m && typeof m === "object");
+  const moduleBlobs = validModules.map((module) => moduleTextBlob(module));
+  const actualDurationDays = validModules.reduce((sum, module) => sum + (Number(module?.estimatedDays) || 1), 0);
+  const allowedDurationDays = parseDurationToDays(context?.trainingDuration);
+
+  const normalizedMustHave = normalizePrioritySkillsList(mustHaveSkills);
+  const coveredMustHave = normalizedMustHave.filter((skill) =>
+    moduleBlobs.some((blob) => skillCoverageMatch(blob, skill))
+  );
+  const mustHaveCoverage = normalizedMustHave.length > 0
+    ? coveredMustHave.length / normalizedMustHave.length
+    : 1;
+
+  const trivialModules = validModules
+    .map((module, idx) => ({ idx, module }))
+    .filter(({ module }) => isTrivialModule(module));
+
+  const requiredCategoryText = [
+    ...normalizedMustHave,
+    ...(Array.isArray(previousResults?.["extract-company-skills"]?.companySkills)
+      ? previousResults["extract-company-skills"].companySkills
+      : []),
+  ].join(" ");
+  const requiredCategories = detectSkillCategories(requiredCategoryText);
+  const coveredCategories = detectSkillCategories(moduleBlobs.join(" "));
+  const missingCoreCategories = Array.from(requiredCategories).filter((cat) => !coveredCategories.has(cat));
+
+  const cvSkills = Array.isArray(previousResults?.["extract-cv-skills"]?.cvSkills)
+    ? previousResults["extract-cv-skills"].cvSkills
+    : [];
+  const companySkills = Array.isArray(previousResults?.["extract-company-skills"]?.companySkills)
+    ? previousResults["extract-company-skills"].companySkills
+    : [];
+  const alignmentAnchors = normalizePrioritySkillsList([
+    ...normalizedMustHave,
+    ...companySkills,
+    ...cvSkills,
+    context?.trainingOn,
+  ]);
+  const alignedModules = validModules.filter((module, idx) => {
+    const blob = moduleBlobs[idx] || "";
+    return alignmentAnchors.some((anchor) => skillCoverageMatch(blob, anchor));
+  }).length;
+  const contextAlignmentRatio = validModules.length > 0 ? alignedModules / validModules.length : 0;
+
+  // Hard fail: must-have coverage below 60%.
+  if (normalizedMustHave.length > 0 && mustHaveCoverage < 0.6) {
+    hardFails.push(`Must-have skill coverage below 60% (${coveredMustHave.length}/${normalizedMustHave.length})`);
+  }
+
+  // Hard fail: module count or trivial modules.
+  if (validModules.length < 2) {
+    hardFails.push("Roadmap has fewer than 2 modules");
+  }
+  if (trivialModules.length > 0) {
+    hardFails.push("Roadmap contains trivial or overly generic modules");
+  }
+
+  // Hard fail: duration mismatch beyond 40%.
+  if (Number.isFinite(allowedDurationDays) && allowedDurationDays > 0) {
+    const mismatchRatio = Math.abs(actualDurationDays - allowedDurationDays) / allowedDurationDays;
+    if (mismatchRatio > 0.4) {
+      hardFails.push(
+        `Duration mismatch exceeds 40% (actual ${actualDurationDays}d vs allowed ${Math.round(allowedDurationDays)}d)`
+      );
+    }
+  }
+
+  // Hard fail: required category cluster absent in generated modules.
+  if (missingCoreCategories.length > 0) {
+    hardFails.push(`Missing core skill categories: ${missingCoreCategories.join(", ")}`);
+  }
+
+  // Do not force must-have-first ordering; preserve generated beginner-to-advanced pedagogy.
+  const progressionValid = true;
+
+  if (contextAlignmentRatio < 0.5) {
+    issues.push("Roadmap weakly aligned with CV/company/training context");
+    improvements.push("Increase module-level references to company priorities and user context");
+  }
+
+  if (hardFails.length > 0) {
+    issues.push(...hardFails);
+  }
+
+  const hardFailPenalty = hardFails.length * 25;
+  const structurePenalty = progressionValid ? 0 : 12;
+  const alignmentPenalty = contextAlignmentRatio >= 0.5 ? 0 : 12;
+  const score = Math.max(0, Math.min(100, 95 - hardFailPenalty - structurePenalty - alignmentPenalty));
+
+  const pass = hardFails.length === 0 && contextAlignmentRatio >= 0.5;
+
+  return {
+    pass,
+    score,
+    hardFails,
+    issues,
+    improvements,
+    gates: {
+      mustHaveCoverage: {
+        pass: normalizedMustHave.length === 0 || mustHaveCoverage >= 0.6,
+        covered: coveredMustHave.length,
+        total: normalizedMustHave.length,
+        ratio: Number(mustHaveCoverage.toFixed(2)),
+      },
+      moduleQuality: {
+        pass: validModules.length >= 2 && trivialModules.length === 0,
+        totalModules: validModules.length,
+        trivialModules: trivialModules.length,
+      },
+      durationRealism: {
+        pass:
+          !Number.isFinite(allowedDurationDays) ||
+          allowedDurationDays <= 0 ||
+          Math.abs(actualDurationDays - allowedDurationDays) / allowedDurationDays <= 0.4,
+        actualDays: actualDurationDays,
+        allowedDays: Number.isFinite(allowedDurationDays) ? Math.round(allowedDurationDays) : null,
+      },
+      coreCategories: {
+        pass: missingCoreCategories.length === 0,
+        missing: missingCoreCategories,
+        required: Array.from(requiredCategories),
+      },
+      structure: {
+        pass: true,
+      },
+      contextAlignment: {
+        pass: contextAlignmentRatio >= 0.5,
+        ratio: Number(contextAlignmentRatio.toFixed(2)),
+      },
+    },
+  };
 }
 
 /**
@@ -479,7 +724,7 @@ export class AgentOrchestrator {
       };
     });
 
-    this.registerAgent('extract-company-skills', async ({ previousResults, context }) => {
+    this.registerAgent('extract-company-skills', async ({ previousResults, context, retrievalConfig = {} }) => {
       console.log('    🤖 Company Skills Agent: Analyzing company docs...');
       const { companyDocsText, expertise, trainingOn, companyId, deptId } = context;
 
@@ -493,6 +738,7 @@ export class AgentOrchestrator {
             queryText: fallbackQuery,
             companyId,
             deptName: deptId,
+            minScore: retrievalConfig.minScore,
           });
           resolvedCompanyDocsText = (Array.isArray(docs) ? docs : [])
             .map((item) => item?.text || '')
@@ -665,7 +911,7 @@ Return JSON:
       };
     });
 
-    this.registerAgent('retrieve-documents', async ({ previousResults, context }) => {
+    this.registerAgent('retrieve-documents', async ({ previousResults, context, retrievalConfig = {} }) => {
       console.log('    🤖 Retrieval Agent: Fetching company documents...');
       const queries = previousResults['plan-retrieval']?.queries || [];
       const { companyId, deptId } = context;
@@ -677,6 +923,7 @@ Return JSON:
             queryText: query,
             companyId,
             deptName: deptId,
+            minScore: retrievalConfig.minScore,
           });
           allDocs.push(...docs);
         } catch (error) {
@@ -720,7 +967,6 @@ Return JSON:
 
       const modules = await generateRoadmap({
         cvText,
-        pineconeContext: docs,
         companyContext,
         expertise,
         trainingOn,
@@ -733,7 +979,7 @@ Return JSON:
       });
 
       return {
-        modules: sortModulesByPriority(modules, prioritizedSkills),
+        modules,
         moduleCount: modules.length,
         totalDays: modules.reduce((sum, m) => sum + (m.estimatedDays || 1), 0),
         prioritizedSkills,
@@ -775,48 +1021,34 @@ Return JSON:
     this.registerAgent('validate-roadmap', async ({ previousResults, context }) => {
       console.log('    🤖 Validation Agent: Checking roadmap quality...');
       const modules = previousResults['generate-roadmap']?.modules || [];
-      const { trainingDuration } = context;
+      const mustHaveSkills =
+        previousResults['analyze-skill-gaps']?.gapBuckets?.mustHave ||
+        previousResults['analyze-skill-gaps']?.criticalGaps ||
+        [];
 
-      const validatorPrompt = `Validate this roadmap quality.
+      const strictValidation = buildStrictRoadmapValidation({
+        modules,
+        mustHaveSkills,
+        context,
+        previousResults,
+      });
 
-MODULES: ${modules.length}
-TOTAL DAYS: ${modules.reduce((sum, m) => sum + (m.estimatedDays || 1), 0)}
-ALLOWED DURATION: ${trainingDuration}
-
-CRITERIA:
-1. Modules complete?
-2. Estimated days realistic?
-3. Skills covered adequate?
-4. Logical progression?
-
-Return JSON:
-{
-  "pass": true/false,
-  "score": 0-100,
-  "issues": ["issue1"],
-  "improvements": ["suggestion1"]
-}`;
-
-      try {
-        const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash', generationConfig: { responseMimeType: 'application/json' } });
-        const result = await model.generateContent(validatorPrompt);
-        const text = result.response.text();
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const validation = JSON.parse(jsonMatch[0]);
-          return {
-            ...validation,
-            agentName: 'Validation Agent'
-          };
-        }
-      } catch (error) {
-        console.warn('    ⚠️  Validation check skipped');
+      console.log('    📏 Strict validation summary:', {
+        pass: strictValidation.pass,
+        score: strictValidation.score,
+        modules: Array.isArray(modules) ? modules.length : 0,
+        mustHaveSkills: Array.isArray(mustHaveSkills) ? mustHaveSkills.length : 0,
+      });
+      console.log('    📐 Strict validation gates:', strictValidation.gates);
+      if (Array.isArray(strictValidation.hardFails) && strictValidation.hardFails.length > 0) {
+        console.warn('    ❌ Strict hard fails:', strictValidation.hardFails);
       }
 
       return {
-        pass: modules.length > 0,
-        score: 80,
-        issues: [],
+        ...strictValidation,
+        reason: strictValidation.pass
+          ? 'Roadmap passed strict multi-gate validation'
+          : 'Roadmap failed strict multi-gate validation',
         agentName: 'Validation Agent'
       };
     });
@@ -1403,6 +1635,17 @@ Return JSON only:
             });
           }
           step.critical = false;
+          step.retryPolicy = {
+            maxRetries: Math.max(2, Number(step?.retryPolicy?.maxRetries) || 1),
+            backoffMs: Math.max(0, Number(step?.retryPolicy?.backoffMs) || 1000),
+          };
+        }
+
+        if (step.agent === "extract-company-skills") {
+          step.retryPolicy = {
+            maxRetries: Math.max(2, Number(step?.retryPolicy?.maxRetries) || 1),
+            backoffMs: Math.max(0, Number(step?.retryPolicy?.backoffMs) || 1000),
+          };
         }
       }
     }
@@ -2040,6 +2283,11 @@ Return JSON only:
         let attemptQueued = false;
         try {
           const constraints = this.normalizeConstraintEnvelope(context?.constraints);
+          const baseRetrievalThreshold = step?.retryPolicy?.retrievalThreshold ?? resolveAgentRetrievalBaseThreshold(step.agent);
+          const retrievalThreshold = resolveRetrievalThreshold(
+            baseRetrievalThreshold,
+            attempts
+          );
           const executionPlan = {
             strategy: "single_pass",
             retrievalDepth: "standard",
@@ -2048,6 +2296,13 @@ Return JSON only:
 
           output = await agentDefinition.execute({
             ...stepInput,
+            retrievalConfig: {
+              minScore: retrievalThreshold,
+              retryAttempt: attempts,
+              baseThreshold: Number(baseRetrievalThreshold) || DEFAULT_RETRIEVAL_THRESHOLD,
+              maxThreshold: MAX_RETRIEVAL_THRESHOLD,
+              thresholdStep: RETRIEVAL_THRESHOLD_STEP,
+            },
             executionPlan,
             constraints,
           });
@@ -2435,31 +2690,16 @@ Return JSON only:
     if (step.agent === "generate-roadmap") {
       const modules = Array.isArray(output.modules) ? output.modules : [];
       const validModules = modules.filter((m) => m && typeof m === "object").length;
-      const prioritizedSkills =
-        step?.input?.prioritizedSkills ||
-        step?.input?.context?.prioritizedSkills ||
-        output?.prioritizedSkills ||
-        {};
-      const moduleRanks = modules.map((module) => getModulePriorityRank(module, prioritizedSkills));
-      const orderingValid = moduleRanks.every((rank, idx) => idx === 0 || rank >= moduleRanks[idx - 1]);
-      const topMustHaveSkills = normalizePrioritySkillsList(prioritizedSkills.mustHave);
-      const firstModuleSkills = Array.isArray(modules[0]?.skillsCovered) ? modules[0].skillsCovered : [];
-      const firstModuleRank = modules.length > 0 ? moduleRanks[0] : 3;
-      const mustHaveSatisfied = topMustHaveSkills.length === 0 || firstModuleRank === 0;
       const score = validModules > 0 ? 92 : 20;
-      const finalScore = validModules > 0 && orderingValid && mustHaveSatisfied ? score : Math.min(score, 45);
+      const finalScore = score;
       return {
-        pass: validModules > 0 && orderingValid && mustHaveSatisfied,
+        pass: validModules > 0,
         score: finalScore,
         reason: validModules > 0
-          ? orderingValid && mustHaveSatisfied
-            ? "Roadmap modules generated in prioritized order"
-            : "Roadmap modules generated but ordering does not prioritize must-have skills"
+           ? "Roadmap modules generated successfully"
           : "No roadmap modules generated",
         issues: [
           ...(validModules > 0 ? [] : ["modules array is empty or invalid"]),
-          ...(orderingValid ? [] : ["modules are not ordered by skill priority"]),
-          ...(mustHaveSatisfied ? [] : ["first module does not cover must-have skills"]),
         ],
         canRecover: true,
         scoreBand: getValidationScoreBand(finalScore),
@@ -2467,14 +2707,33 @@ Return JSON only:
     }
 
     if (step.agent === "validate-roadmap") {
-      const hasSignal = typeof output.pass === "boolean" || typeof output.score === "number";
-      const score = hasSignal ? 90 : 50;
-      return {
-        pass: hasSignal,
+      const hasSignal = typeof output.pass === "boolean" && typeof output.score === "number";
+      const pass = hasSignal && output.pass === true;
+      const hardFails = Array.isArray(output.hardFails) ? output.hardFails : [];
+      const score = hasSignal ? Number(output.score) : 30;
+
+      console.log("      [STRICT-VALIDATOR] Decision", {
+        hasSignal,
+        pass,
         score,
-        reason: hasSignal ? "Validation output present" : "Validation output incomplete",
-        issues: hasSignal ? [] : ["validate-roadmap output missing pass/score"],
-        canRecover: false,
+        hardFailCount: hardFails.length,
+      });
+      if (hardFails.length > 0) {
+        console.warn("      [STRICT-VALIDATOR] Hard fails", hardFails);
+      }
+
+      return {
+        pass,
+        score,
+        reason: hasSignal
+          ? pass
+            ? "Strict roadmap validation passed"
+            : "Strict roadmap validation failed"
+          : "Validation output incomplete",
+        issues: hasSignal
+          ? (Array.isArray(output.issues) ? output.issues : [])
+          : ["validate-roadmap output missing strict pass/score fields"],
+        canRecover: !pass || hardFails.length > 0,
         scoreBand: getValidationScoreBand(score),
       };
     }
@@ -2730,11 +2989,22 @@ Return JSON:
     if (this.isRoadmapGoal(goal)) {
       const modules = this.getRoadmapModulesFromResults(results);
       if (Array.isArray(modules) && modules.length > 0) {
+        const skillAnalysis = results?.['analyze-skill-gaps'] || {};
         return {
           finalOutput: {
             modules,
             metadata: {
               moduleCount: modules.length,
+              skillGap: Array.isArray(skillAnalysis.skillGap) ? skillAnalysis.skillGap : [],
+              criticalGaps: Array.isArray(skillAnalysis.criticalGaps) ? skillAnalysis.criticalGaps : [],
+              gapBuckets: skillAnalysis.gapBuckets || {
+                mustHave: Array.isArray(skillAnalysis.criticalGaps) ? skillAnalysis.criticalGaps : [],
+                goodToHave: [],
+                optional: [],
+              },
+              explorationCandidates: Array.isArray(skillAnalysis.explorationCandidates)
+                ? skillAnalysis.explorationCandidates
+                : [],
             },
           },
           quality: 92,

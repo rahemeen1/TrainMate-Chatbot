@@ -6,6 +6,22 @@ import { collection, getDocs, doc, updateDoc, getDoc } from "firebase/firestore"
 import FresherShellLayout from "./FresherShellLayout";
 import TrainingLockedScreen from "./TrainingLockedScreen";
 
+const sortByModuleOrder = (modules = []) =>
+  modules
+    .map((module, idx) => ({ module, idx }))
+    .sort((a, b) => {
+      const aOrder = Number(a.module?.order);
+      const bOrder = Number(b.module?.order);
+      const aHasOrder = Number.isFinite(aOrder);
+      const bHasOrder = Number.isFinite(bOrder);
+
+      if (aHasOrder && bHasOrder && aOrder !== bOrder) return aOrder - bOrder;
+      if (aHasOrder && !bHasOrder) return -1;
+      if (!aHasOrder && bHasOrder) return 1;
+      return a.idx - b.idx;
+    })
+    .map(({ module }) => module);
+
 export default function FresherTraining() {
   const DEFAULT_QUIZ_UNLOCK_PERCENT = 70;
   const { companyId, deptId, userId } = useParams();
@@ -67,7 +83,7 @@ export default function FresherTraining() {
         );
 
         const snap = await getDocs(roadmapRef);
-        const modules = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const modules = sortByModuleOrder(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
         setRoadmap(modules);
 
         if (selectedModuleId) {
@@ -172,6 +188,15 @@ export default function FresherTraining() {
   const moduleTimeRemaining = selectedModule ? getModuleTimeRemaining(selectedModule) : null;
 
   const getQuizTimeUnlock = (module) => {
+  // TEMPORARY TEST OVERRIDE: disable frontend 70% time-lock gate.
+  return {
+    isUnlocked: true,
+    unlockPercent: DEFAULT_QUIZ_UNLOCK_PERCENT,
+    remainingTime: null,
+    message: "Quiz is available (temporary override).",
+  };
+
+  /*
     if (!module) {
       return {
         isUnlocked: false,
@@ -230,6 +255,7 @@ export default function FresherTraining() {
       remainingTime,
       message: `Quiz unlocks after ${unlockPercent}% module time. Remaining: ${remainingTime}`,
     };
+	*/
   };
 
   const quizUnlockInfo = selectedModule ? getQuizTimeUnlock(selectedModule) : null;
@@ -287,9 +313,19 @@ return (
       contentClassName="p-4 md:p-8 lg:p-10"
     >
       <div className="space-y-8">
-      <h1 className="text-3xl font-bold text-[#00FFFF]">
-        Module Details
-      </h1>
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-3xl font-bold text-[#00FFFF]">
+          Module Details
+        </h1>
+        <button
+          onClick={() => navigate(-1)}
+          className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[#00FFFF55] bg-[#031C3A]/70 text-[#00FFFF] transition hover:bg-[#00FFFF1A]"
+          aria-label="Back to roadmap"
+          title="Back to roadmap"
+        >
+          ←
+        </button>
+      </div>
 
       {/* ===== Weakness Analysis Banner ===== */}
       {showWeaknessBanner && weaknessAnalysis && (
@@ -312,6 +348,26 @@ return (
                     <li key={idx} className="text-red-300">{area}</li>
                   ))}
                 </ul>
+                {Array.isArray(weaknessAnalysis.focusAreas) && weaknessAnalysis.focusAreas.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-[#AFCBE3] text-sm font-semibold mb-2">Targeted study plan</p>
+                    <ul className="text-[#AFCBE3] text-sm space-y-1 list-disc list-inside">
+                      {weaknessAnalysis.focusAreas.map((area, idx) => (
+                        <li key={idx} className="text-cyan-200">{area}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {Array.isArray(weaknessAnalysis.recommendedActions) && weaknessAnalysis.recommendedActions.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-[#AFCBE3] text-sm font-semibold mb-2">Recommended next steps</p>
+                    <ul className="text-[#AFCBE3] text-sm space-y-1 list-disc list-inside">
+                      {weaknessAnalysis.recommendedActions.map((action, idx) => (
+                        <li key={idx} className="text-green-300">{action}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
               
               <p className="text-[#AFCBE3] text-sm">
@@ -328,20 +384,6 @@ return (
         </div>
       )}
 
-      {/* ===== Progress Bar ===== */}
-      <div>
-        <div className="flex justify-between text-sm mb-2 text-[#AFCBE3]">
-          <span>Learning Progress</span>
-          <span>{progressPercent}%</span>
-        </div>
-
-        <div className="w-full bg-[#012244] rounded-full h-3">
-          <div
-            className="bg-[#00FFFF] h-3 rounded-full transition-all duration-500"
-            style={{ width: `${progressPercent}%` }}
-          />
-        </div>
-      </div>
       
 
       {/* ===== Module Details Card ===== */}
@@ -389,19 +431,35 @@ return (
           <div className="flex flex-col gap-4">
             {!selectedModule.completed ? (
               <>
-                {/* Mark Module as Completed Button - Always same text */}
-                <button
-                  onClick={() => takeQuiz()}
-                  className="px-4 py-2 rounded font-semibold flex items-center justify-center gap-2 transition bg-[#00FFFF] text-[#031C3A] hover:bg-[#00FFFF]/90"
-                >
-                  Mark Module as Completed
-                </button>
-                {!quizUnlockInfo?.isUnlocked && (
-                  <p className="text-xs text-yellow-300">
-                    Quiz locked until {quizUnlockInfo?.unlockPercent || DEFAULT_QUIZ_UNLOCK_PERCENT}% module time is completed.
-                    {quizUnlockInfo?.remainingTime ? ` (${quizUnlockInfo.remainingTime} left)` : ""}
-                  </p>
-                )}
+                <div className="flex items-center gap-3">
+                  {/* Chatbot Button */}
+                  <button
+                    onClick={() =>
+                      navigate("/chatbot", {
+                        state: { userId, companyId, deptId, companyName },
+                      })
+                    }
+                    className="inline-flex flex-1 items-center justify-center rounded-xl border border-[#00FFFF55] bg-[#031C3A]/90 px-4 py-3 text-sm font-semibold text-[#7FFAFF] shadow-[0_8px_20px_rgba(0,255,255,0.12)] transition hover:bg-[#07315A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7FFAFF]"
+                  >
+                    Chat with AI Assistant
+                  </button>
+
+                  <span className="inline-flex items-center gap-1" aria-hidden="true">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#7DE7FF]" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#7DE7FF]" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#7DE7FF]" />
+                  </span>
+
+                  {/* Mark Module as Completed Button */}
+                  <button
+                    onClick={() => takeQuiz()}
+                    className="inline-flex flex-1 items-center justify-center rounded-xl border border-[#00FFFF55] bg-[#031C3A]/90 px-4 py-3 text-sm font-semibold text-[#7FFAFF] shadow-[0_8px_20px_rgba(0,255,255,0.12)] transition hover:bg-[#07315A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7FFAFF]"
+                  >
+                    Mark Module as Completed
+                  </button>
+                </div>
+
+                
               </>
             ) : (
               <span className="text-green-400 font-semibold">
@@ -409,26 +467,6 @@ return (
               </span>
             )}
 
-            {/* Chatbot Button */}
-            <button
-              onClick={() =>
-                navigate("/chatbot", {
-                  state: { userId, companyId, deptId, companyName },
-                })
-              }
-              className="flex items-center justify-center gap-2 px-6 py-3
-                bg-gradient-to-r from-cyan-400 to-blue-500
-                rounded-lg text-white font-semibold hover:scale-105 transition"
-            >
-              Chat with AI Assistant
-            </button>
-
-            <button
-              onClick={() => navigate(-1)}
-              className="text-sm text-[#00FFFF] underline"
-            >
-              ← Back to roadmap
-            </button>
           </div>
         </div>
         

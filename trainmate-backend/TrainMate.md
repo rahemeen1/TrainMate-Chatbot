@@ -1,5 +1,40 @@
 # TrainMate Roadmap Generation: Steps, Validations, and Agents
 
+## 0) TrainMate Overview
+
+TrainMate is an AI-powered corporate learning and training platform that helps users move from onboarding to structured skill growth through personalized roadmaps, guided practice, and progress tracking.
+
+It combines CV understanding, company requirement analysis, roadmap planning, quizzes, chat support, notifications, and memory-based personalization into one workflow.
+
+### What TrainMate Does
+
+- Reads a user's CV and onboarding context.
+- Understands company-specific learning requirements.
+- Builds a personalized roadmap based on skill gaps and training goals.
+- Supports learning through chat, quizzes, and progress-aware guidance.
+- Keeps the experience adaptive using memory, validation, and orchestration logic.
+
+### Important Features
+
+- Personalized roadmap generation from CV and company data.
+- AI-based skill extraction and skill-gap analysis.
+- Retrieval of relevant company knowledge before roadmap generation.
+- Roadmap validation so only usable modules are saved.
+- Chat assistance for learning support and roadmap follow-up.
+- Quiz and progress flows for tracking module completion.
+- Notification and scheduling support for training workflows.
+- Memory-backed orchestration for better repeat runs and personalization.
+
+### Core Areas in the App
+
+- User onboarding and profile setup.
+- Roadmap generation and validation.
+- Learning chat and guidance.
+- Knowledge ingestion and retrieval.
+- Assessment and quiz handling.
+- Notifications and calendar support.
+- Admin and company-specific training workflows.
+
 This document explains the exact runtime flow used to generate a roadmap in the current backend implementation.
 
 Source flow entrypoints:
@@ -367,10 +402,17 @@ Retrieval is done in two stages:
     - `topK: 5`
     - `includeMetadata: true`
 - Returned docs are mapped as `{ text, score }`, then deduplicated by exact `text`.
+- A retrieval score threshold is applied before results are returned.
+- The default minimum score starts at `0.65` and can be overridden through config.
+- Per-agent baselines are used now:
+  - `extract-company-skills` starts at `0.60`
+  - `retrieve-documents` starts slightly looser at `0.60`
+- On retry, the orchestrator hardens the threshold by `0.05` per attempt, up to `0.85`.
 
 Important behavior:
-- There is currently no hard minimum Pinecone score cutoff at retrieval stage.
-- If retrieval returns no docs, pipeline can still continue (non-blocking), but quality may be degraded.
+- Weak Pinecone matches are filtered out early so low-signal docs do not reach roadmap generation.
+- If retrieval returns no docs after thresholding, the pipeline can still continue with CV-driven generation.
+- On retry, the retrieval step becomes stricter instead of repeating the same query with the same cutoff.
 - In step validation, retrieval typically gets:
   - stronger score when docs are found
   - degraded-but-acceptable score when no docs are found
@@ -409,6 +451,32 @@ $$
   - `70-85` => `degraded`
   - `> 85` => `trusted`
 - Retry logic is triggered for retry-band outputs on critical steps.
+
+Strict validation update for roadmap quality:
+- `validate-roadmap` now uses deterministic multi-gate validation rather than a single LLM-only pass/score.
+- Output includes gate-level diagnostics (`gates`), hard blockers (`hardFails`), and actionable feedback.
+- Step-level validation enforces `output.pass === true` for successful `validate-roadmap` completion.
+
+Hard fail gates (non-negotiable):
+1. Must-have skill coverage gate
+- coverage = `coveredMustHave / totalMustHave`
+- fail when `< 0.60`
+
+2. Empty or trivial module gate
+- fail when module count `< 2`
+- fail when modules are generic/trivial placeholders (for example: `Learn basics`, `Practice`, generic module naming)
+
+3. Duration realism gate
+- convert duration constraint to days and compare to generated total days
+- fail when mismatch is greater than `40%`
+
+4. Core category presence gate
+- infer required clusters from must-have/company skills (backend, frontend, ml, data, devops, accounting, communication)
+- fail when any required cluster is absent in generated modules
+
+Additional quality gates:
+- structure/progression gate (must-have coverage should appear earlier)
+- context alignment gate (module content should align with CV/company/training anchors)
 
 4. Final readiness score (0-100)
 - Final orchestration output is validated (`validateFinalOutput(...)`).
@@ -643,9 +711,581 @@ Runtime effect:
 - Company skill extraction better reflects actual enterprise docs.
 - Improves downstream gap quality and roadmap relevance.
 
-### D. Validation/scoring thresholds remain unchanged
+### D. Validation/scoring thresholds remain mostly unchanged
 
-No threshold behavior changes were made today. Active score-band policy remains:
+The main score-band policy remains:
 - `< 70` => retry
 - `70-85` => degraded
 - `> 85` => trusted
+
+Retrieval-specific behavior is stricter now:
+- Pinecone results below the retrieval threshold are filtered out.
+- Each retry can increase the minimum score cutoff automatically.
+- Company-skill extraction uses a stricter baseline than general document retrieval.
+# TrainMate Agent Decision Pipeline
+
+## Purpose
+This document explains how each TrainMate agent makes decisions, what inputs it receives, what outputs it returns, and how the full pipeline executes from roadmap generation to notifications.
+
+## Architecture Overview
+TrainMate uses three agent layers:
+
+1. Execution Agents
+These perform core tasks like extraction, planning, generation, and validation.
+
+2. Policy Decision Agents
+These decide strategy, retries, fallback behavior, and operational choices (notifications, calendar, recovery).
+
+3. Functional Domain Agents
+These support specific product functions like quiz handling and chat workflows.
+
+The core separation is still the same:
+- policy layer decides
+- service layer remembers and executes
+- orchestrator coordinates the workflow
+
+---
+
+## A. Roadmap Generation Pipeline (Main Orchestration)
+
+### Step 1: Plan Generation Decision Agent
+Decision type: planGeneration
+
+Input:
+- Goal text
+- Context (training topic, expertise, constraints, memory)
+- Available agents
+
+Decision logic:
+- Generates a step sequence and dependencies
+- Picks error strategy (retry, fail_fast, skip_non_critical, pivot)
+- Estimates execution cost
+
+Output:
+- Plan object with ordered steps
+
+Fallback:
+- If planner fails, deterministic fallback plan is used.
+
+---
+
+### Step 2: CV Skills Agent
+Agent key: extract-cv-skills
+
+Input:
+- CV text
+- Structured CV
+- trainingOn
+- expertise
+
+Decision logic:
+- Uses skillExtraction policy decision (source=cv)
+- Strategy can be hybrid, single_source, or fallback_only
+- Applies strict filtering and normalization
+
+Output:
+- cvSkills
+- extractionDetails
+
+---
+
+### Step 3: Company Skills Agent
+Agent key: extract-company-skills
+
+Input:
+- companyDocsText
+- trainingOn
+- expertise
+
+Decision logic:
+- Uses skillExtraction policy decision (source=company)
+- If docs exist: company_docs strategy
+- If docs missing: topic_inference strategy
+- Applies strict filtering and domain-aware normalization
+
+Latest update:
+- company docs stay high trust
+- topic inference stays available, but with lower confidence and higher exploration weight
+- that keeps weak inference useful without letting it dominate gap scoring
+
+Output:
+- companySkills
+- extractionDetails
+
+---
+
+### Step 4: Gap Analysis Agent
+Agent key: analyze-skill-gaps
+
+Input:
+- cvSkills
+- companySkills
+
+Decision logic:
+- Computes missing skills (company minus CV)
+- Ranks and slices critical gaps
+
+Latest update:
+- gap analysis now uses calibratedConfidence instead of raw confidence
+- it also returns explorationCandidates so inferred skills can still guide retrieval planning
+
+Output:
+- skillGap
+- criticalGaps
+- gapCount
+- prioritizedGaps
+- gapBuckets
+- explorationCandidates
+
+---
+
+### Step 5: Retrieval Planning Agent
+Agent key: plan-retrieval
+
+Input:
+- skillGap
+- trainingOn
+
+Decision logic:
+- LLM creates retrieval queries and focus areas
+- Validates structure (queries, focusAreas, priority)
+
+Latest update:
+- retrieval planning now receives exploration hints from weak or inferred skills
+- it can output explorationAreas in addition to focusAreas
+
+Output:
+- queries
+- focusAreas
+- priority
+- explorationAreas
+
+Fallback:
+- If invalid output, default query strategy is returned.
+
+---
+
+### Step 6: Document Retrieval Agent
+Agent key: retrieve-documents
+
+Input:
+- queries
+- companyId
+- deptId
+
+Decision logic:
+- Retrieves content from vector store per query
+- Merges and deduplicates results
+- Applies an adaptive minimum score threshold before returning documents
+- Raises the threshold on retry so the second pass is more selective
+
+Output:
+- documents
+- documentCount
+
+---
+
+### Step 7: Roadmap Generation Agent
+Agent key: generate-roadmap
+
+Input:
+- cvText
+- skillGap
+- focusAreas
+- retrieved docs
+- learning profile
+- training constraints
+
+Decision logic:
+- Builds final contextual prompt
+- Generates module sequence with timeline
+
+Output:
+- modules
+- moduleCount
+- totalDays
+
+---
+
+### Step 8: Validation Agent
+Agent key: validate-roadmap
+
+Input:
+- modules
+- allowed duration
+- must-have skills
+- CV + company context signals
+
+Decision logic:
+- Runs deterministic strict multi-gate validation
+- Applies hard-fail conditions for coverage, module quality, duration realism, and missing core categories
+- Evaluates structure progression and context alignment
+- Emits runtime gate diagnostics for observability
+
+Output:
+- pass
+- score
+- hardFails
+- gates
+- issues
+- improvements
+
+Recovery behavior:
+- If validation fails, critique/replan cycle updates plan and context, then re-executes.
+
+---
+
+## B. Policy Decision Agents (How Decisions Are Taken)
+
+### 1) skillExtraction
+Used by extractor for CV and company branches.
+
+Rules:
+- CV source:
+  - hybrid if structured + text available
+  - single_source if one source available
+  - fallback_only if no usable source
+- Company source:
+  - company_docs if docs available
+  - topic_inference if docs unavailable
+
+---
+
+### 2) notification
+Chooses if roadmap/quiz notifications should be sent.
+
+Input signals:
+- user engagement
+- training context
+- constraints
+- memory
+
+Output:
+- shouldSend
+- sendEmail
+- createCalendarEvent
+- timing/tone metadata
+
+Latest update:
+- notification service now loads engagement and learning state before calling policy
+- the service adds adaptive throttling on top of policy output
+- repeated ignored notifications can reduce frequency for non-critical messages
+- the policy layer still remains the decision brain
+
+---
+
+### 3) calendarDecision
+Dedicated calendar scheduling decision agent.
+
+Input:
+- notification type
+- user and module context
+- timezone
+- emailSent state
+- upstream notification decision
+
+Decision logic:
+- Skips invalid email or zero-module cases
+- Can approve, skip, or defer event creation
+- Selects reminderTime and urgency
+
+Latest update:
+- calendar decisions are kept separate from notification decisions
+- notification decides whether the flow should happen
+- calendarDecision decides whether a calendar event should be created and when
+
+Output:
+- shouldCreateCalendarEvent
+- reason
+- reminderTime
+- urgency
+
+---
+
+### 4) quizOutcome
+Decides retry and progression strategy based on score and attempts.
+
+Output includes:
+- allowRetry
+- retriesGranted
+- requiresRoadmapRegeneration
+- lockModule/contactAdmin flags
+
+Logic notes:
+- Decision is policy-driven via `policyEngine.decide("quizOutcome", input)`.
+- Input includes score, attempt number, score breakdown (MCQ/one-liner/coding), weak areas, module title, max attempts, and pass threshold.
+- If policy LLM output is unavailable or malformed, deterministic fallback logic is applied.
+- Fallback behavior can trigger retry allowance, module lock, and admin contact flags.
+
+Controller integration:
+- Quiz controller uses `makeAgenticDecision(...)` to call `quizOutcome` and apply the decision to learner state.
+- Decision affects retries, remediation guidance, lock behavior, and escalation.
+
+---
+
+### 5) stepRecovery and recoveryStrategy
+Used when an agent step fails validation or execution.
+
+Decision logic:
+- Retry with input patch
+- Skip non-critical
+- Fallback strategy
+
+Latest update:
+- planCorrections are now preserved and fed back into replanning
+- recovery is more targeted than a generic retry
+
+---
+
+### 6) replanCritique
+Critiques failed cycle and suggests add/remove/prioritize agent changes.
+
+Output:
+- critique reason
+- addAgents/removeAgents/prioritizeAgents
+- refined context hints
+
+---
+
+### 7) chatResponse
+Creates a response plan, retrieves best context, runs multi-candidate response generation, judges best answer, and applies guardrails.
+
+---
+
+## I. Quiz Runtime Logic (Module + Final)
+
+### I.1 Module Quiz Path
+
+1. Quiz generation
+- Generated with module-specific context, critique loop, and structure checks.
+- Supports MCQ and one-liners always; coding questions are conditional by department rules.
+
+2. Time unlock gate
+- Module quiz unlock is time-gated at `70%` of module estimated duration from module start.
+
+3. Scoring and evaluation
+- MCQ: deterministic correct-index scoring.
+- One-liner: exact-match first, then LLM semantic evaluation fallback.
+- Coding (if present): evaluated via code evaluator service.
+
+4. Attempt decisioning
+- `quizOutcome` policy decides retries, lock/escalation, and regeneration/remediation hints.
+- Admin notifications may be created when retries are exhausted.
+
+### I.2 Final Assessment Path
+
+1. Eligibility
+- Final assessment opens only after all roadmap modules are completed.
+
+2. Attempts and deadlines
+- Attempts are tracked and bounded by final-assessment attempt limits.
+- Deadline and status checks prevent indefinite retry loops.
+
+3. Outcome handling
+- Pass: unlock certificate flow.
+- Fail after limits: create admin notification and keep progression guarded.
+
+4. Completion reporting
+- Generates training summary report payload.
+- Triggers notification/email/PDF summary flow where applicable.
+
+### I.3 Primary Files (Quiz)
+- `controllers/QuizController.js`
+- `services/policy/policyEngine.service.js` (`quizOutcome`)
+- `services/codeEvaluator.service.js`
+- `services/calendarService.js`
+- `services/emailService.js`
+
+---
+
+## C. Notification Pipeline (Roadmap Generated)
+
+1. Notification decision agent runs.
+2. Roadmap email is attempted.
+3. Calendar decision agent runs.
+4. Calendar event is attempted only if both are true:
+   - notification policy allows calendar
+   - calendarDecision says create
+5. Result object records:
+   - emailSent/emailError
+   - calendarAttempted/calendarEventCreated/calendarError
+   - decision and calendarDecision metadata
+
+This avoids misleading logs such as "calendar failed" when it was intentionally skipped.
+
+Latest update:
+- this pipeline also records skip vs fail vs sent outcomes for notification learning
+- notification frequency can now adapt using past engagement signals
+
+---
+
+## D. Operational Observability
+
+Agent health dashboard tracks:
+- runs
+- success rate
+- blended status (healthy/warning/critical/no-data)
+- latency and last run
+- active alerts
+
+Data source strategy:
+- Runtime data preferred
+- Stored snapshot fallback when runtime unavailable
+- Invalid/empty snapshots are ignored
+
+Latest update:
+- empty or invalid stored snapshots are ignored so the UI does not blank out
+- runtime tables are grouped by agent type for clarity
+
+---
+
+## E. Quick Reference: Core Execution Agent Order
+
+1. extract-cv-skills
+2. extract-company-skills
+3. analyze-skill-gaps
+4. plan-retrieval
+5. retrieve-documents
+6. generate-roadmap
+7. validate-roadmap
+
+Code evaluation path uses evaluate-code separately when needed.
+
+---
+
+## G. Recent Changes At A Glance
+
+These are the important changes added most recently:
+
+- confidence calibration now separates raw confidence from calibrated confidence
+- topic inference gets lower confidence but higher exploration weight
+- notification decisions now use engagement memory and ignored-streak history
+- calendar decisions remain separate from notification decisions
+- agent health snapshots are validated before display
+- fresher deletion now removes the user recursively from Firestore
+- chat unlock intent detection was tightened to reduce false positives
+- roadmap validation now uses strict deterministic multi-gate checks with hard-fail conditions
+
+## I. Latest Quiz and Closed-Loop Learning Upgrades (2026-04-19)
+
+These updates connect roadmap skill priorities directly to quiz generation and then feed quiz weaknesses back into learner guidance and roadmap context.
+
+### I.1 Skill-aligned quiz generation
+
+- Quiz generation now builds a skill alignment blueprint from roadmap metadata when available.
+- Blueprint includes:
+  - must-have skills
+  - good-to-have skills
+  - optional skills
+  - module skills and coverage pool
+- Prompting explicitly prioritizes must-have skill coverage before good-to-have coverage.
+- Questions now carry skill metadata fields:
+  - skillTags
+  - priority (`must-have | good-to-have | optional`)
+
+Runtime effect:
+- Quizzes are less generic and more aligned with critical skill gaps.
+- Must-have skills are sampled more heavily in generated assessments.
+
+### I.2 Feedback intelligence during submission
+
+- Result objects now include richer per-question feedback:
+  - selected answer vs correct answer (when applicable)
+  - concise "why it was wrong" review text
+  - skill tags and question priority for diagnostics
+- Failed attempts now generate a remediation plan with:
+  - summary
+  - focus areas
+  - specific recommended actions
+- Policy decision input now includes skill-level weakness signals, not only aggregate scores.
+
+Runtime effect:
+- Learners get actionable correction feedback instead of score-only output.
+- Retry/regeneration decisions can react to must-have skill weakness.
+
+### I.3 Closed-loop weakness persistence
+
+- On failed module quiz attempts, user-level weakness analysis is now updated with:
+  - weak skills
+  - must-have weak skills
+  - good-to-have weak skills
+  - focus areas and recommended actions
+  - summary and generation timestamp
+- Quiz memory updates now store skill weaknesses and latest remediation plan for future personalization.
+
+Runtime effect:
+- Quiz outcomes feed back into roadmap/chat guidance as a closed-loop learning signal.
+- Frontend training and result surfaces can render focused recovery guidance immediately.
+
+### I.4 Roadmap skill metadata handoff
+
+- Roadmap orchestration output now persists skill-bucket metadata (`skillGap`, `criticalGaps`, `gapBuckets`) in user roadmap agent metadata.
+- Regeneration weakness analysis now also persists skill alignment buckets.
+
+Runtime effect:
+- Subsequent quiz generation can consume consistent skill-priority context even across sessions.
+
+---
+
+## H. One-Line Summary
+
+TrainMate stays modular: policy decides, services remember and execute, and the orchestrator coordinates AI workflows without turning into a hardcoded monolith.
+
+---
+
+## F. Why This Pipeline Is Robust
+
+- Strategy decisions are explicit (policy agents) instead of hidden conditionals
+- Failures have controlled recovery and replanning
+- Outputs are validated before final response
+- Notifications and calendar actions are separated and explainable
+- Health telemetry gives runtime visibility for operations
+
+## J. Session Patch Log (2026-04-19)
+
+This section captures the end-to-end fixes implemented in the latest debugging and testing cycle.
+
+### J.1 Temporary testing bypasses
+
+- Added backend testing bypass flag `FORCE_UNLOCK_QUIZ_FOR_TESTING=true` to bypass module quiz time-lock checks during QA.
+- Added matching frontend bypass so UI lock checks do not block testing while backend is unlocked.
+- Maintained strict attempt counters and module/user lock semantics unless explicitly bypassed.
+
+### J.2 Day progression correction
+
+- Updated training day progression logic to use timezone-consistent date key handling.
+- Fixed cases where users continued seeing Day 1 even when timeline should advance.
+
+### J.3 Roadmap ordering behavior update
+
+- Removed explicit backend reorder enforcement that forced must-have-first reordering.
+- Removed strict validation that rejected output solely for not following forced bucket order.
+- Updated frontend roadmap/module rendering to follow persisted DB module `order` directly.
+
+### J.4 Quiz diagnostics and resilience updates
+
+- Added detailed debug logging in quiz generation/submission for:
+  - gate inputs and unlock status
+  - attempt snapshots and retry state
+  - scoring breakdown and decision flow
+- Restored missing `generateQuizAgentic(...)` function used by module quiz generation.
+- Restored missing `makeAgenticDecision(...)` helper used in submit decision flow.
+- Fixed `submitQuiz` runtime errors caused by undefined variables:
+  - `skillBlueprint` now resolved from stored quiz alignment or rebuilt from module/user context.
+  - `weakAreas` now declared in submit scope so persistence blocks can safely access it.
+
+### J.5 Department-wise coding question policy
+
+- Added explicit department list normalization and mapping:
+  - `HR`, `SOFTWAREDEVELOPMENT`, `AI`, `ACCOUNTING`, `MARKETING`, `OPERATIONS`, `DATASCIENCE`, `IT`
+- Enabled coding questions by default only for:
+  - `SOFTWAREDEVELOPMENT`, `AI`, `DATASCIENCE`, `IT`
+- Disabled coding questions by default for:
+  - `HR`, `ACCOUNTING`, `MARKETING`, `OPERATIONS`
+- Firestore `quizSettings.allowCodingQuestions` (when explicitly boolean) still overrides defaults.
+- Missing department fallback now uses mapped defaults instead of permissive allow-all behavior.
+
+### J.6 Current status
+
+- Syntax validation checks on updated quiz/controller paths passed after patches.
+- Runtime crash sequence moved from repeated `ReferenceError` failures to stable execution path pending full re-run verification.

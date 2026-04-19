@@ -98,6 +98,35 @@ export default function ModuleQuizResults() {
             {results.message}
           </p>
         )}
+
+        {!results.passed && results.remediationPlan?.summary && (
+          <div className="mt-4 p-4 bg-slate-900/60 border border-cyan-400/20 rounded-lg">
+            <h3 className="text-cyan-300 font-bold mb-2">Why this attempt missed the mark</h3>
+            <p className="text-[#AFCBE3] text-sm leading-relaxed">{results.remediationPlan.summary}</p>
+            {Array.isArray(results.skillSignals?.mustHaveWeakSkills) && results.skillSignals.mustHaveWeakSkills.length > 0 && (
+              <div className="mt-3">
+                <p className="text-xs uppercase tracking-wide text-[#AFCBE3] mb-2">Must-have gaps</p>
+                <div className="flex flex-wrap gap-2">
+                  {results.skillSignals.mustHaveWeakSkills.map((skill) => (
+                    <span key={skill} className="px-2 py-1 rounded-full bg-red-500/15 border border-red-400/30 text-red-200 text-xs">
+                      {skill}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {Array.isArray(results.remediationPlan?.actions) && results.remediationPlan.actions.length > 0 && (
+              <ul className="mt-3 space-y-1 text-sm text-[#AFCBE3]">
+                {results.remediationPlan.actions.map((action, idx) => (
+                  <li key={`${action}-${idx}`} className="flex items-start gap-2">
+                    <span className="text-cyan-300 mt-0.5">•</span>
+                    <span>{action}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
         
         {/* Success Message */}
         {results.passed && (
@@ -228,8 +257,14 @@ export default function ModuleQuizResults() {
             <p className={r.isCorrect ? "text-green-300" : "text-red-300"}>
               {r.isCorrect ? "Correct" : "Incorrect"} - Correct: {r.correctAnswer}
             </p>
+            {!r.isCorrect && r.selectedAnswer && (
+              <p className="text-[#AFCBE3] mt-2 text-sm">Your answer: {r.selectedAnswer}</p>
+            )}
             {r.explanation && (
               <p className="text-[#AFCBE3] mt-2">{r.explanation}</p>
+            )}
+            {!r.isCorrect && r.review && (
+              <p className="text-cyan-200 mt-2 text-sm">Why it was wrong: {r.review}</p>
             )}
           </div>
         ))}
@@ -244,8 +279,14 @@ export default function ModuleQuizResults() {
             <p className={r.isCorrect ? "text-green-300" : "text-red-300"}>
               {r.isCorrect ? "Correct" : "Incorrect"} - Correct: {r.correctAnswer}
             </p>
+            {!r.isCorrect && r.response && (
+              <p className="text-[#AFCBE3] mt-2 text-sm">Your answer: {r.response}</p>
+            )}
             {r.explanation && (
               <p className="text-[#AFCBE3] mt-2">{r.explanation}</p>
+            )}
+            {!r.isCorrect && r.review && (
+              <p className="text-cyan-200 mt-2 text-sm">Why it was wrong: {r.review}</p>
             )}
           </div>
         ))}

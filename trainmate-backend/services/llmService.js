@@ -9,14 +9,6 @@ if (!process.env.GEMINI_API_KEY) {
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-function normalizeSkillToken(skill) {
-  return String(skill || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9+#.\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 function normalizePrioritySkillsList(skills = []) {
   return Array.from(
     new Set(
@@ -25,34 +17,6 @@ function normalizePrioritySkillsList(skills = []) {
         .filter(Boolean)
     )
   );
-}
-
-function getModulePriorityRank(module = {}, prioritizedSkills = {}) {
-  const mustHave = new Set(normalizePrioritySkillsList(prioritizedSkills.mustHave).map(normalizeSkillToken));
-  const goodToHave = new Set(normalizePrioritySkillsList(prioritizedSkills.goodToHave).map(normalizeSkillToken));
-  const skills = Array.isArray(module?.skillsCovered) ? module.skillsCovered : [];
-
-  if (skills.length === 0) return 3;
-
-  return skills.reduce((bestRank, skill) => {
-    const normalized = normalizeSkillToken(skill);
-    const rank = mustHave.has(normalized) ? 0 : goodToHave.has(normalized) ? 1 : 2;
-    return Math.min(bestRank, rank);
-  }, 3);
-}
-
-function sortModulesByPriority(modules = [], prioritizedSkills = {}) {
-  return [...modules].sort((a, b) => {
-    const aRank = getModulePriorityRank(a, prioritizedSkills);
-    const bRank = getModulePriorityRank(b, prioritizedSkills);
-    if (aRank !== bRank) return aRank - bRank;
-
-    const aDays = Number(a?.estimatedDays || 1);
-    const bDays = Number(b?.estimatedDays || 1);
-    if (aDays !== bDays) return aDays - bDays;
-
-    return String(a?.moduleTitle || "").localeCompare(String(b?.moduleTitle || ""));
-  });
 }
 
 export const generateRoadmap = async ({
@@ -171,9 +135,8 @@ DURATION: ${safeDuration}
 SKILL GAPS: ${safeSkillGap.slice(0, 10).join(", ") || "General"}
 
 PRIORITY RULES:
-- Must-have skills must appear first in the roadmap
-- Good-to-have skills should come after must-have skills
-- Optional skills should come last
+- Cover must-have and good-to-have skills across the roadmap, but do not force bucket-based ordering.
+- Keep module flow pedagogical: basics first, then intermediate, then advanced.
 
 MUST-HAVE SKILLS: ${safePrioritizedSkills.mustHave.join(", ") || "None"}
 GOOD-TO-HAVE SKILLS: ${safePrioritizedSkills.goodToHave.join(", ") || "None"}
@@ -298,7 +261,7 @@ Rules:
       skillsCovered: Array.isArray(module.skillsCovered) ? module.skillsCovered : []
     }));
 
-    roadmap = sortModulesByPriority(roadmap, safePrioritizedSkills);
+    // Preserve LLM pedagogical ordering instead of forcing skill-bucket reordering.
 
     console.log("🧩 Roadmap modules generated:", roadmap.length);
 
