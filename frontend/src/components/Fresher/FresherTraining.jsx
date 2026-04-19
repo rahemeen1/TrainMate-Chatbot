@@ -5,6 +5,7 @@ import { db } from "../../firebase";
 import { collection, getDocs, doc, updateDoc, getDoc } from "firebase/firestore";
 import FresherShellLayout from "./FresherShellLayout";
 import TrainingLockedScreen from "./TrainingLockedScreen";
+import { getCompanyLicensePlan } from "../../services/companyLicense";
 
 const sortByModuleOrder = (modules = []) =>
   modules
@@ -39,6 +40,7 @@ export default function FresherTraining() {
   const [weaknessAnalysis, setWeaknessAnalysis] = useState(null);
   const [showWeaknessBanner, setShowWeaknessBanner] = useState(false);
   const [userData, setUserData] = useState(null);
+  const [licensePlan, setLicensePlan] = useState("License Basic");
 
   // ===============================
   // 🔄 Load Roadmap & Weakness Analysis
@@ -48,6 +50,9 @@ export default function FresherTraining() {
 
     const loadRoadmap = async () => {
       try {
+        const detectedPlan = await getCompanyLicensePlan(companyId);
+        setLicensePlan(detectedPlan);
+
         const userRef = doc(
           db,
           "freshers",
@@ -259,6 +264,63 @@ export default function FresherTraining() {
   };
 
   const quizUnlockInfo = selectedModule ? getQuizTimeUnlock(selectedModule) : null;
+  const isBasicPlan = licensePlan !== "License Pro";
+
+  const markSelectedModuleAsCompleted = async () => {
+    if (!selectedModule) return;
+
+    try {
+      const moduleRef = doc(
+        db,
+        "freshers",
+        companyId,
+        "departments",
+        deptId,
+        "users",
+        userId,
+        "roadmap",
+        selectedModule.id
+      );
+
+      await updateDoc(moduleRef, {
+        completed: true,
+        status: "completed",
+        completedAt: new Date(),
+      });
+
+      setRoadmap((prev) =>
+        prev.map((module) =>
+          module.id === selectedModule.id
+            ? { ...module, completed: true, status: "completed", completedAt: new Date() }
+            : module
+        )
+      );
+      setSelectedModule((prev) =>
+        prev ? { ...prev, completed: true, status: "completed", completedAt: new Date() } : prev
+      );
+
+      await updateProgress();
+    } catch (err) {
+      console.error("❌ Error marking module complete for basic plan:", err);
+    }
+  };
+
+  const handleMarkModuleCompleted = async () => {
+    if (isBasicPlan) {
+      if (moduleTimeRemaining?.expired) {
+        await markSelectedModuleAsCompleted();
+        setQuizModalType("basicCompleted");
+        setShowQuizConfirm(true);
+        return;
+      }
+
+      setQuizModalType("basicWait");
+      setShowQuizConfirm(true);
+      return;
+    }
+
+    takeQuiz();
+  };
 
   const takeQuiz = (moduleId) => {
     if (!quizUnlockInfo?.isUnlocked) {
@@ -452,7 +514,7 @@ return (
 
                   {/* Mark Module as Completed Button */}
                   <button
-                    onClick={() => takeQuiz()}
+                    onClick={handleMarkModuleCompleted}
                     className="inline-flex flex-1 items-center justify-center rounded-xl border border-[#00FFFF55] bg-[#031C3A]/90 px-4 py-3 text-sm font-semibold text-[#7FFAFF] shadow-[0_8px_20px_rgba(0,255,255,0.12)] transition hover:bg-[#07315A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7FFAFF]"
                   >
                     Mark Module as Completed
@@ -501,6 +563,38 @@ return (
                     </div>
                   </div>
                 </div>
+              </>
+            ) : quizModalType === "basicWait" ? (
+              <>
+                <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#00FFFF40] bg-[#00FFFF12] px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#7FFAFF]">
+                  Training Duration Required
+                </div>
+                <h3 className="mb-3 text-2xl font-bold text-[#00FFFF]">
+                  Complete Module Training Time
+                </h3>
+                <p className="mb-3 text-[#D0E8F6] leading-relaxed">
+                  Please complete your module training for <span className="font-semibold text-white">{selectedModule?.estimatedDays || 1} day{(selectedModule?.estimatedDays || 1) > 1 ? "s" : ""}</span>.
+                </p>
+                <p className="mb-4 text-[#AFCBE3]">
+                  After this duration is completed, this module can be marked as completed.
+                </p>
+                {moduleTimeRemaining?.message && (
+                  <div className="mb-4 rounded-xl border border-[#007BFF55] bg-[linear-gradient(120deg,rgba(0,255,255,0.10),rgba(0,123,255,0.14))] p-3">
+                    <p className="text-sm text-[#D0E8F6]">Current status: {moduleTimeRemaining.message}</p>
+                  </div>
+                )}
+              </>
+            ) : quizModalType === "basicCompleted" ? (
+              <>
+                <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-green-400/40 bg-green-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-green-300">
+                  Module Completed
+                </div>
+                <h3 className="mb-3 text-2xl font-bold text-[#00FFFF]">
+                  Module Marked as Completed
+                </h3>
+                <p className="mb-4 text-[#D0E8F6] leading-relaxed">
+                  Training duration is completed. This module has now been marked as completed.
+                </p>
               </>
             ) : (
               <>
