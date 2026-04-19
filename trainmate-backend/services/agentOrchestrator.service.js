@@ -415,44 +415,6 @@ function normalizePrioritySkillsList(skills = []) {
   );
 }
 
-function normalizeSkillToken(skill) {
-  return normalizeGapSkillKey(skill);
-}
-
-function getSkillPriorityRank(skill, prioritizedSkills = {}) {
-  const normalizedSkill = normalizeSkillToken(skill);
-  const mustHave = new Set(normalizePrioritySkillsList(prioritizedSkills.mustHave).map(normalizeSkillToken));
-  const goodToHave = new Set(normalizePrioritySkillsList(prioritizedSkills.goodToHave).map(normalizeSkillToken));
-
-  if (mustHave.has(normalizedSkill)) return 0;
-  if (goodToHave.has(normalizedSkill)) return 1;
-  return 2;
-}
-
-function getModulePriorityRank(module = {}, prioritizedSkills = {}) {
-  const skills = Array.isArray(module?.skillsCovered) ? module.skillsCovered : [];
-  if (skills.length === 0) return 3;
-
-  return skills.reduce((bestRank, skill) => {
-    const rank = getSkillPriorityRank(skill, prioritizedSkills);
-    return Math.min(bestRank, rank);
-  }, 3);
-}
-
-function sortModulesByPriority(modules = [], prioritizedSkills = {}) {
-  return [...modules].sort((a, b) => {
-    const aRank = getModulePriorityRank(a, prioritizedSkills);
-    const bRank = getModulePriorityRank(b, prioritizedSkills);
-    if (aRank !== bRank) return aRank - bRank;
-
-    const aDays = Number(a?.estimatedDays || 1);
-    const bDays = Number(b?.estimatedDays || 1);
-    if (aDays !== bDays) return aDays - bDays;
-
-    return String(a?.moduleTitle || "").localeCompare(String(b?.moduleTitle || ""));
-  });
-}
-
 function parseDurationToDays(value) {
   if (value === null || value === undefined) return null;
 
@@ -653,12 +615,8 @@ function buildStrictRoadmapValidation({ modules = [], mustHaveSkills = [], conte
     hardFails.push(`Missing core skill categories: ${missingCoreCategories.join(", ")}`);
   }
 
-  const moduleRanks = validModules.map((module) => getModulePriorityRank(module, { mustHave: normalizedMustHave }));
-  const progressionValid = moduleRanks.every((rank, idx) => idx === 0 || rank >= moduleRanks[idx - 1]);
-  if (!progressionValid) {
-    issues.push("Modules are not in a logical progression from must-have to optional skills");
-    improvements.push("Reorder modules so must-have skills are covered first");
-  }
+  // Do not force must-have-first ordering; preserve generated beginner-to-advanced pedagogy.
+  const progressionValid = true;
 
   if (contextAlignmentRatio < 0.5) {
     issues.push("Roadmap weakly aligned with CV/company/training context");
@@ -674,7 +632,7 @@ function buildStrictRoadmapValidation({ modules = [], mustHaveSkills = [], conte
   const alignmentPenalty = contextAlignmentRatio >= 0.5 ? 0 : 12;
   const score = Math.max(0, Math.min(100, 95 - hardFailPenalty - structurePenalty - alignmentPenalty));
 
-  const pass = hardFails.length === 0 && progressionValid && contextAlignmentRatio >= 0.5;
+  const pass = hardFails.length === 0 && contextAlignmentRatio >= 0.5;
 
   return {
     pass,
@@ -708,7 +666,7 @@ function buildStrictRoadmapValidation({ modules = [], mustHaveSkills = [], conte
         required: Array.from(requiredCategories),
       },
       structure: {
-        pass: progressionValid,
+        pass: true,
       },
       contextAlignment: {
         pass: contextAlignmentRatio >= 0.5,
@@ -1009,7 +967,6 @@ Return JSON:
 
       const modules = await generateRoadmap({
         cvText,
-        pineconeContext: docs,
         companyContext,
         expertise,
         trainingOn,
@@ -1022,7 +979,7 @@ Return JSON:
       });
 
       return {
-        modules: sortModulesByPriority(modules, prioritizedSkills),
+        modules,
         moduleCount: modules.length,
         totalDays: modules.reduce((sum, m) => sum + (m.estimatedDays || 1), 0),
         prioritizedSkills,
@@ -2733,31 +2690,16 @@ Return JSON only:
     if (step.agent === "generate-roadmap") {
       const modules = Array.isArray(output.modules) ? output.modules : [];
       const validModules = modules.filter((m) => m && typeof m === "object").length;
-      const prioritizedSkills =
-        step?.input?.prioritizedSkills ||
-        step?.input?.context?.prioritizedSkills ||
-        output?.prioritizedSkills ||
-        {};
-      const moduleRanks = modules.map((module) => getModulePriorityRank(module, prioritizedSkills));
-      const orderingValid = moduleRanks.every((rank, idx) => idx === 0 || rank >= moduleRanks[idx - 1]);
-      const topMustHaveSkills = normalizePrioritySkillsList(prioritizedSkills.mustHave);
-      const firstModuleSkills = Array.isArray(modules[0]?.skillsCovered) ? modules[0].skillsCovered : [];
-      const firstModuleRank = modules.length > 0 ? moduleRanks[0] : 3;
-      const mustHaveSatisfied = topMustHaveSkills.length === 0 || firstModuleRank === 0;
       const score = validModules > 0 ? 92 : 20;
-      const finalScore = validModules > 0 && orderingValid && mustHaveSatisfied ? score : Math.min(score, 45);
+      const finalScore = score;
       return {
-        pass: validModules > 0 && orderingValid && mustHaveSatisfied,
+        pass: validModules > 0,
         score: finalScore,
         reason: validModules > 0
-          ? orderingValid && mustHaveSatisfied
-            ? "Roadmap modules generated in prioritized order"
-            : "Roadmap modules generated but ordering does not prioritize must-have skills"
+           ? "Roadmap modules generated successfully"
           : "No roadmap modules generated",
         issues: [
           ...(validModules > 0 ? [] : ["modules array is empty or invalid"]),
-          ...(orderingValid ? [] : ["modules are not ordered by skill priority"]),
-          ...(mustHaveSatisfied ? [] : ["first module does not cover must-have skills"]),
         ],
         canRecover: true,
         scoreBand: getValidationScoreBand(finalScore),
@@ -3047,11 +2989,22 @@ Return JSON:
     if (this.isRoadmapGoal(goal)) {
       const modules = this.getRoadmapModulesFromResults(results);
       if (Array.isArray(modules) && modules.length > 0) {
+        const skillAnalysis = results?.['analyze-skill-gaps'] || {};
         return {
           finalOutput: {
             modules,
             metadata: {
               moduleCount: modules.length,
+              skillGap: Array.isArray(skillAnalysis.skillGap) ? skillAnalysis.skillGap : [],
+              criticalGaps: Array.isArray(skillAnalysis.criticalGaps) ? skillAnalysis.criticalGaps : [],
+              gapBuckets: skillAnalysis.gapBuckets || {
+                mustHave: Array.isArray(skillAnalysis.criticalGaps) ? skillAnalysis.criticalGaps : [],
+                goodToHave: [],
+                optional: [],
+              },
+              explorationCandidates: Array.isArray(skillAnalysis.explorationCandidates)
+                ? skillAnalysis.explorationCandidates
+                : [],
             },
           },
           quality: 92,

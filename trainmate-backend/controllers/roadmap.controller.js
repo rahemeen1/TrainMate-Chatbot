@@ -1261,6 +1261,17 @@ export const regenerateRoadmapModule = async (req, res) => {
           failedAttempts: moduleInsights.failedAttempts,
           weakConcepts: moduleInsights.weakConcepts,
           wrongQuestions: moduleInsights.wrongQuestions,
+          skillAlignment: {
+            skillGap: Array.isArray(skillGap) ? skillGap : [],
+            criticalGaps: Array.isArray(criticalGaps) ? criticalGaps : [],
+            gapBuckets: {
+              mustHave: Array.isArray(criticalGaps) ? criticalGaps : [],
+              goodToHave: Array.isArray(skillGap)
+                ? skillGap.filter((skill) => !criticalGaps.includes(skill))
+                : [],
+              optional: [],
+            },
+          },
           regeneratedParts: regeneratedModules.length,
           originalEstimatedDays: originalDays,
           daysLeftAtRegeneration: daysLeft,

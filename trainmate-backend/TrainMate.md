@@ -1165,6 +1165,66 @@ These are the important changes added most recently:
 - fresher deletion now removes the user recursively from Firestore
 - chat unlock intent detection was tightened to reduce false positives
 - roadmap validation now uses strict deterministic multi-gate checks with hard-fail conditions
+
+## I. Latest Quiz and Closed-Loop Learning Upgrades (2026-04-19)
+
+These updates connect roadmap skill priorities directly to quiz generation and then feed quiz weaknesses back into learner guidance and roadmap context.
+
+### I.1 Skill-aligned quiz generation
+
+- Quiz generation now builds a skill alignment blueprint from roadmap metadata when available.
+- Blueprint includes:
+  - must-have skills
+  - good-to-have skills
+  - optional skills
+  - module skills and coverage pool
+- Prompting explicitly prioritizes must-have skill coverage before good-to-have coverage.
+- Questions now carry skill metadata fields:
+  - skillTags
+  - priority (`must-have | good-to-have | optional`)
+
+Runtime effect:
+- Quizzes are less generic and more aligned with critical skill gaps.
+- Must-have skills are sampled more heavily in generated assessments.
+
+### I.2 Feedback intelligence during submission
+
+- Result objects now include richer per-question feedback:
+  - selected answer vs correct answer (when applicable)
+  - concise "why it was wrong" review text
+  - skill tags and question priority for diagnostics
+- Failed attempts now generate a remediation plan with:
+  - summary
+  - focus areas
+  - specific recommended actions
+- Policy decision input now includes skill-level weakness signals, not only aggregate scores.
+
+Runtime effect:
+- Learners get actionable correction feedback instead of score-only output.
+- Retry/regeneration decisions can react to must-have skill weakness.
+
+### I.3 Closed-loop weakness persistence
+
+- On failed module quiz attempts, user-level weakness analysis is now updated with:
+  - weak skills
+  - must-have weak skills
+  - good-to-have weak skills
+  - focus areas and recommended actions
+  - summary and generation timestamp
+- Quiz memory updates now store skill weaknesses and latest remediation plan for future personalization.
+
+Runtime effect:
+- Quiz outcomes feed back into roadmap/chat guidance as a closed-loop learning signal.
+- Frontend training and result surfaces can render focused recovery guidance immediately.
+
+### I.4 Roadmap skill metadata handoff
+
+- Roadmap orchestration output now persists skill-bucket metadata (`skillGap`, `criticalGaps`, `gapBuckets`) in user roadmap agent metadata.
+- Regeneration weakness analysis now also persists skill alignment buckets.
+
+Runtime effect:
+- Subsequent quiz generation can consume consistent skill-priority context even across sessions.
+
 ---
 
 ## H. One-Line Summary
@@ -1180,3 +1240,52 @@ TrainMate stays modular: policy decides, services remember and execute, and the 
 - Outputs are validated before final response
 - Notifications and calendar actions are separated and explainable
 - Health telemetry gives runtime visibility for operations
+
+## J. Session Patch Log (2026-04-19)
+
+This section captures the end-to-end fixes implemented in the latest debugging and testing cycle.
+
+### J.1 Temporary testing bypasses
+
+- Added backend testing bypass flag `FORCE_UNLOCK_QUIZ_FOR_TESTING=true` to bypass module quiz time-lock checks during QA.
+- Added matching frontend bypass so UI lock checks do not block testing while backend is unlocked.
+- Maintained strict attempt counters and module/user lock semantics unless explicitly bypassed.
+
+### J.2 Day progression correction
+
+- Updated training day progression logic to use timezone-consistent date key handling.
+- Fixed cases where users continued seeing Day 1 even when timeline should advance.
+
+### J.3 Roadmap ordering behavior update
+
+- Removed explicit backend reorder enforcement that forced must-have-first reordering.
+- Removed strict validation that rejected output solely for not following forced bucket order.
+- Updated frontend roadmap/module rendering to follow persisted DB module `order` directly.
+
+### J.4 Quiz diagnostics and resilience updates
+
+- Added detailed debug logging in quiz generation/submission for:
+  - gate inputs and unlock status
+  - attempt snapshots and retry state
+  - scoring breakdown and decision flow
+- Restored missing `generateQuizAgentic(...)` function used by module quiz generation.
+- Restored missing `makeAgenticDecision(...)` helper used in submit decision flow.
+- Fixed `submitQuiz` runtime errors caused by undefined variables:
+  - `skillBlueprint` now resolved from stored quiz alignment or rebuilt from module/user context.
+  - `weakAreas` now declared in submit scope so persistence blocks can safely access it.
+
+### J.5 Department-wise coding question policy
+
+- Added explicit department list normalization and mapping:
+  - `HR`, `SOFTWAREDEVELOPMENT`, `AI`, `ACCOUNTING`, `MARKETING`, `OPERATIONS`, `DATASCIENCE`, `IT`
+- Enabled coding questions by default only for:
+  - `SOFTWAREDEVELOPMENT`, `AI`, `DATASCIENCE`, `IT`
+- Disabled coding questions by default for:
+  - `HR`, `ACCOUNTING`, `MARKETING`, `OPERATIONS`
+- Firestore `quizSettings.allowCodingQuestions` (when explicitly boolean) still overrides defaults.
+- Missing department fallback now uses mapped defaults instead of permissive allow-all behavior.
+
+### J.6 Current status
+
+- Syntax validation checks on updated quiz/controller paths passed after patches.
+- Runtime crash sequence moved from repeated `ReferenceError` failures to stable execution path pending full re-run verification.

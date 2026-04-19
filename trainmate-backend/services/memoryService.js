@@ -217,7 +217,9 @@ export async function updateMemoryAfterQuiz({
   score,
   passed,
   mcqResults,
-  oneLinerResults
+  oneLinerResults,
+  skillSignals = {},
+  remediationPlan = null
 }) {
   try {
     const memoryRef = db
@@ -253,6 +255,12 @@ export async function updateMemoryAfterQuiz({
       ...incorrectOneLiners.map(q => extractTopicFromQuestion(q.question))
     ].filter(Boolean);
 
+    const weakSkills = [
+      ...(Array.isArray(skillSignals?.weakSkills) ? skillSignals.weakSkills : []),
+      ...(Array.isArray(skillSignals?.weakMustHaveSkills) ? skillSignals.weakMustHaveSkills : []),
+      ...(Array.isArray(skillSignals?.weakGoodToHaveSkills) ? skillSignals.weakGoodToHaveSkills : []),
+    ].filter(Boolean);
+
     const correctMcq = mcqResults.filter(q => q.isCorrect);
     const correctOneLiners = oneLinerResults.filter(q => q.isCorrect);
     
@@ -267,7 +275,9 @@ export async function updateMemoryAfterQuiz({
       score,
       passed,
       weakAreas: weakTopics.slice(0, 5),
+      weakSkills: [...new Set(weakSkills)].slice(0, 10),
       strongAreas: strongTopics.slice(0, 5),
+      recommendations: Array.isArray(remediationPlan?.actions) ? remediationPlan.actions.slice(0, 5) : [],
       timestamp: new Date(),
     };
 
@@ -280,6 +290,11 @@ export async function updateMemoryAfterQuiz({
     const strugglingAreas = [...new Set([
       ...(existingMemory.strugglingAreas || []),
       ...weakTopics
+    ])].slice(-15);
+
+    const skillWeaknesses = [...new Set([
+      ...(existingMemory.skillWeaknesses || []),
+      ...weakSkills,
     ])].slice(-15);
 
     // Remove struggling areas from mastered if they appear in weak areas
@@ -302,6 +317,7 @@ WEAK AREAS: ${weakTopics.slice(0, 5).join(", ") || "None"}
 STRONG AREAS: ${strongTopics.slice(0, 5).join(", ") || "None"}
 
 CUMULATIVE STRUGGLING AREAS: ${strugglingAreas.join(", ")}
+CUMULATIVE SKILL WEAKNESSES: ${skillWeaknesses.join(", ")}
 CUMULATIVE MASTERED TOPICS: ${masteredTopics.join(", ")}
 
 Generate a brief memory summary (max 500 chars) focusing on learning progress and recommendations.
@@ -321,10 +337,12 @@ Generate a brief memory summary (max 500 chars) focusing on learning progress an
     await memoryRef.set({
       summary: newSummary,
       strugglingAreas: strugglingAreas,
+      skillWeaknesses: skillWeaknesses,
       masteredTopics: masteredTopics,
       quizAttempts: quizAttempts,
       lastQuizScore: score,
       lastQuizPassed: passed,
+      lastRemediationPlan: remediationPlan || null,
       lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
 
