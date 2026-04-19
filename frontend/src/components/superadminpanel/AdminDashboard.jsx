@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Users, Building2, UserPlus, LogOut, Menu, X } from "lucide-react";
 import { collection, collectionGroup, getDocs, query, where } from "firebase/firestore";
 import { db } from "../../firebase"; 
@@ -35,7 +35,7 @@ export default function AdminDashboard() {
 
   const navigate = useNavigate();
 
-  const extractAnswerValue = (answers, preferredKey) => {
+  const extractAnswerValue = useCallback((answers, preferredKey) => {
     if (!answers) return null;
     if (Array.isArray(answers)) {
       const index = Number(preferredKey) - 1;
@@ -47,9 +47,9 @@ export default function AdminDashboard() {
       if (typeof directValue === "string") return directValue;
     }
     return null;
-  };
+  }, []);
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     try {
       const [activeCompaniesSnap, totalCompaniesSnap, freshersSnap] = await Promise.all([
         getDocs(query(collection(db, "companies"), where("status", "==", "active"))),
@@ -209,11 +209,11 @@ export default function AdminDashboard() {
     } catch (err) {
       console.error("❌ Error fetching stats from Firestore:", err);
     }
-  };
+  }, [extractAnswerValue]);
 
   useEffect(() => {
     fetchStats();
-  }, []);
+  }, [fetchStats]);
 
   const handleSectionChange = (section) => {
     setActiveSection(section);

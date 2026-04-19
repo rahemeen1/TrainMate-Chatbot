@@ -24,6 +24,8 @@ jobs:
 
       - name: Build project
         working-directory: ./frontend
+        env:
+          CI: "false"
         run: npm run build
 
       - name: Deploy to Firebase
