@@ -162,37 +162,43 @@ export default function PreviousChats() {
       year: "numeric"
     });
 
+  const hasSelectedChat = Boolean(activeDate);
+  const mobileListVisibilityClass = hasSelectedChat ? "hidden lg:block" : "block";
+  const mobileChatVisibilityClass = hasSelectedChat ? "block" : "hidden lg:block";
+
   /* ----------------------------------
      UI
   -----------------------------------*/
   return (
-    <div className="flex h-screen bg-[#031C3A] text-white">
+    <div className="flex h-screen bg-[#031C3A] text-white overflow-hidden">
 
       <div className="flex-1 flex flex-col">
 
         {/* HEADER */}
-        <div className="bg-gradient-to-r from-[#021B36] via-[#031C3A] to-[#021B36] p-5 md:p-6 border-b border-cyan-400/30 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div className="bg-gradient-to-r from-[#021B36] via-[#031C3A] to-[#021B36] px-4 py-3 sm:px-5 sm:py-4 md:px-6 md:py-5 border-b border-cyan-400/30 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h2 className="text-2xl md:text-3xl text-cyan-300 font-semibold">
+            <h2 className="text-xl sm:text-2xl md:text-3xl text-cyan-300 font-semibold leading-tight">
               Previous Learning Chats
             </h2>
-            <p className="text-sm text-[#AFCBE3]">
-              Review and revisit your past conversations
+            <p className="text-xs sm:text-sm text-[#AFCBE3] mt-1">
+              Review your past conversations and continue learning.
             </p>
           </div>
           <button
             onClick={() => navigate("/chatbot")}
-            className="flex items-center gap-2 border border-cyan-400/60 px-4 py-2 rounded-lg text-sm text-cyan-300 hover:bg-cyan-400/10 transition"
+            className="w-full sm:w-auto justify-center flex items-center gap-2 border border-cyan-400/60 px-4 py-2 rounded-lg text-sm text-cyan-300 hover:bg-cyan-400/10 transition"
           >
             <ArrowLeftIcon className="w-4 h-4" /> Back to Chat
           </button>
         </div>
 
         {/* BODY */}
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 overflow-hidden flex-col lg:flex-row">
 
           {/* SIDEBAR */}
-          <div className="w-80 bg-[#021B36]/90 border-r border-cyan-400/20 overflow-y-auto p-4">
+          <div
+            className={`w-full h-full lg:h-auto lg:w-80 xl:w-[22rem] bg-[#021B36]/90 lg:border-r border-cyan-400/20 overflow-y-auto px-3 py-3 sm:px-4 sm:py-4 ${mobileListVisibilityClass}`}
+          >
             {["Today", "Yesterday", "Older"].map(group =>
               groupedChats[group].length > 0 && (
                 <div key={group} className="mb-6">
@@ -204,7 +210,7 @@ export default function PreviousChats() {
                     <div
                       key={session.id}
                       onClick={() => loadChat(session.id)}
-                      className={`p-3 rounded-2xl cursor-pointer border transition shadow-sm
+                      className={`p-3 rounded-xl cursor-pointer border transition shadow-sm
                         ${
                           activeDate === session.id
                             ? "border-cyan-400 bg-cyan-400/10 shadow-[0_0_12px_rgba(0,255,255,0.15)]"
@@ -228,12 +234,37 @@ export default function PreviousChats() {
                 </div>
               )
             )}
+            {chatSessions.length === 0 && (
+              <div className="rounded-xl border border-cyan-400/20 bg-[#031C3A]/60 px-4 py-6 text-center text-sm text-[#AFCBE3]">
+                No previous chats available yet.
+              </div>
+            )}
           </div>
 
           {/* CHAT VIEW */}
-          <div className="flex-1 overflow-y-auto px-8 py-6 space-y-4 bg-[#031C3A]">
+          <div
+            className={`flex-1 overflow-y-auto px-3 py-3 sm:px-5 sm:py-5 md:px-7 md:py-6 lg:px-8 lg:py-6 space-y-3 sm:space-y-4 bg-[#031C3A] ${mobileChatVisibilityClass}`}
+          >
+            <div className="lg:hidden mb-1">
+              <button
+                onClick={() => {
+                  setActiveDate(null);
+                  setMessages([]);
+                }}
+                className="inline-flex items-center gap-1.5 border border-cyan-400/50 px-3 py-1.5 rounded-lg text-xs text-cyan-300 hover:bg-cyan-400/10 transition"
+              >
+                <ArrowLeftIcon className="w-3.5 h-3.5" /> Back to dates
+              </button>
+            </div>
+
+            {activeDate && (
+              <p className="text-xs text-[#8FC6D8] lg:hidden mb-2">
+                Showing chat for {formatDate(activeDate)}
+              </p>
+            )}
+
             {messages.length === 0 && (
-              <div className="text-center text-[#AFCBE3] mt-20">
+              <div className="text-center text-[#AFCBE3] mt-8 sm:mt-16 rounded-xl border border-cyan-400/20 bg-[#021B36]/50 px-4 py-8">
                 Select a chat from the left to view details
               </div>
             )}
@@ -248,7 +279,7 @@ export default function PreviousChats() {
                 }`}
               >
                 <div
-                  className={`max-w-[70%] px-4 py-3 rounded-2xl border text-sm leading-relaxed shadow-sm
+                  className={`max-w-[92%] sm:max-w-[82%] lg:max-w-[70%] px-3 sm:px-4 py-2.5 sm:py-3 rounded-xl border text-sm leading-relaxed shadow-sm
                     ${
                       msg.from === "user"
                         ? "bg-cyan-400/15 border-cyan-400/40 text-[#CFE8FF]"

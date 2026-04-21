@@ -523,12 +523,12 @@ useEffect(() => {
       <div className="h-full min-h-0 flex flex-col overflow-hidden">
 
         {/* HEADER */}
-        <div className="bg-gradient-to-r from-[#021B36]/95 via-[#031C3A]/90 to-[#021B36]/95 p-3 sm:p-4 md:p-5 border-b border-[#00FFFF40] flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center flex-none">
-          <div className="space-y-2">
-            <h2 className="text-xl sm:text-2xl md:text-3xl text-[#00FFFF] font-semibold leading-tight">
+        <div className="bg-gradient-to-r from-[#021B36]/95 via-[#031C3A]/90 to-[#021B36]/95 p-2.5 sm:p-4 md:p-5 border-b border-[#00FFFF40] flex flex-col gap-2 sm:gap-3 sm:flex-row sm:justify-between sm:items-center flex-none">
+          <div className="space-y-1 sm:space-y-2 text-center sm:text-left">
+            <h2 className="text-lg sm:text-2xl md:text-3xl text-[#00FFFF] font-semibold leading-tight">
               {companyName ? `${companyName}'s Training Assistant` : "Chatbot"}
             </h2>
-            <div className="flex flex-wrap items-center gap-3 text-xs text-[#AFCBE3]">
+            <div className="hidden sm:flex flex-wrap items-center gap-3 text-xs text-[#AFCBE3]">
               <div className="flex items-center gap-2">
                 <span className="uppercase tracking-wide text-[10px] text-[#7FB6C8]">User</span>
                 <span className="text-[#CFE8FF] font-medium">{userData?.name || "User"}</span>
@@ -583,19 +583,19 @@ useEffect(() => {
 <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
 
   {/* CHAT MESSAGES - SCROLLABLE */}
-  <div ref={messagesScrollRef} className="flex-1 min-h-0 overflow-y-auto scroll-smooth px-2 sm:px-5 md:px-8 py-4 sm:py-6 md:py-8">
+  <div ref={messagesScrollRef} className="flex-1 min-h-0 overflow-y-auto scroll-smooth px-1.5 sm:px-5 md:px-8 pt-4 sm:pt-6 md:pt-8 pb-24 sm:pb-28 md:pb-32">
    {messages.map((msg, i) => (
   <div key={i} className="mb-4 sm:mb-6">
-    <div className={`flex items-start gap-3 ${msg.from === "user" ? "justify-end" : "justify-start"}`}>
+    <div className={`flex items-start gap-2 sm:gap-3 ${msg.from === "user" ? "justify-end" : "justify-start"}`}>
       {msg.from === "bot" && (
-        <CpuChipIcon className="w-6 h-6 sm:w-8 sm:h-8 text-cyan-400 flex-shrink-0 mt-1" />
+        <CpuChipIcon className="w-5 h-5 sm:w-8 sm:h-8 text-cyan-400 flex-shrink-0 mt-1" />
       )}
 
       <div
         className={`
           chat-message
           px-3 sm:px-4 md:px-5 py-3 sm:py-4 rounded-lg
-          max-w-[94%] sm:max-w-[82%] lg:max-w-[75%]
+          max-w-[97%] sm:max-w-[82%] lg:max-w-[75%]
           text-[15px] sm:text-base leading-relaxed
           break-words overflow-wrap-anywhere
           shadow-lg
@@ -610,16 +610,16 @@ useEffect(() => {
       />
 
       {msg.from === "user" && (
-        <UserCircleIcon className="w-6 h-6 sm:w-8 sm:h-8 text-cyan-400 flex-shrink-0 mt-1" />
+        <UserCircleIcon className="w-5 h-5 sm:w-8 sm:h-8 text-cyan-400 flex-shrink-0 mt-1" />
       )}
     </div>
   </div>
 ))}
 {typing && (
   <div className="mb-6 animate-pulse">
-    <div className="flex items-start gap-3">
+    <div className="flex items-start gap-2 sm:gap-3">
       {/* BOT ICON */}
-      <CpuChipIcon className="w-6 h-6 sm:w-8 sm:h-8 text-cyan-400 flex-shrink-0 mt-1" />
+      <CpuChipIcon className="w-5 h-5 sm:w-8 sm:h-8 text-cyan-400 flex-shrink-0 mt-1" />
 
       {/* TYPING BUBBLE */}
       <div className="px-3 sm:px-5 py-3 sm:py-4 rounded-lg bg-[#021B36] border border-cyan-400/30 text-[#E0EAF5] shadow-lg">
@@ -636,7 +636,7 @@ useEffect(() => {
         </div>
 
         {/* INPUT */}
-        <div className="mt-auto sticky bottom-0 z-10 px-2 sm:px-5 md:px-8 pt-3 sm:pt-4 pb-[env(safe-area-inset-bottom)] border-t border-[#00FFFF50] flex gap-2 items-end bg-[#021B36]/95 backdrop-blur-sm flex-none">
+        <div className="mt-auto sticky bottom-0 z-10 px-1.5 sm:px-5 md:px-8 pt-3 sm:pt-4 pb-[calc(env(safe-area-inset-bottom)+10px)] sm:pb-[calc(env(safe-area-inset-bottom)+12px)] border-t border-[#00FFFF50] flex gap-2 items-end bg-[#021B36]/95 backdrop-blur-sm flex-none">
           <textarea
             disabled={mode === "read"}
             value={input}

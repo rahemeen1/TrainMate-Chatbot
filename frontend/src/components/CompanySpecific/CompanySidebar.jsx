@@ -15,8 +15,6 @@ const MENU_OPTIONS = [
 export default function CompanySidebar({ companyId, companyName, className = "", onItemClick }) {
   const navigate = useNavigate();
   const [pendingNotifications, setPendingNotifications] = useState(0);
-  const primaryMenuOptions = MENU_OPTIONS.filter((opt) => opt.label !== "Logout");
-  const logoutOption = MENU_OPTIONS.find((opt) => opt.label === "Logout");
 
   const resolvedCompanyId = useMemo(
     () => companyId || localStorage.getItem("companyId") || "",
@@ -86,7 +84,7 @@ export default function CompanySidebar({ companyId, companyName, className = "",
 
       {/* Menu */}
       <div className="flex flex-col gap-2">
-        {primaryMenuOptions.map((opt) => (
+        {MENU_OPTIONS.map((opt) => (
           <button
             key={opt.path}
             onClick={() => handleNavigation(opt)}
@@ -103,17 +101,6 @@ export default function CompanySidebar({ companyId, companyName, className = "",
           </button>
         ))}
       </div>
-
-      {logoutOption && (
-        <div className="mt-auto pt-4">
-          <button
-            onClick={() => handleNavigation(logoutOption)}
-            className="w-full text-left px-4 py-2 rounded-lg hover:bg-[#00FFFF]/10 transition font-medium text-red-400"
-          >
-            {logoutOption.label}
-          </button>
-        </div>
-      )}
     </div>
   );
 }

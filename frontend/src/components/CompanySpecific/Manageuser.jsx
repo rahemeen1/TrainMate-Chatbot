@@ -282,6 +282,24 @@ export default function ManageUser() {
             </div>
           )}
 
+          {deletingUserId && (
+            <div className="mb-4 p-3 bg-[#00FFFF1A] border border-[#00FFFF66] rounded text-[#72F7FF] flex items-center gap-2">
+              <svg
+                className="animate-spin h-4 w-4 text-[#00FFFF]"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  fill="currentColor"
+                  d="M12 2C6.477 2 2 6.477 2 12h2a8 8 0 0116 0h2c0-5.523-4.477-10-10-10zm0 20c5.523 0 10-4.477 10-10h-2a8 8 0 01-16 0H2c0 5.523 4.477 10 10 10z"
+                />
+              </svg>
+              <span className="font-semibold">Deleting user... please wait</span>
+            </div>
+          )}
+
           {loading ? (
             <div className="company-table-wrap p-8 text-center text-[#AFCBE3]">
               <div className="flex items-center justify-center gap-3">
@@ -352,7 +370,7 @@ export default function ManageUser() {
                     <button
                       onClick={() => setEditingUser(u)}
                       disabled={isDeletingAnyUser}
-                      className={`px-3 py-2 rounded-lg text-sm font-semibold bg-yellow-400 text-black border border-yellow-500 ${
+                      className={`company-outline-btn px-3 py-2 text-sm text-[#7AF6FF] ${
                         isDeletingAnyUser ? "opacity-60 cursor-not-allowed" : ""
                       }`}
                     >
@@ -361,12 +379,12 @@ export default function ManageUser() {
                     <button
                       onClick={() => handleDelete(u)}
                       disabled={isDeletingAnyUser}
-                      className={`px-3 py-2 rounded-lg text-sm font-semibold border transition ${
+                      className={`company-outline-btn px-3 py-2 text-sm text-[#00FFFF] transition ${
                         deletingUserId === u.id
-                          ? "bg-gray-500 cursor-not-allowed border-gray-600"
+                          ? "opacity-60 cursor-not-allowed"
                           : isDeletingAnyUser
-                          ? "bg-red-600/60 cursor-not-allowed border-red-700"
-                          : "bg-red-600 border-red-700 hover:opacity-80"
+                          ? "opacity-60 cursor-not-allowed"
+                          : ""
                       }`}
                     >
                       {deletingUserId === u.id ? "Deleting..." : "Delete"}
@@ -396,7 +414,7 @@ export default function ManageUser() {
                     <button
                       onClick={() => navigate(`/user-profile/${companyId}/${u.deptName}/${u.id}`)}
                       disabled={isDeletingAnyUser}
-                      className={`px-3 py-2 rounded-lg text-sm font-semibold bg-[#00FFFF] text-[#031C3A] border border-cyan-400 ${
+                      className={`company-primary-btn px-3 py-2 text-sm ${
                         isDeletingAnyUser ? "opacity-60 cursor-not-allowed" : ""
                       }`}
                     >
@@ -491,7 +509,7 @@ export default function ManageUser() {
                           <button
                             onClick={() => setEditingUser(u)}
                             disabled={isDeletingAnyUser}
-                            className={`px-3 py-1 bg-yellow-400 text-black rounded border border-yellow-500 hover:opacity-80 ${
+                            className={`company-outline-btn px-3 py-1 text-[#7AF6FF] ${
                               isDeletingAnyUser ? "opacity-60 cursor-not-allowed" : ""
                             }`}
                           >
@@ -500,13 +518,13 @@ export default function ManageUser() {
                           <button
                             onClick={() => handleDelete(u)}
                             disabled={isDeletingAnyUser}
-                            className={`px-3 py-1 rounded border transition
+                            className={`company-outline-btn px-3 py-1 text-[#00FFFF] transition
                               ${
                                 deletingUserId === u.id
-                                  ? "bg-gray-500 cursor-not-allowed border-gray-600"
+                                  ? "opacity-60 cursor-not-allowed"
                                   : isDeletingAnyUser
-                                  ? "bg-red-600/60 cursor-not-allowed border-red-700"
-                                  : "bg-red-600 border-red-700 hover:opacity-80"
+                                  ? "opacity-60 cursor-not-allowed"
+                                  : ""
                               }
                             `}
                           >
@@ -517,7 +535,7 @@ export default function ManageUser() {
                               navigate(`/user-profile/${companyId}/${u.deptName}/${u.id}`)
                             }
                             disabled={isDeletingAnyUser}
-                            className={`px-3 py-1 bg-[#00FFFF] text-[#031C3A] rounded border border-cyan-400 ${
+                            className={`company-primary-btn px-3 py-1 ${
                               isDeletingAnyUser ? "opacity-60 cursor-not-allowed" : ""
                             }`}
                           >

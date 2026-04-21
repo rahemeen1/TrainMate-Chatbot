@@ -170,7 +170,7 @@ console.log(email);
         <p className="text-sm text-[#AFCBE3] mt-1">{companyName || "Company"}</p>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-3 pr-1 pb-3">
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col gap-3 pr-1 pb-3">
         {/* Fresher routes - pass companyName */}
         <button
           onClick={() => {
@@ -206,7 +206,7 @@ console.log(email);
           {(lockMenu || !roadmapGenerated) && <span className="absolute top-1 left-1 text-xs">🔒</span>}
           <span className={lockMenu || !roadmapGenerated ? "ml-2" : ""}>RoadMap</span>
           {(lockMenu || !roadmapGenerated) && (
-            <div className="absolute left-0 top-full mt-1 bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] text-xs font-semibold whitespace-nowrap px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition pointer-events-none shadow-lg z-50">
+            <div className="absolute left-0 top-full mt-1 bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] text-xs font-semibold px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition pointer-events-none shadow-lg z-50 max-w-[220px] whitespace-normal break-words">
               {lockMenu ? "Training is locked by admin" : "Generate roadmap to unlock"}
             </div>
           )}
@@ -223,7 +223,7 @@ console.log(email);
           {(lockMenu || !roadmapGenerated) && <span className="absolute top-1 left-1 text-xs">🔒</span>}
           <span className={lockMenu || !roadmapGenerated ? "ml-2" : ""}>Training Assistant</span>
           {(lockMenu || !roadmapGenerated) && (
-            <div className="absolute left-0 top-full mt-1 bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] text-xs font-semibold whitespace-nowrap px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition pointer-events-none shadow-lg z-50">
+            <div className="absolute left-0 top-full mt-1 bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] text-xs font-semibold px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition pointer-events-none shadow-lg z-50 max-w-[220px] whitespace-normal break-words">
               {lockMenu ? "Training is locked by admin" : "Generate roadmap to unlock"}
             </div>
           )}
@@ -241,7 +241,7 @@ console.log(email);
           {(lockMenu || !roadmapGenerated) && <span className="absolute top-1 left-1 text-xs">🔒</span>}
           <span className={lockMenu || !roadmapGenerated ? "ml-2" : ""}>Progress Details</span>
           {(lockMenu || !roadmapGenerated) && (
-            <div className="absolute left-0 top-full mt-1 bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] text-xs font-semibold whitespace-nowrap px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition pointer-events-none shadow-lg z-50">
+            <div className="absolute left-0 top-full mt-1 bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] text-xs font-semibold px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition pointer-events-none shadow-lg z-50 max-w-[220px] whitespace-normal break-words">
               {lockMenu ? "Training is locked by admin" : "Generate roadmap to unlock"}
             </div>
           )}
@@ -269,7 +269,7 @@ console.log(email);
           <span className={lockMenu || !roadmapGenerated ? "ml-2" : ""}>
             {claimLoading ? "Opening Final Quiz..." : "Claim Certificate"}
           </span>
-          <div className="absolute left-0 top-full mt-1 bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] text-xs font-semibold whitespace-nowrap px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition pointer-events-none shadow-lg z-50">
+          <div className="absolute left-0 top-full mt-1 bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] text-xs font-semibold px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition pointer-events-none shadow-lg z-50 max-w-[220px] whitespace-normal break-words">
             {lockMenu
               ? "Training is locked by admin"
               : licensePlan === "License Basic"
