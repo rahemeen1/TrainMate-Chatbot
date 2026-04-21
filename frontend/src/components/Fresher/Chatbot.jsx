@@ -583,9 +583,9 @@ useEffect(() => {
 <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
 
   {/* CHAT MESSAGES - SCROLLABLE */}
-  <div ref={messagesScrollRef} className="flex-1 min-h-0 overflow-y-auto scroll-smooth px-3 sm:px-5 md:px-8 py-4 sm:py-6 md:py-8">
+  <div ref={messagesScrollRef} className="flex-1 min-h-0 overflow-y-auto scroll-smooth px-2 sm:px-5 md:px-8 py-4 sm:py-6 md:py-8">
    {messages.map((msg, i) => (
-  <div key={i} className="mb-6">
+  <div key={i} className="mb-4 sm:mb-6">
     <div className={`flex items-start gap-3 ${msg.from === "user" ? "justify-end" : "justify-start"}`}>
       {msg.from === "bot" && (
         <CpuChipIcon className="w-6 h-6 sm:w-8 sm:h-8 text-cyan-400 flex-shrink-0 mt-1" />
@@ -595,8 +595,8 @@ useEffect(() => {
         className={`
           chat-message
           px-3 sm:px-4 md:px-5 py-3 sm:py-4 rounded-lg
-          max-w-[88%] sm:max-w-[80%] lg:max-w-[75%]
-          text-sm sm:text-base
+          max-w-[94%] sm:max-w-[82%] lg:max-w-[75%]
+          text-[15px] sm:text-base leading-relaxed
           break-words overflow-wrap-anywhere
           shadow-lg
           transition-all duration-200
@@ -636,7 +636,7 @@ useEffect(() => {
         </div>
 
         {/* INPUT */}
-        <div className="px-3 sm:px-5 md:px-8 py-3 sm:py-4 border-t border-[#00FFFF50] flex gap-2 items-end bg-[#021B36]/90 flex-none">
+        <div className="mt-auto sticky bottom-0 z-10 px-2 sm:px-5 md:px-8 pt-3 sm:pt-4 pb-[env(safe-area-inset-bottom)] border-t border-[#00FFFF50] flex gap-2 items-end bg-[#021B36]/95 backdrop-blur-sm flex-none">
           <textarea
             disabled={mode === "read"}
             value={input}
