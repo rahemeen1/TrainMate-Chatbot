@@ -5,11 +5,12 @@ import { policyEngine } from "./policy/policyEngine.service.js";
 
 dotenv.config();
 
-if (!process.env.GEMINI_API_KEY) {
-  throw new Error("❌ GEMINI_API_KEY missing");
-}
+const geminiApiKey = process.env.GEMINI_API_KEY;
+const genAI = geminiApiKey ? new GoogleGenerativeAI(geminiApiKey) : null;
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+if (!geminiApiKey) {
+  console.warn("⚠️ GEMINI_API_KEY missing. Agentic extraction will use fallback behavior.");
+}
 const MAX_AGENTIC_TEXT_CHARS = 24000;
 const CHUNK_SIZE = 5500;
 const CHUNK_OVERLAP = 300;
@@ -207,6 +208,10 @@ function buildFallbackResult(trainingOn, reason) {
 }
 
 async function extractSkillList(prompt, taskName) {
+  if (!genAI) {
+    return [];
+  }
+
   const model = genAI.getGenerativeModel({
     model: "gemini-2.5-flash",
     generationConfig: {

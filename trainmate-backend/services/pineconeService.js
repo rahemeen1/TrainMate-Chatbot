@@ -6,20 +6,22 @@ import dotenv from "dotenv";
 dotenv.config(); // must be first
 
 /* ---------------- ENV VARIABLES ---------------- */
-const INDEX_NAME = process.env.PINECONE_INDEX;
-if (!INDEX_NAME) {
-  throw new Error("PINECONE_INDEX missing in environment variables");
+const INDEX_NAME = process.env.PINECONE_INDEX || "";
+const PINECONE_API_KEY = process.env.PINECONE_API_KEY || "";
+const COHERE_API_KEY = process.env.COHERE_API_KEY || "";
+
+if (!INDEX_NAME || !PINECONE_API_KEY || !COHERE_API_KEY) {
+  console.warn("⚠️ Pinecone/Cohere env vars missing. Retrieval will return empty results.");
 }
-console.log("PINECONE_INDEX ->", INDEX_NAME);
 
 /* ---------------- INIT CLIENTS ---------------- */
-const pinecone = new Pinecone({
-  apiKey: process.env.PINECONE_API_KEY,
-});
+const pinecone = PINECONE_API_KEY
+  ? new Pinecone({ apiKey: PINECONE_API_KEY })
+  : null;
 
-const cohere = new CohereClient({
-  token: process.env.COHERE_API_KEY,
-});
+const cohere = COHERE_API_KEY
+  ? new CohereClient({ token: COHERE_API_KEY })
+  : null;
 
 const DEFAULT_RETRIEVAL_SCORE_THRESHOLD = 0.65;
 const DEFAULT_FALLBACK_RETRIEVAL_SCORE = 0.45;
@@ -81,6 +83,11 @@ export const retrieveDeptDocsFromPinecone = async ({
 
   const normalizedDept = String(deptName || "").toUpperCase();
   const retrievalThreshold = resolveRetrievalThreshold(minScore);
+
+  if (!INDEX_NAME || !pinecone || !cohere) {
+    console.warn("⚠️ Retrieval skipped: missing Pinecone/Cohere configuration");
+    return [];
+  }
 
   /* ---------------- 1) Embedding ---------------- */
   console.log("Generating Cohere embedding...");

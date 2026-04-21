@@ -1,6 +1,6 @@
 import express from "express";
 import { getAllSuperAdmins } from "../controllers/superadmin/superAdminController.js";
-import { updateSuperAdmin } from "../controllers/superadmin/updateSuperAdminController.js";
+import { updateSuperAdmin } from "../controllers/superadmin/updatesuperAdminController.js";
 import { getTotalSuperAdmins } from "../controllers/superadmin/totalsuperAdminsController.js"; 
 import { getSuperAdminAgentHealth } from "../controllers/superadmin/agentHealthController.js";
 

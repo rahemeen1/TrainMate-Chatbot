@@ -3,11 +3,12 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-if (!process.env.GEMINI_API_KEY) {
-  throw new Error("❌ GEMINI_API_KEY missing");
-}
+const geminiApiKey = process.env.GEMINI_API_KEY;
+const genAI = geminiApiKey ? new GoogleGenerativeAI(geminiApiKey) : null;
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+if (!geminiApiKey) {
+  console.warn("⚠️ GEMINI_API_KEY missing. Roadmap generation will return a fallback response.");
+}
 
 function normalizePrioritySkillsList(skills = []) {
   return Array.from(
@@ -35,6 +36,10 @@ export const generateRoadmap = async ({
   console.log("\n================ GEMINI ROADMAP START ================");
 
   console.log("🧠 Gemini roadmap generation started");
+
+  if (!genAI) {
+    throw new Error("GEMINI_API_KEY missing");
+  }
 
   /* ---------------------------------
      1️⃣ RAW INPUT DEBUG
