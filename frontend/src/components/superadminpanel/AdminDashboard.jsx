@@ -235,7 +235,7 @@ export default function AdminDashboard() {
       </div>
 
       <div
-        className={`${isSidebarOpen ? "block" : "hidden"} md:block w-full md:w-64 bg-[#031C3A] border-r border-[#00FFFF30] shadow-lg p-6 md:fixed md:inset-y-0 md:left-0 md:overflow-hidden`}
+        className={`${isSidebarOpen ? "block" : "hidden"} md:block w-full md:w-64 bg-[#031C3A] border-r border-[#00FFFF30] shadow-lg p-6 md:fixed md:inset-y-0 md:left-0 md:overflow-hidden min-h-[calc(100dvh-57px)] md:min-h-screen flex flex-col`}
       >
          {/* Logo */}
       <div className="text-center mb-6">
@@ -244,7 +244,7 @@ export default function AdminDashboard() {
         </div>
         <h1 className="text-[#00FFFF] font-bold text-xl mt-1">TrainMate</h1>
        </div>
-        <ul className="space-y-4 text-[#AFCBE3]">
+        <ul className="flex-1 min-h-0 overflow-y-auto space-y-4 text-[#AFCBE3] pr-1">
           <li
             className={`cursor-pointer p-2 rounded-lg ${
               activeSection === "overview" ? "bg-[#00FFFF]/20" : ""
@@ -308,13 +308,14 @@ export default function AdminDashboard() {
             Settings
           </li>
 
-          <li
-            className="cursor-pointer p-2 rounded-lg flex items-center gap-2 text-red-400"
-            onClick={() => navigate("/")}
-          >
-            <LogOut size={16} /> Logout
-          </li>
         </ul>
+
+        <button
+          className="mt-3 flex-none cursor-pointer p-2 rounded-lg flex items-center gap-2 text-red-400 hover:bg-red-500/10"
+          onClick={() => navigate("/")}
+        >
+          <LogOut size={16} /> Logout
+        </button>
       </div>
 
       <div className="flex-1 p-4 sm:p-6 lg:p-10 md:ml-64 w-full overflow-x-hidden">

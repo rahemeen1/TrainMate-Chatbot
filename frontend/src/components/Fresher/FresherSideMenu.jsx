@@ -161,7 +161,7 @@ console.log(email);
   };
 
   return (
-    <div className={`w-full h-full flex flex-col overflow-x-hidden text-[#AFCBE3] ${className}`}>
+    <div className={`w-full h-full min-h-0 flex flex-col overflow-x-hidden text-[#AFCBE3] ${className}`}>
       <div className="text-center mb-8">
         <div className="w-16 h-16 mx-auto bg-[#00FFFF]/20 rounded-2xl flex items-center justify-center shadow-[0_0_18px_#00FFFF50] border border-[#00FFFF30]">
           <span className="text-[#00FFFF] font-extrabold text-xl">TM</span>
@@ -170,7 +170,7 @@ console.log(email);
         <p className="text-sm text-[#AFCBE3] mt-1">{companyName || "Company"}</p>
       </div>
 
-      <div className="flex flex-col gap-3 pr-1">
+      <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-3 pr-1 pb-3">
         {/* Fresher routes - pass companyName */}
         <button
           onClick={() => {
@@ -285,12 +285,14 @@ console.log(email);
         </button>
       </div>
 
-      <button
-        onClick={handleLogout}
-        className="mt-auto pt-4 text-left px-4 py-2 rounded-lg text-red-400 hover:bg-red-500/10 hover:text-red-500 transition font-medium"
-      >
-        Logout
-      </button>
+      <div className="flex-none border-t border-[#00FFFF1E] pt-3">
+        <button
+          onClick={handleLogout}
+          className="w-full text-left px-4 py-2 rounded-lg text-red-400 hover:bg-red-500/10 hover:text-red-500 transition font-medium"
+        >
+          Logout
+        </button>
+      </div>
     </div>
   );
 }
