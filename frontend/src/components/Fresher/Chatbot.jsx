@@ -428,7 +428,7 @@ useEffect(() => {
       headerLabel="Training Assistant"
       contentClassName="p-0 overflow-hidden"
     >
-    <div className="h-[calc(100vh-72px)] lg:h-screen bg-[#031C3A] text-white overflow-hidden">
+    <div className="h-[calc(100dvh-110px)] sm:h-[calc(100dvh-96px)] lg:h-screen bg-[#031C3A] text-white overflow-hidden">
       
       {/* Add CSS for proper HTML rendering in chat */}
       <style>
@@ -523,9 +523,9 @@ useEffect(() => {
       <div className="h-full min-h-0 flex flex-col overflow-hidden">
 
         {/* HEADER */}
-        <div className="bg-gradient-to-r from-[#021B36]/95 via-[#031C3A]/90 to-[#021B36]/95 p-5 border-b border-[#00FFFF40] flex justify-between items-center flex-none">
+        <div className="bg-gradient-to-r from-[#021B36]/95 via-[#031C3A]/90 to-[#021B36]/95 p-3 sm:p-4 md:p-5 border-b border-[#00FFFF40] flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center flex-none">
           <div className="space-y-2">
-            <h2 className="text-2xl md:text-3xl text-[#00FFFF] font-semibold">
+            <h2 className="text-xl sm:text-2xl md:text-3xl text-[#00FFFF] font-semibold leading-tight">
               {companyName ? `${companyName}'s Training Assistant` : "Chatbot"}
             </h2>
             <div className="flex flex-wrap items-center gap-3 text-xs text-[#AFCBE3]">
@@ -533,12 +533,12 @@ useEffect(() => {
                 <span className="uppercase tracking-wide text-[10px] text-[#7FB6C8]">User</span>
                 <span className="text-[#CFE8FF] font-medium">{userData?.name || "User"}</span>
               </div>
-              <span className="h-4 w-px bg-[#00FFFF30]" />
+              <span className="hidden sm:block h-4 w-px bg-[#00FFFF30]" />
               <div className="flex items-center gap-2">
                 <span className="uppercase tracking-wide text-[10px] text-[#7FB6C8]">Department</span>
                 <span className="text-[#CFE8FF] font-medium">{userData?.deptName || "Department"}</span>
               </div>
-              <span className="h-4 w-px bg-[#00FFFF30]" />
+              <span className="hidden sm:block h-4 w-px bg-[#00FFFF30]" />
               <div className="flex items-center gap-2">
                 <span className="uppercase tracking-wide text-[10px] text-[#7FB6C8]">Company</span>
                 <span className="text-[#CFE8FF] font-medium">{userData?.companyName || "Company"}</span>
@@ -546,14 +546,14 @@ useEffect(() => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 relative">
+          <div className="flex w-full sm:w-auto items-center gap-2 relative">
             <button
               onClick={() =>
                 navigate("/previous-chats", {
                   state: { userId, companyId, deptId, activeModuleId }
                 })
               }
-               className="flex items-center gap-2 border border-cyan-400/60 px-4 py-2 rounded-lg text-sm text-cyan-300 hover:bg-cyan-400/10 transition"
+               className="w-full sm:w-auto justify-center flex items-center gap-2 border border-cyan-400/60 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm text-cyan-300 hover:bg-cyan-400/10 transition"
           >
               View Previous Chats
             </button>
@@ -583,19 +583,20 @@ useEffect(() => {
 <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
 
   {/* CHAT MESSAGES - SCROLLABLE */}
-  <div ref={messagesScrollRef} className="flex-1 min-h-0 overflow-y-auto scroll-smooth px-8 py-8">
+  <div ref={messagesScrollRef} className="flex-1 min-h-0 overflow-y-auto scroll-smooth px-3 sm:px-5 md:px-8 py-4 sm:py-6 md:py-8">
    {messages.map((msg, i) => (
   <div key={i} className="mb-6">
     <div className={`flex items-start gap-3 ${msg.from === "user" ? "justify-end" : "justify-start"}`}>
       {msg.from === "bot" && (
-        <CpuChipIcon className="w-8 h-8 text-cyan-400 flex-shrink-0 mt-1" />
+        <CpuChipIcon className="w-6 h-6 sm:w-8 sm:h-8 text-cyan-400 flex-shrink-0 mt-1" />
       )}
 
       <div
         className={`
           chat-message
-          px-5 py-4 rounded-lg
-          max-w-[75%]
+          px-3 sm:px-4 md:px-5 py-3 sm:py-4 rounded-lg
+          max-w-[88%] sm:max-w-[80%] lg:max-w-[75%]
+          text-sm sm:text-base
           break-words overflow-wrap-anywhere
           shadow-lg
           transition-all duration-200
@@ -609,7 +610,7 @@ useEffect(() => {
       />
 
       {msg.from === "user" && (
-        <UserCircleIcon className="w-8 h-8 text-cyan-400 flex-shrink-0 mt-1" />
+        <UserCircleIcon className="w-6 h-6 sm:w-8 sm:h-8 text-cyan-400 flex-shrink-0 mt-1" />
       )}
     </div>
   </div>
@@ -618,10 +619,10 @@ useEffect(() => {
   <div className="mb-6 animate-pulse">
     <div className="flex items-start gap-3">
       {/* BOT ICON */}
-      <CpuChipIcon className="w-8 h-8 text-cyan-400 flex-shrink-0 mt-1" />
+      <CpuChipIcon className="w-6 h-6 sm:w-8 sm:h-8 text-cyan-400 flex-shrink-0 mt-1" />
 
       {/* TYPING BUBBLE */}
-      <div className="px-5 py-4 rounded-lg bg-[#021B36] border border-cyan-400/30 text-[#E0EAF5] shadow-lg">
+      <div className="px-3 sm:px-5 py-3 sm:py-4 rounded-lg bg-[#021B36] border border-cyan-400/30 text-[#E0EAF5] shadow-lg">
         <span className="flex gap-1.5">
           <span className="w-2.5 h-2.5 bg-cyan-400 rounded-full animate-bounce [animation-delay:0ms]" />
           <span className="w-2.5 h-2.5 bg-cyan-400 rounded-full animate-bounce [animation-delay:150ms]" />
@@ -635,7 +636,7 @@ useEffect(() => {
         </div>
 
         {/* INPUT */}
-        <div className="px-8 py-4 border-t border-[#00FFFF50] flex gap-2 items-end bg-[#021B36]/90 flex-none">
+        <div className="px-3 sm:px-5 md:px-8 py-3 sm:py-4 border-t border-[#00FFFF50] flex gap-2 items-end bg-[#021B36]/90 flex-none">
           <textarea
             disabled={mode === "read"}
             value={input}
@@ -643,7 +644,7 @@ useEffect(() => {
             onKeyDown={handleKeyDown}
             placeholder={mode === "read" ? "Read only chat" : "Type a message... (Enter to send, Ctrl+Enter for a new line)"}
             rows={1}
-            className="flex-1 px-4 py-2 rounded bg-[#021B36] border border-cyan-400/40 resize-none overflow-hidden min-h-[42px] max-h-[120px]"
+            className="flex-1 px-3 sm:px-4 py-2 rounded bg-[#021B36] border border-cyan-400/40 resize-none overflow-hidden min-h-[42px] max-h-[120px] text-sm sm:text-base"
             style={{
               height: 'auto',
               overflowY: input.split('\n').length > 3 ? 'auto' : 'hidden'
@@ -656,7 +657,7 @@ useEffect(() => {
           <button
             onClick={handleSend}
             disabled={mode === "read"}
-            className="bg-cyan-400 p-3 rounded disabled:opacity-40 flex-shrink-0"
+            className="bg-cyan-400 p-2.5 sm:p-3 rounded disabled:opacity-40 flex-shrink-0"
           >
             <PaperAirplaneIcon className="w-5 h-5 text-[#031C3A]" />
           </button>
