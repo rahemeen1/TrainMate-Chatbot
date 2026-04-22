@@ -63,14 +63,6 @@ const getModuleStartDate = (module) => {
 };
 
   const checkQuizTimeUnlock = (module) => {
-  // TEMPORARY TEST OVERRIDE: disable frontend 70% time-lock messaging/state.
-  return {
-    isUnlocked: true,
-    remainingTime: null,
-    message: "Quiz is available (temporary override).",
-  };
-
-  /*
     const startDate = getModuleStartDate(module);
     const estimatedDays = Number(module?.estimatedDays) || 1;
     const configuredUnlockPercent = Number(userData?.quizPolicy?.quizUnlockPercent);
@@ -117,7 +109,6 @@ const getModuleStartDate = (module) => {
       remainingTime: remainingTimeStr,
       message: `Quiz will be available after you've spent ${unlockPercent}% of the module time. Unlock in: ${remainingTimeStr}`,
     };
-	*/
   };
 
   // Update overall progress after marking module done

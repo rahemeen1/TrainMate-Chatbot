@@ -163,22 +163,6 @@ function calculateQuizUnlockTime(moduleStartDate, estimatedDays) {
  * @returns {Object} - { isUnlocked: boolean, unlockTime: Date, remainingTime: string }
  */
 function checkQuizTimeUnlock(moduleData) {
-	// TEMPORARY TEST OVERRIDE: disable the 70% time-lock gate.
-	// Restore original logic below when time-based locking should be enforced again.
-	console.log("[QUIZ][DEBUG] checkQuizTimeUnlock override active", {
-		moduleId: moduleData?.id || null,
-		moduleTitle: moduleData?.moduleTitle || null,
-		startedAt: moduleData?.startedAt || moduleData?.startDate || moduleData?.FirstTimeCreatedAt || moduleData?.createdAt || null,
-		estimatedDays: moduleData?.estimatedDays || null,
-	});
-	return {
-		isUnlocked: true,
-		unlockTime: null,
-		remainingTime: null,
-		message: "Quiz is available (temporary time-lock override).",
-	};
-
-	/*
 	const startDate = moduleData.startedAt || moduleData.startDate || moduleData.FirstTimeCreatedAt || moduleData.createdAt;
 	const estimatedDays = moduleData.estimatedDays || 1;
 	
@@ -225,7 +209,6 @@ function checkQuizTimeUnlock(moduleData) {
 		remainingTime: remainingTimeStr,
 		message: `Quiz will be available after you've spent 70% of the module time. Unlock in: ${remainingTimeStr}`
 	};
-	*/
 }
 
 async function createOrUpdateModuleLockNotification({
