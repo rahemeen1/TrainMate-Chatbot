@@ -28,6 +28,29 @@ const toDateSafe = (value) => {
 
 const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
 
+const parseTrainingDurationDays = (duration) => {
+  if (Number.isFinite(duration)) return Math.max(1, Math.round(duration));
+
+  const raw = String(duration || "").trim().toLowerCase();
+  if (!raw) return null;
+
+  const numeric = Number(raw);
+  if (Number.isFinite(numeric) && numeric > 0) return Math.round(numeric);
+
+  const match = raw.match(/(\d+(?:\.\d+)?)\s*(day|days|week|weeks|month|months)/i);
+  if (!match) return null;
+
+  const value = Number(match[1]);
+  const unit = match[2].toLowerCase();
+
+  if (!Number.isFinite(value) || value <= 0) return null;
+  if (unit.startsWith("day")) return Math.round(value);
+  if (unit.startsWith("week")) return Math.round(value * 7);
+  if (unit.startsWith("month")) return Math.round(value * 30);
+
+  return null;
+};
+
 // Custom scrollbar styles
 const scrollbarStyles = `
   .custom-scrollbar::-webkit-scrollbar {
@@ -110,6 +133,27 @@ const checkRoadmapExists = async () => {
 const fetchMissedDates = async () => {
   try {
     if (!companyId || !deptId || !userId) return;
+
+    // Company onboarding answer (Q2) is the source of truth for training duration.
+    let companyTrainingDurationDays = null;
+    try {
+      const onboardingRef = collection(db, "companies", companyId, "onboardingAnswers");
+      const onboardingSnap = await getDocs(onboardingRef);
+      if (!onboardingSnap.empty) {
+        const latestDoc = [...onboardingSnap.docs].sort((a, b) => {
+          const aTime = toDateSafe(a.data()?.createdAt)?.getTime() || 0;
+          const bTime = toDateSafe(b.data()?.createdAt)?.getTime() || 0;
+          return bTime - aTime;
+        })[0];
+
+        const answers = latestDoc?.data()?.answers || {};
+        const rawTrainingDuration =
+          answers["2"] || answers[2] || answers["1"] || answers[1] || null;
+        companyTrainingDurationDays = parseTrainingDurationDays(rawTrainingDuration);
+      }
+    } catch (onboardingErr) {
+      console.warn("Unable to fetch company onboarding duration:", onboardingErr);
+    }
 
     const roadmapRef = collection(
       db,
@@ -209,8 +253,16 @@ const fetchMissedDates = async () => {
     }
 
     const trainingStats = userData?.trainingStats || {};
+    const userTrainingDurationDays =
+      parseTrainingDurationDays(userData?.trainingDurationFromOnboarding) ||
+      parseTrainingDurationDays(userData?.trainingDuration) ||
+      parseTrainingDurationDays(userData?.roadmapAgentic?.trainingDuration);
     const activeDays = Number(trainingStats.activeDays) || activeDaysFromFirestore;
-    const totalExpectedDays = Number(trainingStats.totalExpectedDays) || estimatedTotalDaysFromRoadmap;
+    const totalExpectedDays =
+      companyTrainingDurationDays ||
+      userTrainingDurationDays ||
+      Number(trainingStats.totalExpectedDays) ||
+      estimatedTotalDaysFromRoadmap;
     const missedDays = Number(trainingStats.missedDays) || missedDates.length;
 
     setMissedDateInfo({

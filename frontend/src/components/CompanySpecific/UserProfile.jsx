@@ -6,6 +6,45 @@ import { db } from "../../firebase";
 import { apiUrl } from "../../services/api";
 import CompanyPageLoader from "./CompanyPageLoader";
 import CompanyShellLayout from "./CompanyShellLayout";
+
+const toDateSafe = (value) => {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  if (value?.toDate) return value.toDate();
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+const parseTrainingDurationDays = (duration) => {
+  if (Number.isFinite(duration)) return Math.max(1, Math.round(duration));
+
+  const raw = String(duration || "").trim().toLowerCase();
+  if (!raw) return null;
+
+  const numeric = Number(raw);
+  if (Number.isFinite(numeric) && numeric > 0) return Math.round(numeric);
+
+  const match = raw.match(/(\d+(?:\.\d+)?)\s*(day|days|week|weeks|month|months)/i);
+  if (!match) return null;
+
+  const value = Number(match[1]);
+  const unit = match[2].toLowerCase();
+
+  if (!Number.isFinite(value) || value <= 0) return null;
+  if (unit.startsWith("day")) return Math.round(value);
+  if (unit.startsWith("week")) return Math.round(value * 7);
+  if (unit.startsWith("month")) return Math.round(value * 30);
+
+  return null;
+};
+
+const toNumericOrNull = (value) => {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+};
+
 export default function UserProfile() {
   const { companyId, deptId, userId } = useParams();
   const location = useLocation();
@@ -21,6 +60,13 @@ export default function UserProfile() {
   const [selectedAction, setSelectedAction] = useState({});
   const [notificationMeta, setNotificationMeta] = useState(null);
   const [notificationResolveLoading, setNotificationResolveLoading] = useState(false);
+  const [companyTrainingDurationDays, setCompanyTrainingDurationDays] = useState(null);
+  const [derivedStats, setDerivedStats] = useState({
+    activeDays: 0,
+    missedDays: 0,
+    currentStreak: 0,
+    totalExpectedDays: 0,
+  });
 
   const searchParams = new URLSearchParams(location.search);
   const notificationIdFromQuery = searchParams.get("notificationId") || "";
@@ -92,6 +138,23 @@ export default function UserProfile() {
         if (companSnap.exists()) {
           setCompany(companSnap.data());
         }
+
+        // Company onboarding answer (Q2) is the source of truth for training duration.
+        const onboardingRef = collection(db, "companies", companyId, "onboardingAnswers");
+        const onboardingSnap = await getDocs(onboardingRef);
+        if (!onboardingSnap.empty) {
+          const latestDoc = [...onboardingSnap.docs].sort((a, b) => {
+            const aTime = toDateSafe(a.data()?.createdAt)?.getTime() || 0;
+            const bTime = toDateSafe(b.data()?.createdAt)?.getTime() || 0;
+            return bTime - aTime;
+          })[0];
+
+          const answers = latestDoc?.data()?.answers || {};
+          const rawDuration = answers["2"] || answers[2] || answers["1"] || answers[1] || null;
+          setCompanyTrainingDurationDays(parseTrainingDurationDays(rawDuration));
+        } else {
+          setCompanyTrainingDurationDays(null);
+        }
       } catch (err) {
         console.error("Error fetching user info:", err);
         alert("Error fetching user info");
@@ -141,6 +204,82 @@ export default function UserProfile() {
     fetchRoadmap();
   }, [companyId, deptId, userId]);
 
+  useEffect(() => {
+    const loadDerivedStats = async () => {
+      if (!companyId || !deptId || !userId) return;
+
+      try {
+        const uniqueActiveDates = new Set();
+
+        for (const module of roadmapModules) {
+          const chatSessionsRef = collection(
+            db,
+            "freshers",
+            companyId,
+            "departments",
+            deptId,
+            "users",
+            userId,
+            "roadmap",
+            module.id,
+            "chatSessions"
+          );
+          const chatSessionsSnap = await getDocs(chatSessionsRef);
+          chatSessionsSnap.docs.forEach((docSnap) => uniqueActiveDates.add(docSnap.id));
+        }
+
+        const activeDays = uniqueActiveDates.size;
+        const estimatedTotalDaysFromRoadmap = roadmapModules.reduce(
+          (sum, module) => sum + (Number(module?.estimatedDays) || 1),
+          0
+        );
+
+        const roadmapGeneratedAt =
+          toDateSafe(user?.roadmapAgentic?.generatedAt) ||
+          toDateSafe(user?.roadmapGeneratedAt) ||
+          toDateSafe(roadmapModules[0]?.startedAt) ||
+          toDateSafe(roadmapModules[0]?.FirstTimeCreatedAt) ||
+          toDateSafe(roadmapModules[0]?.createdAt);
+
+        let missedDays = 0;
+        if (roadmapGeneratedAt) {
+          const startDate = startOfDay(roadmapGeneratedAt);
+          const today = startOfDay(new Date());
+          const endDate = new Date(today);
+          endDate.setDate(endDate.getDate() - 1);
+
+          if (endDate >= startDate) {
+            const currentDate = new Date(startDate);
+            while (currentDate <= endDate) {
+              const dateKey = currentDate.toISOString().slice(0, 10);
+              if (!uniqueActiveDates.has(dateKey)) missedDays += 1;
+              currentDate.setDate(currentDate.getDate() + 1);
+            }
+          }
+        }
+
+        let currentStreak = 0;
+        const today = startOfDay(new Date());
+        const cursor = new Date(today);
+        while (uniqueActiveDates.has(cursor.toISOString().slice(0, 10))) {
+          currentStreak += 1;
+          cursor.setDate(cursor.getDate() - 1);
+        }
+
+        setDerivedStats({
+          activeDays,
+          missedDays,
+          currentStreak,
+          totalExpectedDays: estimatedTotalDaysFromRoadmap,
+        });
+      } catch (err) {
+        console.warn("Failed to derive training stats:", err);
+      }
+    };
+
+    loadDerivedStats();
+  }, [companyId, deptId, userId, roadmapModules, user]);
+
   const isModuleCompleted = (module) => {
     const status = String(module?.status || "").toLowerCase();
     if (status === "expired") return false;
@@ -152,6 +291,23 @@ export default function UserProfile() {
     (sum, m) => sum + (m.quizAttempts ?? 0),
     0
   );
+
+  const userTrainingDurationDays =
+    parseTrainingDurationDays(user?.trainingDurationFromOnboarding) ||
+    parseTrainingDurationDays(user?.trainingDuration) ||
+    parseTrainingDurationDays(user?.roadmapAgentic?.trainingDuration);
+
+  const activeDaysValue =
+    toNumericOrNull(user?.trainingStats?.activeDays) ?? derivedStats.activeDays;
+  const currentStreakValue =
+    toNumericOrNull(user?.trainingStats?.currentStreak) ?? derivedStats.currentStreak;
+  const missedDaysValue =
+    toNumericOrNull(user?.trainingStats?.missedDays) ?? derivedStats.missedDays;
+  const expectedDaysValue =
+    companyTrainingDurationDays ||
+    userTrainingDurationDays ||
+    toNumericOrNull(user?.trainingStats?.totalExpectedDays) ||
+    derivedStats.totalExpectedDays;
 
   const getModuleStartDate = (module) => {
     const raw = module.startedAt || module.FirstTimeCreatedAt || module.createdAt;
@@ -535,10 +691,10 @@ if (!user) {
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
-                { label: "Active Days", value: user.trainingStats?.activeDays },
-                { label: "Current Streak", value: user.trainingStats?.currentStreak },
-                { label: "Missed Days", value: user.trainingStats?.missedDays },
-                { label: "Expected Days", value: user.trainingStats?.totalExpectedDays },
+                { label: "Active Days", value: activeDaysValue },
+                { label: "Current Streak", value: currentStreakValue },
+                { label: "Missed Days", value: missedDaysValue },
+                { label: "Expected Days", value: expectedDaysValue },
               ].map((item, i) => (
                 <div key={i} className="profile-pill-card rounded-xl border border-[#00FFFF30] bg-[#031C3A]/65 p-4 text-center">
                   <p className="text-xs uppercase tracking-wide text-[#AFCBE3]">{item.label}</p>
