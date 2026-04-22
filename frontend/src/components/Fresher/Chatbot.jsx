@@ -434,31 +434,41 @@ useEffect(() => {
       <style>
         {`
           .chat-message {
+            line-height: 1.7;
+            font-size: 0.97rem;
+            letter-spacing: 0.01em;
+          }
+          .chat-message-bot {
+            font-size: 1rem;
+            line-height: 1.75;
+          }
+          .chat-message-user {
             line-height: 1.6;
-            font-size: 0.95rem;
           }
           .chat-message ul {
             list-style-type: disc;
-            margin-left: 1.5rem;
-            margin-top: 0.5rem;
-            margin-bottom: 0.5rem;
+            margin-left: 1.25rem;
+            margin-top: 0.65rem;
+            margin-bottom: 0.65rem;
+            padding-left: 0.15rem;
           }
           .chat-message ol {
             list-style-type: decimal;
-            margin-left: 1.5rem;
-            margin-top: 0.5rem;
-            margin-bottom: 0.5rem;
+            margin-left: 1.25rem;
+            margin-top: 0.65rem;
+            margin-bottom: 0.65rem;
+            padding-left: 0.15rem;
           }
           .chat-message li {
-            margin-bottom: 0.35rem;
-            line-height: 1.5;
+            margin-bottom: 0.5rem;
+            line-height: 1.65;
           }
           .chat-message li:last-child {
             margin-bottom: 0;
           }
           .chat-message p {
-            margin-bottom: 0.75rem;
-            line-height: 1.6;
+            margin-bottom: 0.8rem;
+            line-height: 1.7;
           }
           .chat-message p:last-child {
             margin-bottom: 0;
@@ -471,10 +481,10 @@ useEffect(() => {
             font-style: italic;
           }
           .chat-message h3 {
-            font-size: 1.125rem;
+            font-size: 1.05rem;
             font-weight: 600;
-            margin-top: 1rem;
-            margin-bottom: 0.5rem;
+            margin-top: 1.1rem;
+            margin-bottom: 0.6rem;
             color: #00FFFF;
           }
           .chat-message h3:first-child {
@@ -497,6 +507,22 @@ useEffect(() => {
           .chat-message pre code {
             background-color: transparent;
             padding: 0;
+          }
+          @media (max-width: 640px) {
+            .chat-message {
+              font-size: 0.95rem;
+              line-height: 1.7;
+            }
+            .chat-message-bot {
+              font-size: 0.97rem;
+            }
+            .chat-message h3 {
+              font-size: 1rem;
+            }
+            .chat-message ul,
+            .chat-message ol {
+              margin-left: 1.1rem;
+            }
           }
           
           /* Scrollbar Styling */
@@ -523,9 +549,9 @@ useEffect(() => {
       <div className="h-full min-h-0 flex flex-col overflow-hidden">
 
         {/* HEADER */}
-        <div className="bg-gradient-to-r from-[#021B36]/95 via-[#031C3A]/90 to-[#021B36]/95 p-2.5 sm:p-4 md:p-5 border-b border-[#00FFFF40] flex flex-col gap-2 sm:gap-3 sm:flex-row sm:justify-between sm:items-center flex-none">
-          <div className="space-y-1 sm:space-y-2 text-center sm:text-left">
-            <h2 className="text-lg sm:text-2xl md:text-3xl text-[#00FFFF] font-semibold leading-tight">
+        <div className="bg-gradient-to-r from-[#021B36]/95 via-[#031C3A]/90 to-[#021B36]/95 px-4 py-3 sm:p-4 md:p-5 border-b border-[#00FFFF40] flex flex-col gap-3 sm:gap-3 sm:flex-row sm:justify-between sm:items-center flex-none">
+          <div className="space-y-1 sm:space-y-2 text-left">
+            <h2 className="text-base sm:text-2xl md:text-3xl text-[#00FFFF] font-semibold leading-tight">
               {companyName ? `${companyName}'s Training Assistant` : "Chatbot"}
             </h2>
             <div className="hidden sm:flex flex-wrap items-center gap-3 text-xs text-[#AFCBE3]">
@@ -553,7 +579,7 @@ useEffect(() => {
                   state: { userId, companyId, deptId, activeModuleId }
                 })
               }
-               className="w-full sm:w-auto justify-center flex items-center gap-2 border border-cyan-400/60 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm text-cyan-300 hover:bg-cyan-400/10 transition"
+               className="w-full sm:w-auto justify-center flex items-center gap-2 border border-cyan-400/60 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm text-cyan-300 hover:bg-cyan-400/10 transition"
           >
               View Previous Chats
             </button>
@@ -583,22 +609,22 @@ useEffect(() => {
 <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
 
   {/* CHAT MESSAGES - SCROLLABLE */}
-  <div ref={messagesScrollRef} className="flex-1 min-h-0 overflow-y-auto scroll-smooth px-1.5 sm:px-5 md:px-8 pt-4 sm:pt-6 md:pt-8 pb-24 sm:pb-28 md:pb-32">
+  <div ref={messagesScrollRef} className="flex-1 min-h-0 overflow-y-auto scroll-smooth px-3 sm:px-5 md:px-8 pt-5 sm:pt-6 md:pt-8 pb-24 sm:pb-28 md:pb-32">
    {messages.map((msg, i) => (
-  <div key={i} className="mb-4 sm:mb-6">
-    <div className={`flex items-start gap-2 sm:gap-3 ${msg.from === "user" ? "justify-end" : "justify-start"}`}>
+  <div key={i} className="mb-5 sm:mb-6">
+    <div className={`flex items-start gap-0 sm:gap-3 ${msg.from === "user" ? "justify-end" : "justify-start"}`}>
       {msg.from === "bot" && (
-        <CpuChipIcon className="w-5 h-5 sm:w-8 sm:h-8 text-cyan-400 flex-shrink-0 mt-1" />
+        <CpuChipIcon className="hidden sm:block sm:w-8 sm:h-8 text-cyan-400 flex-shrink-0 mt-1" />
       )}
 
       <div
         className={`
           chat-message
-          px-3 sm:px-4 md:px-5 py-3 sm:py-4 rounded-lg
-          max-w-[97%] sm:max-w-[82%] lg:max-w-[75%]
+          ${msg.from === "user" ? "chat-message-user" : "chat-message-bot"}
+          px-3.5 sm:px-4 md:px-5 py-3 sm:py-4 rounded-2xl
+          max-w-full sm:max-w-[82%] lg:max-w-[75%]
           text-[15px] sm:text-base leading-relaxed
           break-words overflow-wrap-anywhere
-          shadow-lg
           transition-all duration-200
           ${msg.from === "user"
             ? "bg-cyan-600/40 text-white border border-cyan-400/40"
@@ -610,19 +636,19 @@ useEffect(() => {
       />
 
       {msg.from === "user" && (
-        <UserCircleIcon className="w-5 h-5 sm:w-8 sm:h-8 text-cyan-400 flex-shrink-0 mt-1" />
+        <UserCircleIcon className="hidden sm:block sm:w-8 sm:h-8 text-cyan-400 flex-shrink-0 mt-1" />
       )}
     </div>
   </div>
 ))}
 {typing && (
   <div className="mb-6 animate-pulse">
-    <div className="flex items-start gap-2 sm:gap-3">
+    <div className="flex items-start gap-0 sm:gap-3">
       {/* BOT ICON */}
-      <CpuChipIcon className="w-5 h-5 sm:w-8 sm:h-8 text-cyan-400 flex-shrink-0 mt-1" />
+      <CpuChipIcon className="hidden sm:block sm:w-8 sm:h-8 text-cyan-400 flex-shrink-0 mt-1" />
 
       {/* TYPING BUBBLE */}
-      <div className="px-3 sm:px-5 py-3 sm:py-4 rounded-lg bg-[#021B36] border border-cyan-400/30 text-[#E0EAF5] shadow-lg">
+      <div className="px-3.5 sm:px-5 py-3 sm:py-4 rounded-2xl bg-[#021B36] border border-cyan-400/30 text-[#E0EAF5]">
         <span className="flex gap-1.5">
           <span className="w-2.5 h-2.5 bg-cyan-400 rounded-full animate-bounce [animation-delay:0ms]" />
           <span className="w-2.5 h-2.5 bg-cyan-400 rounded-full animate-bounce [animation-delay:150ms]" />
@@ -636,7 +662,7 @@ useEffect(() => {
         </div>
 
         {/* INPUT */}
-        <div className="mt-auto sticky bottom-0 z-10 px-1.5 sm:px-5 md:px-8 pt-3 sm:pt-4 pb-[calc(env(safe-area-inset-bottom)+10px)] sm:pb-[calc(env(safe-area-inset-bottom)+12px)] border-t border-[#00FFFF50] flex gap-2 items-end bg-[#021B36]/95 backdrop-blur-sm flex-none">
+        <div className="mt-auto sticky bottom-0 z-10 px-3 sm:px-5 md:px-8 pt-3 sm:pt-4 pb-[calc(env(safe-area-inset-bottom)+10px)] sm:pb-[calc(env(safe-area-inset-bottom)+12px)] border-t border-[#00FFFF50] flex gap-2 items-end bg-[#021B36]/95 backdrop-blur-sm flex-none">
           <textarea
             disabled={mode === "read"}
             value={input}
@@ -644,7 +670,7 @@ useEffect(() => {
             onKeyDown={handleKeyDown}
             placeholder={mode === "read" ? "Read only chat" : "Type a message... (Enter to send, Ctrl+Enter for a new line)"}
             rows={1}
-            className="flex-1 px-3 sm:px-4 py-2 rounded bg-[#021B36] border border-cyan-400/40 resize-none overflow-hidden min-h-[42px] max-h-[120px] text-sm sm:text-base"
+            className="flex-1 px-3 sm:px-4 py-2.5 rounded-xl bg-[#021B36] border border-cyan-400/40 resize-none overflow-hidden min-h-[44px] max-h-[120px] text-sm sm:text-base"
             style={{
               height: 'auto',
               overflowY: input.split('\n').length > 3 ? 'auto' : 'hidden'
@@ -657,7 +683,7 @@ useEffect(() => {
           <button
             onClick={handleSend}
             disabled={mode === "read"}
-            className="bg-cyan-400 p-2.5 sm:p-3 rounded disabled:opacity-40 flex-shrink-0"
+            className="bg-cyan-400 p-2.5 sm:p-3 rounded-xl disabled:opacity-40 flex-shrink-0"
           >
             <PaperAirplaneIcon className="w-5 h-5 text-[#031C3A]" />
           </button>

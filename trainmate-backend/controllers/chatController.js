@@ -973,6 +973,10 @@ About: ${description}
     /* ---------- CHECK FOR UNLOCK-RELATED QUESTIONS ---------- */
     const messageLower = String(newMessage || "").toLowerCase();
     const explainIntent = /\b(explain|easy words|simple words|summarize|what does this mean|meaning)\b/i.test(messageLower);
+    const detailedIntent = /\b(detailed|in detail|deep dive|comprehensive|thorough|elaborate|step by step|full explanation|long explanation|explain deeply)\b/i.test(messageLower);
+    const concisePointMode = !detailedIntent;
+    const stepByStepIntent = /\b(step by step|how to|what should i do|next step|plan|roadmap|practice plan|action plan)\b/i.test(messageLower);
+    const agenticResponseMode = stepByStepIntent ? "guided_steps" : "guided_explanation";
     const unlockIntentPatterns = [
       /\bunlock\b/i,
       /\bnext\s+module\b/i,
@@ -1200,6 +1204,41 @@ AGENTIC GUIDELINES:
 - Combine company knowledge with external expertise for richer answers
 - In every response, end with one short context-aware question to keep the learner engaged and continue the conversation.
 ${weaknessWelcome ? '\n- Start this conversation by welcoming the user and acknowledging their quiz struggles\n- Explain you will help them master the weak concepts identified\n- Be encouraging and supportive about starting fresh with regenerated roadmap\n' : ''}
+
+RESPONSE STYLE MODE:
+- Current mode: ${concisePointMode ? "concise_points" : "detailed"}
+- Agentic mode: ${agenticResponseMode}
+- Always use fresher-friendly language with simple words and short sentences.
+- Avoid heavy jargon. If jargon is necessary, explain it in plain words in the same line.
+- Keep answers practical and easy to follow.
+- If mode is concise_points:
+  - Give a short answer in clear bullet points using <ul><li>.
+  - Prefer 4 to 7 points.
+  - Keep each point short and direct.
+  - Do not write long paragraphs.
+- If mode is detailed:
+  - Give a detailed explanation only because the user asked for it.
+  - Use readable structure with <h3>, <p>, and <ul><li> where helpful.
+  - Explain step by step with examples.
+
+AGENTIC RESPONSE POLICY:
+- Always behave like a proactive learning coach, not just a Q&A bot.
+- First infer user intent from the latest message and respond with clear guidance.
+- Give at least one concrete next action the learner can do now.
+- If the user asks how to do something, provide an ordered mini plan.
+- If user asks concept-only questions, explain briefly first, then add "what to do next".
+- Prefer this structure for concise mode:
+  - <p><b>In simple words:</b> ...</p>
+  - <ul><li>Actionable points...</li></ul>
+  - <p><b>Next step:</b> one practical step</p>
+- Prefer this structure for detailed mode:
+  - <h3>Simple idea</h3>
+  - <p>clear explanation</p>
+  - <h3>Step-by-step</h3>
+  - <ol><li>...</li></ol>
+  - <h3>Example</h3>
+  - <p>small practical example</p>
+- Keep tone supportive and confidence-building for freshers.
 
 STRICT RULES:
 - Answer questions related to the active module, department, OR company information

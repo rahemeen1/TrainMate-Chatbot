@@ -215,6 +215,20 @@ export default function AdminDashboard() {
     fetchStats();
   }, [fetchStats]);
 
+  useEffect(() => {
+    const isMobile = window.matchMedia("(max-width: 767px)").matches;
+    if (!isMobile) {
+      document.body.style.overflow = "";
+      return;
+    }
+
+    document.body.style.overflow = isSidebarOpen ? "hidden" : "";
+
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [isSidebarOpen]);
+
   const handleSectionChange = (section) => {
     setActiveSection(section);
     setIsSidebarOpen(false);
@@ -223,10 +237,10 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-[#02142B] text-white md:flex md:relative">
-      <div className="md:hidden flex items-center justify-between px-4 py-3 border-b border-[#00FFFF30] bg-[#031C3A]">
+      <div className="md:hidden sticky top-0 z-40 flex items-center justify-between px-4 py-3 border-b border-[#00FFFF30] bg-[#031C3A]/95 backdrop-blur-sm">
         <h2 className="text-lg font-bold text-[#00FFFF]">Super Admin</h2>
         <button
-          className="text-[#AFCBE3]"
+          className="text-[#AFCBE3] hover:text-[#E8F7FF]"
           onClick={() => setIsSidebarOpen((prev) => !prev)}
           aria-label="Toggle sidebar"
         >
@@ -235,8 +249,27 @@ export default function AdminDashboard() {
       </div>
 
       <div
-        className={`${isSidebarOpen ? "block" : "hidden"} md:block w-full md:w-64 bg-[#031C3A] border-r border-[#00FFFF30] shadow-lg p-6 md:fixed md:inset-y-0 md:left-0 md:overflow-hidden min-h-[calc(100dvh-57px)] md:min-h-screen flex flex-col`}
+        className={`md:hidden fixed inset-0 z-40 bg-black/50 transition-opacity duration-200 ${
+          isSidebarOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+        }`}
+        onClick={() => setIsSidebarOpen(false)}
+        aria-hidden="true"
+      />
+
+      <div
+        className={`fixed top-[57px] bottom-0 left-0 z-50 w-[85vw] max-w-72 bg-[#031C3A] border-r border-[#00FFFF30] shadow-lg p-5 sm:p-6 overflow-y-auto transition-transform duration-200 md:top-0 md:w-64 md:max-w-none md:inset-y-0 md:left-0 md:translate-x-0 md:overflow-hidden md:block md:flex md:flex-col ${
+          isSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+        }`}
       >
+      <div className="md:hidden flex justify-end mb-2">
+        <button
+          className="text-[#AFCBE3] hover:text-[#E8F7FF]"
+          onClick={() => setIsSidebarOpen(false)}
+          aria-label="Close sidebar"
+        >
+          <X size={20} />
+        </button>
+      </div>
          {/* Logo */}
       <div className="text-center mb-6">
         <div className="w-16 h-16 mx-auto bg-[#00FFFF]/20 rounded-2xl flex items-center justify-center shadow-[0_0_18px_#00FFFF50] border border-[#00FFFF30]">
@@ -318,14 +351,7 @@ export default function AdminDashboard() {
         </button>
       </div>
 
-      <div className="flex-1 p-4 sm:p-6 lg:p-10 md:ml-64 w-full overflow-x-hidden">
-          {activeSection === "overview" }
-          {activeSection === "addCompany" }
-          {activeSection === "viewCompanies" }
-          {activeSection === "manageCompanies" }
-          {activeSection === "agentHealth" }
-          {activeSection === "manageAdmins" }
-          {activeSection === "licensingPlans" }
+          <div className="flex-1 p-4 sm:p-6 lg:p-10 md:ml-64 w-full overflow-x-hidden">
 
         {activeSection === "overview" && (
           <div className="max-w-7xl mx-auto space-y-8">

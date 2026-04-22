@@ -193,15 +193,6 @@ export default function FresherTraining() {
   const moduleTimeRemaining = selectedModule ? getModuleTimeRemaining(selectedModule) : null;
 
   const getQuizTimeUnlock = (module) => {
-  // TEMPORARY TEST OVERRIDE: disable frontend 70% time-lock gate.
-  return {
-    isUnlocked: true,
-    unlockPercent: DEFAULT_QUIZ_UNLOCK_PERCENT,
-    remainingTime: null,
-    message: "Quiz is available (temporary override).",
-  };
-
-  /*
     if (!module) {
       return {
         isUnlocked: false,
@@ -260,7 +251,6 @@ export default function FresherTraining() {
       remainingTime,
       message: `Quiz unlocks after ${unlockPercent}% module time. Remaining: ${remainingTime}`,
     };
-	*/
   };
 
   const quizUnlockInfo = selectedModule ? getQuizTimeUnlock(selectedModule) : null;

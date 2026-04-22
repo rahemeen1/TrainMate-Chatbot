@@ -214,21 +214,21 @@ export default function ManageCompanies() {
                     <div className="flex gap-2">
                       <button
                         onClick={() => changeStatus(company.id, company.status)}
-                        className="px-2.5 py-1 bg-yellow-400 text-black rounded"
+                        className="px-2.5 py-1 rounded-md text-[#02142B] bg-[#00E5FF] border border-[#67F2FF] hover:bg-[#67F2FF] transition-all duration-200 font-medium"
                       >
                         Toggle
                       </button>
 
                       <button
                         onClick={() => setSelected(company)}
-                        className="px-2.5 py-1 bg-blue-400 text-black rounded"
+                        className="px-2.5 py-1 rounded-md text-[#E8F7FF] bg-[#0C2D57] border border-[#00FFFF55] hover:bg-[#11407A] transition-all duration-200 font-medium"
                       >
                         Edit
                       </button>
 
                       <button
                         onClick={() => deleteCompany(company.id)}
-                        className="px-2.5 py-1 bg-red-500 text-black rounded"
+                        className="px-2.5 py-1 rounded-md text-[#FFDDE3] bg-[#5B1420] border border-[#FF5A7A66] hover:bg-[#7B1E2E] transition-all duration-200 font-medium"
                       >
                         Delete
                       </button>
@@ -260,21 +260,21 @@ export default function ManageCompanies() {
               <div className="grid grid-cols-3 gap-2 pt-1">
                 <button
                   onClick={() => changeStatus(company.id, company.status)}
-                  className="px-2 py-1 bg-yellow-400 text-black rounded text-xs"
+                  className="px-2 py-1 rounded-md text-xs font-medium text-[#02142B] bg-[#00E5FF] border border-[#67F2FF] hover:bg-[#67F2FF] transition-all duration-200"
                 >
                   Toggle
                 </button>
 
                 <button
                   onClick={() => setSelected(company)}
-                  className="px-2 py-1 bg-blue-400 text-black rounded text-xs"
+                  className="px-2 py-1 rounded-md text-xs font-medium text-[#E8F7FF] bg-[#0C2D57] border border-[#00FFFF55] hover:bg-[#11407A] transition-all duration-200"
                 >
                   Edit
                 </button>
 
                 <button
                   onClick={() => deleteCompany(company.id)}
-                  className="px-2 py-1 bg-red-500 text-black rounded text-xs"
+                  className="px-2 py-1 rounded-md text-xs font-medium text-[#FFDDE3] bg-[#5B1420] border border-[#FF5A7A66] hover:bg-[#7B1E2E] transition-all duration-200"
                 >
                   Delete
                 </button>
