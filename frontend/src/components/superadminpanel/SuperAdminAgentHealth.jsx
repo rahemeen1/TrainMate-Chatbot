@@ -12,6 +12,7 @@ import {
   Cell,
   Legend,
 } from "recharts";
+import { apiUrl } from "../../services/api";
 
 const STATUS_COLORS = {
   healthy: "#22C55E",
@@ -107,7 +108,7 @@ export default function SuperAdminAgentHealth() {
       setError("");
 
       try {
-        const res = await fetch("/api/superadmin/agent-health?limit=120");
+        const res = await fetch(apiUrl("/api/superadmin/agent-health?limit=120"));
         if (!res.ok) {
           throw new Error(`Request failed: ${res.status}`);
         }

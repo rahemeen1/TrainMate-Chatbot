@@ -402,13 +402,49 @@ export async function getSuperAdminAgentHealth(req, res) {
         if (!persisted) continue;
 
         const persistedTotalRuns = Number(persisted.totalRuns || 0);
+        const persistedSuccessRuns = Number(persisted.successRuns || 0);
+        const persistedLastValidationScore = Number(persisted.lastValidationScore);
+        const persistedLastDurationMs = Number(persisted.lastDurationMs);
+
         if (Number.isFinite(persistedTotalRuns) && persistedTotalRuns > Number(row.runs || 0)) {
           row.runs = persistedTotalRuns;
+        }
+
+        if ((row.successRate == null || !Number.isFinite(Number(row.successRate))) && persistedTotalRuns > 0) {
+          row.successRate = round((persistedSuccessRuns / persistedTotalRuns) * 100, 1);
+        }
+
+        if (
+          (row.accuracy == null || !Number.isFinite(Number(row.accuracy))) &&
+          Number.isFinite(persistedLastValidationScore)
+        ) {
+          row.accuracy = round(persistedLastValidationScore, 1);
+        }
+
+        if (
+          (row.avgLatencyMs == null || !Number.isFinite(Number(row.avgLatencyMs))) &&
+          Number.isFinite(persistedLastDurationMs)
+        ) {
+          row.avgLatencyMs = Math.round(persistedLastDurationMs);
         }
 
         if (!row.lastRunAt && persisted.lastRunAt) {
           row.lastRunAt = persisted.lastRunAt;
         }
+
+        if (!row.lastError && persisted.lastStatus && String(persisted.lastStatus).toLowerCase() === "failed") {
+          row.lastError = "Most recent persisted run failed";
+        }
+
+        if (!row.hasRuntimeData && Number.isFinite(persistedTotalRuns) && persistedTotalRuns > 0) {
+          row.hasRuntimeData = true;
+        }
+
+        row.status = toStatus({
+          accuracy: row.accuracy,
+          successRate: row.successRate,
+          hasRuntimeData: row.hasRuntimeData,
+        });
       }
     }
 

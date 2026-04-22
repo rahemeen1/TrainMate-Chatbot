@@ -283,9 +283,7 @@ console.log(email);
               : "Complete final quiz to unlock certificate"}
           </div>
         </button>
-      </div>
 
-      <div className="flex-none border-t border-[#00FFFF1E] pt-3">
         <button
           onClick={handleLogout}
           className="w-full text-left px-4 py-2 rounded-lg text-red-400 hover:bg-red-500/10 hover:text-red-500 transition font-medium"
