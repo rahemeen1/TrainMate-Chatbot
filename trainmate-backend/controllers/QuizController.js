@@ -9,6 +9,23 @@ import { policyEngine } from "../services/policy/policyEngine.service.js";
 import { createDailyModuleReminder, createQuizUnlockReminder } from "../services/calendarService.js";
 import { sendTrainingLockedEmail, sendQuizSecurityAlertEmail, sendFinalQuizOpenedEmail, sendTrainingCompletedEmail, sendFinalQuizFailedEmail, sendTrainingSummaryReportEmail } from "../services/emailService.js";
 import { generateTrainingSummaryPDF } from "../services/pdfService.js";
+import { queueAgentRunIncrement } from "../services/agentHealthStorage.service.js";
+
+function recordQuizFunctionAgentRun({ agentKey, agentName, status, durationMs, validationScore = null }) {
+	try {
+		queueAgentRunIncrement({
+			agentKey,
+			agentName,
+			status,
+			durationMs,
+			validationScore,
+			segment: "Fresher",
+			type: "function-agent",
+		});
+	} catch (error) {
+		console.warn("[AGENT-HEALTH] Failed to queue quiz function-agent metric:", error.message);
+	}
+}
 
 let primaryModel = null;
 let fallbackModel = null;
@@ -787,6 +804,7 @@ function mergeDocs(docsList) {
 }
 
 async function generateAgenticPlan({ title, baseContext, agentMemorySnippet }) {
+	const startedAt = Date.now();
 	const prompt = `
 You are a planning agent for corporate training quiz generation.
 
@@ -820,11 +838,24 @@ Constraints:
 		const queries = Array.isArray(parsed?.queries) ? parsed.queries.slice(0, PLAN_MAX_QUERIES) : [];
 		const focusAreas = Array.isArray(parsed?.focusAreas) ? parsed.focusAreas.slice(0, 6) : [];
 		if (queries.length >= 2) {
+			recordQuizFunctionAgentRun({
+				agentKey: "quiz-planning-agent",
+				agentName: "Quiz Planning Agent",
+				status: "success",
+				durationMs: Date.now() - startedAt,
+			});
 			return { queries, focusAreas, difficulty: parsed?.difficulty || "advanced" };
 		}
 	} catch (err) {
 		console.warn("Agentic plan generation failed, using fallback plan:", err.message);
 	}
+
+	recordQuizFunctionAgentRun({
+		agentKey: "quiz-planning-agent",
+		agentName: "Quiz Planning Agent",
+		status: "degraded",
+		durationMs: Date.now() - startedAt,
+	});
 
 	return {
 		queries: [
@@ -1115,6 +1146,7 @@ async function makeAgenticDecision({
 	maxAttempts = MAX_QUIZ_ATTEMPTS,
 	skillSignals = {},
 } = {}) {
+	const startedAt = Date.now();
 	const cappedMaxAttempts = Math.max(1, Number(maxAttempts) || MAX_QUIZ_ATTEMPTS);
 	const attemptsLeft = Math.max(0, cappedMaxAttempts - Number(attemptNumber || 1));
 	const trendScores = [
@@ -1169,6 +1201,14 @@ async function makeAgenticDecision({
 	if ((Number(mcqScore) || 0) < 60 || (Number(oneLinerScore) || 0) < 60) {
 		unlockResources.push("concept-revision-pack");
 	}
+
+	recordQuizFunctionAgentRun({
+		agentKey: "quiz-decision-agent",
+		agentName: "Quiz Decision Agent",
+		status: "success",
+		durationMs: Date.now() - startedAt,
+		validationScore: Number(score) || null,
+	});
 
 	return {
 		allowRetry,

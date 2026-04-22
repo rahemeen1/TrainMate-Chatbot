@@ -11,11 +11,27 @@ import { searchMDN } from "../knowledge/mdn.js";
 import { searchStackOverflow } from "../knowledge/stackoverflow.js";
 import { searchDevTo } from "../knowledge/devto.js";
 import { aggregateKnowledge } from "../knowledge/knowledgeAggregator.js";
+import { queueAgentRunIncrement } from "../services/agentHealthStorage.service.js";
 
 dotenv.config();
 
 /* ================= LLM ================= */
 let model = null;
+
+function recordFunctionAgentRun({ agentKey, agentName, status, durationMs }) {
+  try {
+    queueAgentRunIncrement({
+      agentKey,
+      agentName,
+      status,
+      durationMs,
+      segment: "Fresher",
+      type: "function-agent",
+    });
+  } catch (error) {
+    console.warn("[AGENT-HEALTH] Failed to queue function-agent metric:", error.message);
+  }
+}
 
 function initializeChatModel() {
   if (!model) {
@@ -163,6 +179,7 @@ function getRoadmapGeneratedAt(userData) {
  * @returns {Promise<string>} - AI-generated daily agenda
  */
 async function generateDailyAgenda(dayNumber, totalDays, moduleTitle, moduleDescription, skillsCovered = []) {
+  const startedAt = Date.now();
   try {
     const model = initializeChatModel();
     const skillsList = skillsCovered.length > 0 ? skillsCovered.join(", ") : "various topics";
@@ -193,9 +210,21 @@ Generate the daily agenda (no emojis):`;
 
     const result = await model.generateContent(prompt);
     const agenda = result.response.text().trim();
+    recordFunctionAgentRun({
+      agentKey: "daily-agenda-agent",
+      agentName: "Daily Agenda Agent",
+      status: "success",
+      durationMs: Date.now() - startedAt,
+    });
     return agenda;
   } catch (error) {
     console.error("❌ Error generating daily agenda:", error.message);
+    recordFunctionAgentRun({
+      agentKey: "daily-agenda-agent",
+      agentName: "Daily Agenda Agent",
+      status: "degraded",
+      durationMs: Date.now() - startedAt,
+    });
     // Fallback message if AI fails
     return `Today is Day ${dayNumber} of ${totalDays}. Let's continue learning about ${moduleTitle}. Ask me any questions you have!`;
   }
@@ -554,6 +583,8 @@ async function queryPinecone({ embedding, companyId, deptId, topK = 5 }) {
 
 /* ================= AGENTIC KNOWLEDGE FETCHER ================= */
 async function fetchAgenticKnowledge(query, companyDocs) {
+  const startedAt = Date.now();
+  let runStatus = "success";
   try {
     console.log("🤖 Agentic knowledge fetch initiated for:", query.substring(0, 50));
     
@@ -590,11 +621,19 @@ async function fetchAgenticKnowledge(query, companyDocs) {
     };
   } catch (err) {
     console.error("❌ Agentic knowledge fetch failed:", err.message);
+    runStatus = "degraded";
     return {
       allResults: companyDocs,
       topResult: companyDocs[0] || null,
       summary: companyDocs.slice(0, 3)
     };
+  } finally {
+    recordFunctionAgentRun({
+      agentKey: "knowledge-fetch-agent",
+      agentName: "Knowledge Fetch Agent",
+      status: runStatus,
+      durationMs: Date.now() - startedAt,
+    });
   }
 }
 

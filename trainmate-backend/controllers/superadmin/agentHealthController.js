@@ -386,7 +386,11 @@ export async function getSuperAdminAgentHealth(req, res) {
       storeAgentHealthMetadata,
       getLatestAgentHealthMetadata,
       getAgentRunMetadata,
+      flushQueuedAgentRunMetadataNow,
     } = await import("../../services/agentHealthStorage.service.js");
+
+    // Force-flush in-memory run counters so dashboard reads the freshest DB view.
+    await flushQueuedAgentRunMetadataNow();
 
     const persistedRunsResult = await getAgentRunMetadata(
       AGENT_CATALOG.map((agent) => agent.key)

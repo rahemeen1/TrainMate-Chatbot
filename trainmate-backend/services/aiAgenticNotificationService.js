@@ -4,8 +4,24 @@ import { db } from "../config/firebase.js";
 import { policyEngine } from "./policy/policyEngine.service.js";
 import { sendRoadmapEmail, sendDailyModuleReminderEmail, sendQuizUnlockEmail } from "./emailService.js";
 import { createDailyModuleReminder, createQuizUnlockReminder, createRoadmapGeneratedEvent } from "./calendarService.js";
+import { queueAgentRunIncrement } from "./agentHealthStorage.service.js";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
+function recordNotificationAgentRun({ agentKey, agentName, status, durationMs }) {
+  try {
+    queueAgentRunIncrement({
+      agentKey,
+      agentName,
+      status,
+      durationMs,
+      segment: "Company",
+      type: "function-agent",
+    });
+  } catch (error) {
+    console.warn("[AGENT-HEALTH] Failed to queue notification function-agent metric:", error.message);
+  }
+}
 
 /**
  * AI Agentic Notification Service
@@ -63,13 +79,30 @@ export async function analyzeUserEngagement(companyId, deptId, userId) {
  * @returns {Promise<Object>} AI decision
  */
 export async function aiDecideNotificationStrategy(context) {
-  const aiDecision = await policyEngine.decide("notification", context);
-  console.log("🧠 AI Decision:", {
-    shouldSend: aiDecision.shouldSend,
-    reason: aiDecision.reason,
-    estimatedEngagement: aiDecision.estimatedEngagementScore,
-  });
-  return aiDecision;
+  const startedAt = Date.now();
+  try {
+    const aiDecision = await policyEngine.decide("notification", context);
+    console.log("🧠 AI Decision:", {
+      shouldSend: aiDecision.shouldSend,
+      reason: aiDecision.reason,
+      estimatedEngagement: aiDecision.estimatedEngagementScore,
+    });
+    recordNotificationAgentRun({
+      agentKey: "notification-strategy-agent",
+      agentName: "Notification Strategy Agent",
+      status: "success",
+      durationMs: Date.now() - startedAt,
+    });
+    return aiDecision;
+  } catch (error) {
+    recordNotificationAgentRun({
+      agentKey: "notification-strategy-agent",
+      agentName: "Notification Strategy Agent",
+      status: "failed",
+      durationMs: Date.now() - startedAt,
+    });
+    throw error;
+  }
 }
 
 /**
@@ -79,6 +112,7 @@ export async function aiDecideNotificationStrategy(context) {
  */
 export async function aiGeneratePersonalizedContent(context) {
   console.log("🤖 AI Agentic Service: Generating personalized content...");
+  const startedAt = Date.now();
 
   const prompt = `Generate personalized email content for a training platform user.
 
@@ -116,9 +150,21 @@ Make it personal, relevant to their progress, and motivating.`;
 
     const content = JSON.parse(jsonMatch[0]);
     console.log("✨ Personalized content generated");
+    recordNotificationAgentRun({
+      agentKey: "notification-content-agent",
+      agentName: "Notification Content Agent",
+      status: "success",
+      durationMs: Date.now() - startedAt,
+    });
     return content;
   } catch (error) {
     console.error("❌ Content generation failed:", error.message);
+    recordNotificationAgentRun({
+      agentKey: "notification-content-agent",
+      agentName: "Notification Content Agent",
+      status: "degraded",
+      durationMs: Date.now() - startedAt,
+    });
     return {
       emailSubject: `Continue Your Learning Journey`,
       emailPreview: "Your next module is ready",

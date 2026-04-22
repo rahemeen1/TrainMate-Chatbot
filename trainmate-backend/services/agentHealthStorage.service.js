@@ -102,6 +102,10 @@ async function flushQueuedAgentRunMetadata() {
   }
 }
 
+export async function flushQueuedAgentRunMetadataNow() {
+  return flushQueuedAgentRunMetadata();
+}
+
 export function queueAgentRunIncrement(agentRun = {}) {
   const agentKey = String(agentRun.agentKey || "").trim();
   if (!agentKey) {

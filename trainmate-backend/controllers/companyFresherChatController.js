@@ -2,10 +2,26 @@
 import { db } from "../config/firebase.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import dotenv from "dotenv";
+import { queueAgentRunIncrement } from "../services/agentHealthStorage.service.js";
 
 dotenv.config();
 
 let model = null;
+
+function recordCompanyChatAgentRun({ status, durationMs }) {
+  try {
+    queueAgentRunIncrement({
+      agentKey: "company-fresher-chat-agent",
+      agentName: "Company Fresher Chat Agent",
+      status,
+      durationMs,
+      segment: "Company",
+      type: "function-agent",
+    });
+  } catch (error) {
+    console.warn("[AGENT-HEALTH] Failed to queue company chat agent metric:", error.message);
+  }
+}
 
 const KNOWN_DEPARTMENTS = [
   "HR",
@@ -262,6 +278,8 @@ async function getFreshersNeedingAttention(companyId) {
  * Generate AI response based on fresher data
  */
 async function generateAIResponse(companyId, userQuery) {
+  const startedAt = Date.now();
+  let runStatus = "success";
   try {
     const model = initializeModel();
 
@@ -336,11 +354,17 @@ Guidelines:
     };
   } catch (err) {
     console.error("❌ Error generating AI response:", err);
+    runStatus = "failed";
     return {
       success: false,
       reply: "Sorry, I encountered an error. Please try again.",
       error: err.message,
     };
+  } finally {
+    recordCompanyChatAgentRun({
+      status: runStatus,
+      durationMs: Date.now() - startedAt,
+    });
   }
 }
 
