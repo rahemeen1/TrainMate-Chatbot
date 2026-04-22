@@ -747,6 +747,13 @@ Contact your company admin for next steps.
       moduleStartDate
     );
 
+    const lastMissedAlertShownForCount = Number(
+      userData?.trainingStats?.missedAlertShownForCount || 0
+    );
+    const shouldShowMissedDatesNotification =
+      missedDateInfo.hasMissedDates &&
+      missedDateInfo.missedCount > lastMissedAlertShownForCount;
+
     // Chat session today
     const today = getDateKey(new Date());
     const chatSessionRef = roadmapRef
@@ -790,6 +797,9 @@ Contact your company admin for next steps.
         missedDays: missedDateInfo.missedCount,
         totalExpectedDays: missedDateInfo.totalExpectedDays,
         currentStreak: missedDateInfo.streak,
+        missedAlertShownForCount: shouldShowMissedDatesNotification
+          ? missedDateInfo.missedCount
+          : lastMissedAlertShownForCount,
         lastUpdated: new Date()
       }
     });
@@ -811,7 +821,7 @@ Contact your company admin for next steps.
       );
       
       let missedDatesNotification = "";
-      if (missedDateInfo.hasMissedDates) {
+      if (shouldShowMissedDatesNotification) {
         const firstMissedDateFormatted = new Date(missedDateInfo.firstMissedDate).toLocaleDateString("en-US", {
           weekday: "long",
           year: "numeric",
@@ -850,7 +860,7 @@ Let's get started! Ask me anything about today's topics.
 
     // Returning user reply (without company info)
     let missedDatesNotification = "";
-    if (missedDateInfo.hasMissedDates) {
+    if (shouldShowMissedDatesNotification) {
       const firstMissedDateFormatted = new Date(missedDateInfo.firstMissedDate).toLocaleDateString("en-US", {
         weekday: "long",
         year: "numeric",
