@@ -1,5 +1,5 @@
 //FresherDashboard.jsx
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate, Navigate } from "react-router-dom";
 import { signOut } from "firebase/auth";
 import {
@@ -11,6 +11,7 @@ import {
   where,
   getDocs,
   updateDoc,
+  onSnapshot,
 } from "firebase/firestore";
 
 import { auth, db } from "../../firebase";
@@ -27,6 +28,34 @@ const toDateSafe = (value) => {
 };
 
 const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+const APP_TIMEZONE = "Asia/Karachi";
+
+const getDateKey = (date, timeZone = APP_TIMEZONE) =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+
+const calculateCurrentStreak = (activeDates) => {
+  if (!activeDates || activeDates.size === 0) return 0;
+
+  const today = startOfDay(new Date());
+  const todayKey = getDateKey(today);
+  const cursor = activeDates.has(todayKey)
+    ? new Date(today)
+    : new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+
+  let streak = 0;
+  while (activeDates.has(getDateKey(cursor))) {
+    streak += 1;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+
+  return streak;
+};
 
 const parseTrainingDurationDays = (duration) => {
   if (Number.isFinite(duration)) return Math.max(1, Math.round(duration));
@@ -109,7 +138,7 @@ const handleLogout = async () => {
 };
 
 // Check if roadmap already exists
-const checkRoadmapExists = async () => {
+const checkRoadmapExists = useCallback(async () => {
   try {
     if (!companyId || !deptId || !userId) return;
     const roadmapRef = collection(
@@ -127,10 +156,10 @@ const checkRoadmapExists = async () => {
   } catch (err) {
     console.error("Error checking roadmap:", err);
   }
-};
+}, [companyId, deptId, userId]);
 
 // Build dashboard stats from Firestore so production does not depend on the API route
-const fetchMissedDates = async () => {
+const fetchMissedDates = useCallback(async () => {
   try {
     if (!companyId || !deptId || !userId) return;
 
@@ -197,22 +226,26 @@ const fetchMissedDates = async () => {
       toDateSafe(allModules[0]?.createdAt);
 
     const uniqueActiveDates = new Set();
-    for (const module of allModules) {
-      const chatSessionsRef = collection(
-        db,
-        "freshers",
-        companyId,
-        "departments",
-        deptId,
-        "users",
-        userId,
-        "roadmap",
-        module.id,
-        "chatSessions"
-      );
-      const chatSessionsSnap = await getDocs(chatSessionsRef);
+    const chatSessionSnaps = await Promise.all(
+      allModules.map((module) => {
+        const chatSessionsRef = collection(
+          db,
+          "freshers",
+          companyId,
+          "departments",
+          deptId,
+          "users",
+          userId,
+          "roadmap",
+          module.id,
+          "chatSessions"
+        );
+        return getDocs(chatSessionsRef);
+      })
+    );
+    chatSessionSnaps.forEach((chatSessionsSnap) => {
       chatSessionsSnap.docs.forEach((docSnap) => uniqueActiveDates.add(docSnap.id));
-    }
+    });
 
     const activeDaysFromFirestore = uniqueActiveDates.size;
     const estimatedTotalDaysFromRoadmap = allModules.reduce(
@@ -243,7 +276,7 @@ const fetchMissedDates = async () => {
       if (endDate >= startDate) {
         const currentDate = new Date(startDate);
         while (currentDate <= endDate) {
-          const dateKey = currentDate.toISOString().slice(0, 10);
+          const dateKey = getDateKey(currentDate);
           if (!uniqueActiveDates.has(dateKey)) {
             missedDates.push(dateKey);
           }
@@ -257,13 +290,23 @@ const fetchMissedDates = async () => {
       parseTrainingDurationDays(userData?.trainingDurationFromOnboarding) ||
       parseTrainingDurationDays(userData?.trainingDuration) ||
       parseTrainingDurationDays(userData?.roadmapAgentic?.trainingDuration);
-    const activeDays = Number(trainingStats.activeDays) || activeDaysFromFirestore;
+    const activeDays = activeDaysFromFirestore;
     const totalExpectedDays =
       companyTrainingDurationDays ||
       userTrainingDurationDays ||
       Number(trainingStats.totalExpectedDays) ||
       estimatedTotalDaysFromRoadmap;
-    const missedDays = Number(trainingStats.missedDays) || missedDates.length;
+    const missedDays = missedDates.length;
+    const currentStreak = calculateCurrentStreak(uniqueActiveDates);
+    const latestScoreRaw =
+      userData?.finalAssessment?.lastScore ??
+      userData?.certificateFinalQuizScore ??
+      userData?.weaknessAnalysis?.latestScore ??
+      null;
+    const latestScore =
+      typeof latestScoreRaw === "number" && Number.isFinite(latestScoreRaw)
+        ? Math.round(latestScoreRaw)
+        : null;
 
     setMissedDateInfo({
       success: true,
@@ -274,13 +317,14 @@ const fetchMissedDates = async () => {
       activeDays,
       missedDays,
       totalExpectedDays,
-      currentStreak: Number(trainingStats.currentStreak) || 0,
+      currentStreak,
+      latestScore,
       activeModuleName,
     });
   } catch (err) {
     console.error("Error fetching missed dates:", err);
   }
-};
+}, [companyId, deptId, userId, userData]);
 
 // Save to localStorage if state exists
 useEffect(() => {
@@ -382,7 +426,52 @@ useEffect(() => {
       fetchMissedDates();
     }
   }
-}, [userId, companyId, deptId, navigate, userData]);
+}, [userId, companyId, deptId, navigate, userData, checkRoadmapExists, fetchMissedDates]);
+
+useEffect(() => {
+  if (!companyId || !deptId || !userId) return;
+
+  const userRef = doc(db, "freshers", companyId, "departments", deptId, "users", userId);
+  const unsubscribe = onSnapshot(
+    userRef,
+    (snapshot) => {
+      if (snapshot.exists()) {
+        setUserData((prev) => ({ ...(prev || {}), ...snapshot.data() }));
+      }
+    },
+    (err) => {
+      console.warn("Realtime user sync failed:", err);
+    }
+  );
+
+  return () => unsubscribe();
+}, [companyId, deptId, userId]);
+
+useEffect(() => {
+  if (!companyId || !deptId || !userId || !userData) return;
+
+  const refreshStats = () => {
+    fetchMissedDates();
+    checkRoadmapExists();
+  };
+
+  const intervalId = setInterval(refreshStats, 60000);
+  const onFocus = () => refreshStats();
+  const onVisibilityChange = () => {
+    if (document.visibilityState === "visible") {
+      refreshStats();
+    }
+  };
+
+  window.addEventListener("focus", onFocus);
+  document.addEventListener("visibilitychange", onVisibilityChange);
+
+  return () => {
+    clearInterval(intervalId);
+    window.removeEventListener("focus", onFocus);
+    document.removeEventListener("visibilitychange", onVisibilityChange);
+  };
+}, [companyId, deptId, userId, userData, fetchMissedDates, checkRoadmapExists]);
 
 // 10-minute timer for missed dates notification
 useEffect(() => {
@@ -433,32 +522,51 @@ useEffect(() => {
 
     const fetchUser = async () => {
       try {
+        let data = null;
 
-        const q = query(
-          collectionGroup(db, "users"),
-          where("email", "==", email)
-        );
-
-        const snap = await getDocs(q);
-
-        if (snap.empty) {
-          alert("User not found");
-          navigate("/");
-          return;
+        if (companyId && deptId && userId) {
+          const directUserRef = doc(
+            db,
+            "freshers",
+            companyId,
+            "departments",
+            deptId,
+            "users",
+            userId
+          );
+          const directSnap = await getDoc(directUserRef);
+          if (directSnap.exists()) {
+            data = directSnap.data();
+          }
         }
 
-        const userDoc = snap.docs[0];
-        const data = userDoc.data();
+        if (!data) {
+          const q = query(
+            collectionGroup(db, "users"),
+            where("email", "==", email)
+          );
+
+          const snap = await getDocs(q);
+
+          if (snap.empty) {
+            alert("User not found");
+            navigate("/");
+            return;
+          }
+
+          const userDoc = snap.docs[0];
+          data = userDoc.data();
 
           // Extract IDs from path
-        const pathParts = userDoc.ref.path.split("/");
-        const companyIdFromPath = pathParts[1];
-        const deptIdFromPath = pathParts[3];
-        const userIdFromPath = pathParts[5];
+          const pathParts = userDoc.ref.path.split("/");
+          const companyIdFromPath = pathParts[1];
+          const deptIdFromPath = pathParts[3];
+          const userIdFromPath = pathParts[5];
 
-        setUserId(userIdFromPath);
-        setCompanyId(companyIdFromPath);
-        setDeptId(deptIdFromPath);
+          setUserId(userIdFromPath);
+          setCompanyId(companyIdFromPath);
+          setDeptId(deptIdFromPath);
+        }
 
         setUserData(data);
         setCompanyName(data.companyName);
@@ -483,7 +591,7 @@ useEffect(() => {
     };
 
     fetchUser();
-  }, [email, navigate]);
+  }, [email, navigate, companyId, deptId, userId]);
 
 if (loading) {
   return (
@@ -641,6 +749,7 @@ if (loading) {
             <p className="text-[#00FFFF] text-2xl font-bold">{missedDateInfo?.totalExpectedDays || "-"}</p>
             <p className="text-[#AFCBE3] text-xs mt-1"> for training</p>
           </div>
+
         </div>
 
         <div className="bg-[#021B36]/80 p-6 rounded-xl border border-[#00FFFF30] mb-6">
