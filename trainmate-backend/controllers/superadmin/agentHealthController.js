@@ -71,13 +71,6 @@ const AGENT_CATALOG = [
     source: "roadmap",
   },
   {
-    key: "evaluate-code",
-    name: "Code Evaluation Agent",
-    segment: "Fresher",
-    type: "orchestrator-registered",
-    source: "assessment",
-  },
-  {
     key: "validate-roadmap",
     name: "Validation Agent",
     segment: "Shared",
@@ -151,6 +144,23 @@ function toStatus({ accuracy, successRate, hasRuntimeData }) {
   if (blended >= 85) return "healthy";
   if (blended >= 70) return "warning";
   return "critical";
+}
+
+function deriveAccuracy({ type, validationCount, totalValidationScore, successes, runs }) {
+  const totalRuns = Number(runs || 0);
+  const totalSuccesses = Number(successes || 0);
+  const count = Number(validationCount || 0);
+
+  if (count > 0) {
+    return round(totalValidationScore / count, 1);
+  }
+
+  if (totalRuns > 0 && type === "function-agent") {
+    // Function-agents usually do not emit validation scores; use success-rate as operational accuracy.
+    return round((totalSuccesses / totalRuns) * 100, 1);
+  }
+
+  return null;
 }
 
 function aggregateRuntimeMetrics(history) {
@@ -241,8 +251,14 @@ function buildAgentRows(catalog, runtimeMap) {
       ? round((runtime.successes / runtime.runs) * 100, 1)
       : null;
 
-    const accuracy = hasRuntimeData && runtime.validationCount
-      ? round(runtime.totalValidationScore / runtime.validationCount, 1)
+    const accuracy = hasRuntimeData
+      ? deriveAccuracy({
+          type: entry.type,
+          validationCount: runtime.validationCount,
+          totalValidationScore: runtime.totalValidationScore,
+          successes: runtime.successes,
+          runs: runtime.runs,
+        })
       : null;
 
     const avgLatencyMs = hasRuntimeData && runtime.durationCount
@@ -407,8 +423,23 @@ export async function getSuperAdminAgentHealth(req, res) {
 
         const persistedTotalRuns = Number(persisted.totalRuns || 0);
         const persistedSuccessRuns = Number(persisted.successRuns || 0);
-        const persistedLastValidationScore = Number(persisted.lastValidationScore);
-        const persistedLastDurationMs = Number(persisted.lastDurationMs);
+        const persistedDegradedRuns = Number(persisted.degradedRuns || 0);
+        const hasPersistedValidationScore =
+          persisted.lastValidationScore !== null &&
+          persisted.lastValidationScore !== undefined &&
+          persisted.lastValidationScore !== "" &&
+          Number.isFinite(Number(persisted.lastValidationScore));
+        const persistedLastValidationScore = hasPersistedValidationScore
+          ? Number(persisted.lastValidationScore)
+          : null;
+        const hasPersistedDuration =
+          persisted.lastDurationMs !== null &&
+          persisted.lastDurationMs !== undefined &&
+          persisted.lastDurationMs !== "" &&
+          Number.isFinite(Number(persisted.lastDurationMs));
+        const persistedLastDurationMs = hasPersistedDuration
+          ? Number(persisted.lastDurationMs)
+          : null;
 
         if (Number.isFinite(persistedTotalRuns) && persistedTotalRuns > Number(row.runs || 0)) {
           row.runs = persistedTotalRuns;
@@ -420,14 +451,24 @@ export async function getSuperAdminAgentHealth(req, res) {
 
         if (
           (row.accuracy == null || !Number.isFinite(Number(row.accuracy))) &&
-          Number.isFinite(persistedLastValidationScore)
+          persistedLastValidationScore != null
         ) {
           row.accuracy = round(persistedLastValidationScore, 1);
         }
 
         if (
+          (row.accuracy == null || !Number.isFinite(Number(row.accuracy))) &&
+          row.type === "function-agent" &&
+          persistedTotalRuns > 0
+        ) {
+          const weightedOperationalScore =
+            ((persistedSuccessRuns + persistedDegradedRuns * 0.7) / persistedTotalRuns) * 100;
+          row.accuracy = round(weightedOperationalScore, 1);
+        }
+
+        if (
           (row.avgLatencyMs == null || !Number.isFinite(Number(row.avgLatencyMs))) &&
-          Number.isFinite(persistedLastDurationMs)
+          persistedLastDurationMs != null
         ) {
           row.avgLatencyMs = Math.round(persistedLastDurationMs);
         }

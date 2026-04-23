@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -100,11 +100,27 @@ function statusText(status) {
 export default function SuperAdminAgentHealth() {
   const [data, setData] = useState(fallbackData);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const [lastRefreshedAt, setLastRefreshedAt] = useState(null);
+  const [clockTick, setClockTick] = useState(Date.now());
 
   useEffect(() => {
-    const loadData = async () => {
+    if (!lastRefreshedAt) return undefined;
+
+    const intervalId = setInterval(() => {
+      setClockTick(Date.now());
+    }, 1000);
+
+    return () => clearInterval(intervalId);
+  }, [lastRefreshedAt]);
+
+  const loadData = useCallback(async ({ isManualRefresh = false } = {}) => {
+    if (isManualRefresh) {
+      setRefreshing(true);
+    } else {
       setLoading(true);
+    }
       setError("");
 
       try {
@@ -119,17 +135,23 @@ export default function SuperAdminAgentHealth() {
         }
 
         setData({ ...fallbackData, ...payload });
+        setLastRefreshedAt(Date.now());
       } catch (err) {
         console.error("Agent health fetch failed:", err);
         setError("Live agent metrics are unavailable right now. Showing an empty state.");
         setData(fallbackData);
       } finally {
-        setLoading(false);
+        if (isManualRefresh) {
+          setRefreshing(false);
+        } else {
+          setLoading(false);
+        }
       }
-    };
+    }, []);
 
+  useEffect(() => {
     loadData();
-  }, []);
+  }, [loadData]);
 
   const segmentAccuracyData = useMemo(
     () =>
@@ -152,6 +174,16 @@ export default function SuperAdminAgentHealth() {
   );
 
   const agentsWithRows = (data.agents || []).length > 0;
+  const refreshedSecondsAgo = lastRefreshedAt
+    ? Math.max(0, Math.floor((clockTick - lastRefreshedAt) / 1000))
+    : null;
+
+  const refreshedText =
+    refreshedSecondsAgo == null
+      ? "Not refreshed yet"
+      : refreshedSecondsAgo < 60
+        ? `Last refreshed ${refreshedSecondsAgo}s ago`
+        : `Last refreshed ${Math.floor(refreshedSecondsAgo / 60)}m ago`;
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
@@ -165,7 +197,18 @@ export default function SuperAdminAgentHealth() {
             </p>
           </div>
 
-          <div className="text-xs text-[#7FA3BF] space-y-1">
+          <div className="text-xs text-[#7FA3BF] space-y-1 w-full lg:w-auto lg:min-w-[250px]">
+            <div className="flex items-center gap-2 justify-start lg:justify-end">
+              <button
+                type="button"
+                onClick={() => loadData({ isManualRefresh: true })}
+                disabled={loading || refreshing}
+                className="inline-flex items-center rounded-lg border border-[#00FFFF55] bg-gradient-to-r from-[#022244] to-[#04315A] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#D7F5FF] shadow-[0_0_0_1px_rgba(0,255,255,0.08),0_8px_18px_rgba(0,0,0,0.25)] transition hover:from-[#04315A] hover:to-[#05406F] hover:border-[#00FFFFAA] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {refreshing ? "Refreshing..." : "Refresh Data"}
+              </button>
+              <span className="text-[11px] text-[#8EB6D3]">{refreshedText}</span>
+            </div>
             <p>Generated: {formatDate(data.generatedAt)}</p>
             <p>History Window: {data.historyWindow || 0} runs</p>
             <p>Instrumented Agents: {data.kpis.instrumentedAgents || 0}/{data.kpis.totalAgents || 0}</p>
