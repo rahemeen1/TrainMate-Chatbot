@@ -4,12 +4,13 @@ import { db } from "../config/firebase.js";
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+const DEFAULT_FRONTEND_URL = process.env.FRONTEND_URL || "https://trainmate-chatbot.web.app";
 const GOOGLE_REDIRECT_URI =
   process.env.GOOGLE_REDIRECT_URI ||
-  `${process.env.FRONTEND_URL}/auth/google/callback`;
+  `${DEFAULT_FRONTEND_URL}/auth/google/callback`;
 const COMPANY_GOOGLE_REDIRECT_URI =
   process.env.COMPANY_GOOGLE_REDIRECT_URI ||
-  `${process.env.FRONTEND_URL}/auth/company-google-callback`;
+  `${DEFAULT_FRONTEND_URL}/auth/company-google-callback`;
 
 console.log("Google OAuth config:", {
   clientId: GOOGLE_CLIENT_ID ? "SET" : "MISSING",
@@ -39,7 +40,7 @@ export const googleOAuthCallback = async (req, res) => {
     const exchangeRedirectUri =
       redirectUri ||
       GOOGLE_REDIRECT_URI ||
-      `${process.env.FRONTEND_URL}/auth/google/callback`;
+      `${DEFAULT_FRONTEND_URL}/auth/google/callback`;
 
     console.log("Exchanging Google authorization code for tokens...");
     console.log("Redirect URI:", exchangeRedirectUri);

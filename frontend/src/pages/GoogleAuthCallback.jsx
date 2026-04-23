@@ -1,6 +1,7 @@
 // frontend/src/pages/GoogleAuthCallback.jsx
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { apiUrl } from "../services/api";
 import { storeOAuthTokens, verifyOAuthState } from "../services/googleAuthService";
 
 export default function GoogleAuthCallback() {
@@ -35,10 +36,13 @@ export default function GoogleAuthCallback() {
 
         setStatus("Exchanging code for tokens...");
 
-        const response = await fetch("/api/auth/google-callback", {
+        const response = await fetch(apiUrl("/api/auth/google-callback"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code, redirectUri: window.location.origin + "/auth/google/callback" }),
+          body: JSON.stringify({
+            code,
+            redirectUri: `${window.location.origin}/auth/google/callback`,
+          }),
         });
 
         if (!response.ok) {

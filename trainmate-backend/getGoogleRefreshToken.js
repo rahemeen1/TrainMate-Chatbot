@@ -8,6 +8,7 @@ console.log("Google Calendar Refresh Token Generator\n");
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+const DEFAULT_FRONTEND_URL = process.env.FRONTEND_URL || "https://trainmate-chatbot.web.app";
 
 if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
   console.error("Missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET in .env");
@@ -15,7 +16,7 @@ if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
 }
 
 const REDIRECT_URI =
-  process.env.GOOGLE_REDIRECT_URI || "http://localhost:3000/auth/google/callback";
+  process.env.GOOGLE_REDIRECT_URI || `${DEFAULT_FRONTEND_URL}/auth/google/callback`;
 
 const oauth2Client = new google.auth.OAuth2(
   GOOGLE_CLIENT_ID,

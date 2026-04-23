@@ -1,6 +1,7 @@
 // frontend/src/pages/CompanyGoogleAuthCallback.jsx
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { apiUrl } from "../services/api";
 
 export default function CompanyGoogleAuthCallback() {
   const navigate = useNavigate();
@@ -40,7 +41,7 @@ export default function CompanyGoogleAuthCallback() {
 
         setStatus("Exchanging code for Google Calendar tokens...");
 
-        const response = await fetch("/api/auth/company-google-callback", {
+        const response = await fetch(apiUrl("/api/auth/company-google-callback"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ 

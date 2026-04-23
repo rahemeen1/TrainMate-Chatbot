@@ -39,7 +39,7 @@ From trainmate-backend folder:
 
 Set required environment variables after first deploy:
 
-- gcloud run services update trainmate-backend --region us-central1 --set-env-vars GEMINI_API_KEY=YOUR_VALUE,PINECONE_API_KEY=YOUR_VALUE,PINECONE_INDEX=YOUR_VALUE,COHERE_API_KEY=YOUR_VALUE,OPENAI_API_KEY=YOUR_VALUE,GOOGLE_CLIENT_ID=YOUR_VALUE,GOOGLE_CLIENT_SECRET=YOUR_VALUE,GOOGLE_REDIRECT_URI=YOUR_VALUE,EMAIL_USER=YOUR_VALUE,EMAIL_PASS=YOUR_VALUE
+- gcloud run services update trainmate-backend --region us-central1 --set-env-vars GEMINI_API_KEY=YOUR_VALUE,PINECONE_API_KEY=YOUR_VALUE,PINECONE_INDEX=YOUR_VALUE,COHERE_API_KEY=YOUR_VALUE,OPENAI_API_KEY=YOUR_VALUE,GOOGLE_CLIENT_ID=YOUR_VALUE,GOOGLE_CLIENT_SECRET=YOUR_VALUE,GOOGLE_REDIRECT_URI=https://trainmate-chatbot.web.app/auth/google/callback,COMPANY_GOOGLE_REDIRECT_URI=https://trainmate-chatbot.web.app/auth/company-google-callback,FRONTEND_URL=https://trainmate-chatbot.web.app,EMAIL_USER=YOUR_VALUE,EMAIL_PASS=YOUR_VALUE
 
 If you have many values, use a file for easier management:
 
@@ -52,7 +52,9 @@ If you have many values, use a file for easier management:
    OPENAI_API_KEY: "YOUR_VALUE"
    GOOGLE_CLIENT_ID: "YOUR_VALUE"
    GOOGLE_CLIENT_SECRET: "YOUR_VALUE"
-   GOOGLE_REDIRECT_URI: "YOUR_VALUE"
+  GOOGLE_REDIRECT_URI: "https://trainmate-chatbot.web.app/auth/google/callback"
+  COMPANY_GOOGLE_REDIRECT_URI: "https://trainmate-chatbot.web.app/auth/company-google-callback"
+  FRONTEND_URL: "https://trainmate-chatbot.web.app"
    EMAIL_USER: "YOUR_VALUE"
    EMAIL_PASS: "YOUR_VALUE"
 
@@ -78,7 +80,11 @@ Health check:
 
 Set this in your frontend deployment environment:
 
-- REACT_APP_API_BASE_URL=https://YOUR_CLOUD_RUN_URL
+- REACT_APP_API_BASE_URL=https://trainmate-backend-161059187631.us-central1.run.app
+
+Optional if you want to pin the OAuth callback explicitly instead of relying on `window.location.origin`:
+
+- REACT_APP_GOOGLE_REDIRECT_URI=https://trainmate-chatbot.web.app/auth/google/callback
 
 Then redeploy frontend hosting.
 

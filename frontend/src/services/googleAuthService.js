@@ -3,7 +3,9 @@ import { db } from "../firebase";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 
 const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID;
-const GOOGLE_REDIRECT_URI = `${window.location.origin}/auth/google/callback`;
+export const getGoogleRedirectUri = () =>
+  process.env.REACT_APP_GOOGLE_REDIRECT_URI ||
+  `${window.location.origin}/auth/google/callback`;
 
 const OAUTH_STATE_KEY = "google_oauth_state";
 
@@ -33,7 +35,7 @@ export const initiateGoogleOAuth = () => {
 
   const params = new URLSearchParams({
     client_id: GOOGLE_CLIENT_ID,
-    redirect_uri: GOOGLE_REDIRECT_URI,
+    redirect_uri: getGoogleRedirectUri(),
     response_type: "code",
     scope,
     access_type: "offline",
