@@ -9,6 +9,9 @@ import TrainingLockedScreen from "./TrainingLockedScreen";
 import { getCompanyLicensePlan } from "../../services/companyLicense";
 import CompanyPageLoader from "../CompanySpecific/CompanyPageLoader";
 
+const MODULE_QUIZ_PASS_THRESHOLD = 60;
+const FINAL_QUIZ_PASS_THRESHOLD = 70;
+
 export default function FresherProgress() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -22,13 +25,108 @@ export default function FresherProgress() {
   const [roadmapModulesDetailed, setRoadmapModulesDetailed] = useState([]);
   const [activityTimeline, setActivityTimeline] = useState([]);
   const [licensePlan, setLicensePlan] = useState("License Basic");
+  const [currentModuleLearning, setCurrentModuleLearning] = useState({
+    moduleTitle: "Current Module",
+    summary: "No current module activity yet.",
+    focusAreas: [],
+    planQueries: [],
+  });
 
   const toDate = (raw) => {
     if (!raw) return null;
-    return raw.toDate ? raw.toDate() : new Date(raw);
+      if (raw instanceof Date) return raw;
+      const parsed = raw.toDate ? raw.toDate() : new Date(raw);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
   };
 
   const isValidDate = (value) => value instanceof Date && !Number.isNaN(value.getTime());
+
+    const startOfDay = (date) =>
+      new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+    const APP_TIMEZONE = "Asia/Karachi";
+
+    const getDateKey = (date, timeZone = APP_TIMEZONE) =>
+      new Intl.DateTimeFormat("en-CA", {
+        timeZone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(date);
+
+    const calculateCurrentStreak = (activeDates) => {
+      if (!activeDates || activeDates.size === 0) return 0;
+
+      const today = startOfDay(new Date());
+      const todayKey = getDateKey(today);
+      const cursor = activeDates.has(todayKey)
+        ? new Date(today)
+        : new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+
+      let streak = 0;
+      while (activeDates.has(getDateKey(cursor))) {
+        streak += 1;
+        cursor.setDate(cursor.getDate() - 1);
+      }
+
+      return streak;
+    };
+
+    const parseTrainingDurationDays = (duration) => {
+      if (Number.isFinite(duration)) return Math.max(1, Math.round(duration));
+
+      const raw = String(duration || "").trim().toLowerCase();
+      if (!raw) return null;
+
+      const numeric = Number(raw);
+      if (Number.isFinite(numeric) && numeric > 0) return Math.round(numeric);
+
+      const match = raw.match(/(\d+(?:\.\d+)?)\s*(day|days|week|weeks|month|months)/i);
+      if (!match) return null;
+
+      const value = Number(match[1]);
+      const unit = match[2].toLowerCase();
+
+      if (!Number.isFinite(value) || value <= 0) return null;
+      if (unit.startsWith("day")) return Math.round(value);
+      if (unit.startsWith("week")) return Math.round(value * 7);
+      if (unit.startsWith("month")) return Math.round(value * 30);
+
+      return null;
+    };
+
+    const buildSummaryFromCurrentModuleChats = ({ moduleTitle, moduleProgress, chatSessions }) => {
+      const safeSessions = Array.isArray(chatSessions) ? chatSessions : [];
+      const allMessages = safeSessions.flatMap((session) =>
+        Array.isArray(session?.messages) ? session.messages : []
+      );
+      const userMessages = allMessages.filter(
+        (message) => String(message?.from || "").toLowerCase() === "user"
+      );
+
+      if (userMessages.length === 0) {
+        return `You are in ${moduleTitle || "the current module"}. Start a chat to get a personalized progress summary.`;
+      }
+
+      const progressLabel =
+        moduleProgress >= 80
+          ? "strong"
+          : moduleProgress >= 50
+            ? "steady"
+            : "early";
+
+      const recentQuestions = userMessages
+        .slice(-3)
+        .map((message) => String(message?.text || "").trim())
+        .filter(Boolean)
+        .map((text) => (text.length > 90 ? `${text.slice(0, 87)}...` : text));
+
+      const recentTopicText = recentQuestions.length
+        ? `Recent questions: ${recentQuestions.join(" | ")}`
+        : "Recent questions are not available yet.";
+
+      return `Your progress in ${moduleTitle || "this module"} is ${progressLabel} (${moduleProgress}%). You have asked ${userMessages.length} questions across ${safeSessions.length} day(s) of chat activity. ${recentTopicText}`;
+    };
 
   const getModulePhaseNumber = (module, fallback = 1) => {
     const title = String(module?.moduleTitle || "");
@@ -71,6 +169,31 @@ export default function FresherProgress() {
         const data = snap.data();
         setUserData(data);
 
+        let companyTrainingDurationDays = null;
+        try {
+          const onboardingRef = collection(
+            db,
+            "companies",
+            companyId,
+            "onboardingAnswers"
+          );
+          const onboardingSnap = await getDocs(onboardingRef);
+          if (!onboardingSnap.empty) {
+            const latestDoc = [...onboardingSnap.docs].sort((a, b) => {
+              const aTime = toDate(a.data()?.createdAt)?.getTime() || 0;
+              const bTime = toDate(b.data()?.createdAt)?.getTime() || 0;
+              return bTime - aTime;
+            })[0];
+
+            const answers = latestDoc?.data()?.answers || {};
+            const rawTrainingDuration =
+              answers["2"] || answers[2] || answers["1"] || answers[1] || null;
+            companyTrainingDurationDays = parseTrainingDurationDays(rawTrainingDuration);
+          }
+        } catch (onboardingErr) {
+          console.warn("Unable to fetch company onboarding duration:", onboardingErr);
+        }
+
         // ✅ Get all modules with their chat session counts
         const roadmapRef = collection(db, "freshers", companyId, "departments", deptId, "users", userId, "roadmap");
         const roadmapSnap = await getDocs(roadmapRef);
@@ -79,18 +202,7 @@ export default function FresherProgress() {
         const modulesWithProgress = await Promise.all(
           roadmapSnap.docs.map(async (moduleDoc) => {
             const moduleData = { id: moduleDoc.id, ...moduleDoc.data() };
-            
-            // If module has progress field (set when quiz is passed), use that
-            if (moduleData.progress !== undefined && moduleData.progress !== null) {
-              return {
-                ...moduleData,
-                daysUsed: 0, // Not needed when progress is already set
-                estimatedDays: moduleData.estimatedDays || 1,
-                moduleProgress: moduleData.progress,
-              };
-            }
-            
-            // Otherwise, calculate based on chat session days
+
             const chatSessionsRef = collection(
               db,
               "freshers",
@@ -103,10 +215,28 @@ export default function FresherProgress() {
               moduleDoc.id,
               "chatSessions"
             );
-            
+
             const chatSessionsSnap = await getDocs(chatSessionsRef);
-            const daysUsed = chatSessionsSnap.size; // Each doc represents a unique day
+            const chatDayKeys = chatSessionsSnap.docs.map((docSnap) => docSnap.id);
+            const daysUsed = chatSessionsSnap.size;
+            const chatSessionsData = chatSessionsSnap.docs.map((docSnap) => ({
+              id: docSnap.id,
+              ...docSnap.data(),
+            }));
             
+            // If module has progress field (set when quiz is passed), use that
+            if (moduleData.progress !== undefined && moduleData.progress !== null) {
+              return {
+                ...moduleData,
+                daysUsed,
+                estimatedDays: moduleData.estimatedDays || 1,
+                moduleProgress: moduleData.progress,
+                chatDayKeys,
+                chatSessionsData,
+              };
+            }
+            
+            // Otherwise, calculate based on chat session days
             const estimatedDays = moduleData.estimatedDays || 1;
             const moduleProgress = Math.min(Math.round((daysUsed / estimatedDays) * 100), 100);
             
@@ -115,6 +245,8 @@ export default function FresherProgress() {
               daysUsed,
               estimatedDays,
               moduleProgress,
+              chatDayKeys,
+              chatSessionsData,
             };
           })
         );
@@ -155,6 +287,155 @@ export default function FresherProgress() {
           return (a.order ?? 0) - (b.order ?? 0);
         });
         setActivityTimeline(events);
+
+        const sortedModules = [...modulesWithProgress].sort((a, b) => {
+          const aOrder = Number(a.order) || 0;
+          const bOrder = Number(b.order) || 0;
+          return aOrder - bOrder;
+        });
+
+        const currentModule =
+          sortedModules.find((module) => String(module?.status || "").toLowerCase() === "in-progress") ||
+          sortedModules.find((module) => String(module?.status || "").toLowerCase() === "pending") ||
+          sortedModules.find((module) => !module?.completed) ||
+          sortedModules[0] ||
+          null;
+
+        let currentModuleMemory = null;
+        if (currentModule?.id) {
+          try {
+            const currentModuleMemoryRef = doc(
+              db,
+              "freshers",
+              companyId,
+              "departments",
+              deptId,
+              "users",
+              userId,
+              "roadmap",
+              currentModule.id,
+              "agentMemory",
+              "summary"
+            );
+            const currentModuleMemorySnap = await getDoc(currentModuleMemoryRef);
+            if (currentModuleMemorySnap.exists()) {
+              currentModuleMemory = currentModuleMemorySnap.data() || null;
+            }
+          } catch (moduleMemoryErr) {
+            console.warn("Unable to fetch current module memory summary:", moduleMemoryErr);
+          }
+        }
+
+        const moduleFocusAreas =
+          (Array.isArray(currentModule?.skillsCovered) && currentModule.skillsCovered.filter(Boolean)) ||
+          (Array.isArray(currentModule?.focusAreas) && currentModule.focusAreas.filter(Boolean)) ||
+          (Array.isArray(data?.roadmapAgentic?.planFocusAreas) && data.roadmapAgentic.planFocusAreas.filter(Boolean)) ||
+          [];
+
+        const modulePlanQueriesFromDb =
+          (Array.isArray(currentModule?.planQueries) && currentModule.planQueries.filter(Boolean)) ||
+          (Array.isArray(currentModule?.skillExtractionContext?.planQueries) && currentModule.skillExtractionContext.planQueries.filter(Boolean)) ||
+          (Array.isArray(data?.roadmapAgentic?.planQueries) && data.roadmapAgentic.planQueries.filter(Boolean)) ||
+          [];
+
+        const modulePlanQueries = modulePlanQueriesFromDb.length
+          ? modulePlanQueriesFromDb
+          : (currentModule?.moduleTitle
+              ? [
+                  `Explain core concepts of ${currentModule.moduleTitle}`,
+                  `Give practical examples for ${currentModule.moduleTitle}`,
+                  `Create a revision checklist for ${currentModule.moduleTitle}`,
+                ]
+              : []);
+
+        const currentModuleSummary =
+          currentModuleMemory?.summary ||
+          buildSummaryFromCurrentModuleChats({
+            moduleTitle: currentModule?.moduleTitle || "Current Module",
+            moduleProgress: Number(currentModule?.moduleProgress) || Number(currentModule?.progress) || 0,
+            chatSessions: currentModule?.chatSessionsData || [],
+          });
+
+        setCurrentModuleLearning({
+          moduleTitle: currentModule?.moduleTitle || "Current Module",
+          summary: currentModuleSummary,
+          focusAreas: moduleFocusAreas,
+          planQueries: modulePlanQueries,
+        });
+
+        const roadmapGeneratedAt =
+          toDate(data?.roadmapAgentic?.generatedAt) ||
+          toDate(data?.roadmapGeneratedAt) ||
+          toDate(sortedModules[0]?.startedAt) ||
+          toDate(sortedModules[0]?.FirstTimeCreatedAt) ||
+          toDate(sortedModules[0]?.createdAt);
+
+        const uniqueActiveDates = new Set();
+        modulesWithProgress.forEach((module) => {
+          (module.chatDayKeys || []).forEach((dayKey) => uniqueActiveDates.add(dayKey));
+        });
+
+        let missedDays = 0;
+        if (roadmapGeneratedAt) {
+          const startDate = startOfDay(roadmapGeneratedAt);
+          const today = startOfDay(new Date());
+          const endDate = new Date(today);
+          endDate.setDate(endDate.getDate() - 1);
+
+          if (endDate >= startDate) {
+            const currentDate = new Date(startDate);
+            while (currentDate <= endDate) {
+              const dateKey = getDateKey(currentDate);
+              if (!uniqueActiveDates.has(dateKey)) {
+                missedDays += 1;
+              }
+              currentDate.setDate(currentDate.getDate() + 1);
+            }
+          }
+        }
+
+        const estimatedTotalDaysFromRoadmap = modulesWithProgress.reduce(
+          (sum, module) => sum + (Number(module.estimatedDays) || 1),
+          0
+        );
+
+        const userTrainingDurationDays =
+          parseTrainingDurationDays(data?.trainingDurationFromOnboarding) ||
+          parseTrainingDurationDays(data?.trainingDuration) ||
+          parseTrainingDurationDays(data?.roadmapAgentic?.trainingDuration);
+
+        const totalExpectedDays =
+          companyTrainingDurationDays ||
+          userTrainingDurationDays ||
+          Number(data?.trainingStats?.totalExpectedDays) ||
+          estimatedTotalDaysFromRoadmap;
+
+        const activeDays = uniqueActiveDates.size;
+        const currentStreak = calculateCurrentStreak(uniqueActiveDates);
+        const elapsedDaysSinceStart = roadmapGeneratedAt
+          ? Math.max(
+              1,
+              Math.floor(
+                (startOfDay(new Date()).getTime() -
+                  startOfDay(roadmapGeneratedAt).getTime()) /
+                  (1000 * 60 * 60 * 24)
+              ) + 1
+            )
+          : activeDays;
+
+        const remainingDays = Math.max(totalExpectedDays - elapsedDaysSinceStart, 0);
+
+        setUserData((prev) => ({
+          ...(prev || data),
+          derivedTimeMetrics: {
+            activeDays,
+            missedDays,
+            totalExpectedDays,
+            currentStreak,
+            elapsedDaysSinceStart,
+            remainingDays,
+          },
+        }));
 
         // Calculate overall progress as average of all module progress percentages
         const totalModuleProgress = modulesWithProgress.reduce((sum, m) => sum + m.moduleProgress, 0);
@@ -307,17 +588,15 @@ if (!userData) {
         
         {(() => {
           const isBasicLicense = licensePlan === "License Basic";
-          const trainingStats = userData.trainingStats || {};
-          const activeDays = trainingStats.activeDays ?? 0;
-          const currentStreak = trainingStats.currentStreak ?? 0;
-          const missedDays = trainingStats.missedDays ?? 0;
-          const totalExpectedDays = trainingStats.totalExpectedDays ?? 0;
-          const remainingDays = Math.max(
-            0,
-            totalExpectedDays - activeDays - missedDays
-          );
+          const derivedTimeMetrics = userData.derivedTimeMetrics || {};
+          const activeDays = Number(derivedTimeMetrics.activeDays) || 0;
+          const currentStreak = Number(derivedTimeMetrics.currentStreak) || 0;
+          const missedDays = Number(derivedTimeMetrics.missedDays) || 0;
+          const totalExpectedDays = Number(derivedTimeMetrics.totalExpectedDays) || 0;
+          const elapsedDaysSinceStart = Number(derivedTimeMetrics.elapsedDaysSinceStart) || 0;
+          const remainingDays = Number(derivedTimeMetrics.remainingDays) || 0;
           const trainingWindowPercent = totalExpectedDays
-            ? Math.min(Math.round((activeDays / totalExpectedDays) * 100), 100)
+            ? Math.min(Math.round((elapsedDaysSinceStart / totalExpectedDays) * 100), 100)
             : 0;
 
           const totalAttempts = roadmapModulesDetailed.reduce(
@@ -327,21 +606,27 @@ if (!userData) {
           const quizzesGenerated = roadmapModulesDetailed.filter(
             (m) => m.quizGenerated
           ).length;
+          const quizzesAttempted = roadmapModulesDetailed.filter(
+            (m) => (Number(m.quizAttempts) || 0) > 0
+          ).length;
           const quizzesPassed = roadmapModulesDetailed.filter(
             (m) => m.quizPassed
           ).length;
           const quizzesFailed = roadmapModulesDetailed.filter(
-            (m) => m.quizGenerated && !m.quizPassed
+            (m) => (Number(m.quizAttempts) || 0) > 0 && !m.quizPassed
           ).length;
-          const passRate = quizzesGenerated
-            ? Math.round((quizzesPassed / quizzesGenerated) * 100)
+          const passRate = quizzesAttempted
+            ? Math.round((quizzesPassed / quizzesAttempted) * 100)
             : 0;
+
+          const modulePassThreshold =
+            Number(userData?.quizPolicy?.passThreshold) || MODULE_QUIZ_PASS_THRESHOLD;
 
           const finalAssessment = userData.finalAssessment || {};
           const finalAttemptsUsed = Number(finalAssessment.attemptsUsed) || 0;
           const finalMaxAttempts = Number(finalAssessment.maxAttempts) || 2;
           const finalAttemptsLeft = Math.max(finalMaxAttempts - finalAttemptsUsed, 0);
-          const finalPassThreshold = Number(finalAssessment.passThreshold) || 70;
+          const finalPassThreshold = Number(finalAssessment.passThreshold) || FINAL_QUIZ_PASS_THRESHOLD;
           const finalStatus = finalAssessment.status || "locked";
           const finalLastScore = finalAssessment.lastScore ?? userData.certificateFinalQuizScore ?? null;
 
@@ -349,9 +634,7 @@ if (!userData) {
           const completedModules = roadmapModulesDetailed.filter(
             (m) => m.completed
           ).length;
-          const completionRate = totalModules
-            ? Math.round((completedModules / totalModules) * 100)
-            : 0;
+          const completionRate = Math.max(0, Math.min(100, Number(overallProgress) || 0));
 
           const lockedModules = roadmapModulesDetailed.filter(
             (m) => m.quizLocked || m.moduleLocked
@@ -406,7 +689,7 @@ if (!userData) {
                     <div className="flex items-center justify-between mb-4">
                       <h2 className="text-xl text-[#00FFFF] font-semibold">Quiz Performance</h2>
                       <span className="text-xs text-[#AFCBE3]">
-                        Coverage: {quizzesGenerated}/{totalModules}
+                        Coverage: {quizzesGenerated}/{totalModules} | Attempted: {quizzesAttempted}
                       </span>
                     </div>
                     <div className="space-y-3 text-sm">
@@ -421,7 +704,7 @@ if (!userData) {
                       </div>
                       <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18]">
                         <div className="flex items-center justify-between">
-                          <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Pass Rate</p>
+                          <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Pass Rate (Attempted)</p>
                           <span className="text-sm font-semibold text-[#00FFFF]">{passRate}%</span>
                         </div>
                         <div className="mt-2 h-2 rounded-full bg-[#031C3A] overflow-hidden">
@@ -431,7 +714,7 @@ if (!userData) {
                           />
                         </div>
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18]">
                           <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Quizzes Generated</p>
                           <p className="text-lg font-semibold text-[#00FFFF] mt-1">{quizzesGenerated}</p>
@@ -441,6 +724,10 @@ if (!userData) {
                           <p className="text-lg font-semibold text-[#00FFFF] mt-1">
                             {quizzesPassed} / {quizzesFailed}
                           </p>
+                        </div>
+                        <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18]">
+                          <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Module Threshold</p>
+                          <p className="text-lg font-semibold text-[#00FFFF] mt-1">{modulePassThreshold}%</p>
                         </div>
                       </div>
 
@@ -461,7 +748,7 @@ if (!userData) {
                             <p className="text-sm font-semibold text-[#00FFFF] mt-1">{finalAttemptsLeft}</p>
                           </div>
                           <div className="p-2 rounded bg-[#031C3A] border border-[#00FFFF18]">
-                            <p className="text-[10px] uppercase tracking-wide text-[#AFCBE3]">Threshold</p>
+                            <p className="text-[10px] uppercase tracking-wide text-[#AFCBE3]">Final Threshold</p>
                             <p className="text-sm font-semibold text-[#00FFFF] mt-1">{finalPassThreshold}%</p>
                           </div>
                           <div className="p-2 rounded bg-[#031C3A] border border-[#00FFFF18]">
@@ -478,13 +765,13 @@ if (!userData) {
                   <div className="flex items-center justify-between mb-4">
                     <h2 className="text-xl text-[#00FFFF] font-semibold">Time Metrics</h2>
                     <span className="text-xs text-[#AFCBE3]">
-                      Window: {activeDays}/{totalExpectedDays} days
+                      Window: {elapsedDaysSinceStart}/{totalExpectedDays} days
                     </span>
                   </div>
                   <div className="space-y-3 text-sm">
                     <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18]">
                       <div className="flex items-center justify-between">
-                        <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Training Window</p>
+                        <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Training Elapsed</p>
                         <span className="text-sm font-semibold text-[#00FFFF]">{trainingWindowPercent}%</span>
                       </div>
                       <div className="mt-2 h-2 rounded-full bg-[#031C3A] overflow-hidden">
@@ -520,7 +807,7 @@ if (!userData) {
                 <div className="bg-[#021B36]/80 p-6 rounded-xl border border-[#00FFFF30]">
                   <div className="flex items-center justify-between mb-4">
                     <h2 className="text-xl text-[#00FFFF] font-semibold">Roadmap Health</h2>
-                    <span className="text-xs text-[#AFCBE3]">Completion: {completionRate}%</span>
+                    <span className="text-xs text-[#AFCBE3]">Overall Progress: {completionRate}%</span>
                   </div>
                   <div className="space-y-3 text-sm">
                     <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18]">
@@ -569,14 +856,14 @@ if (!userData) {
                     <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18]">
                       <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Summary</p>
                       <p className="mt-1">
-                        {userData.learningProfile?.summary || "No summary available."}
+                        {currentModuleLearning.summary || "No summary available."}
                       </p>
                     </div>
                     <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18]">
                       <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Focus Areas</p>
                       <div className="flex flex-wrap gap-2 mt-2">
-                        {(userData.planFocusAreas || []).length > 0
-                          ? userData.planFocusAreas.map((area, idx) => (
+                        {Array.isArray(currentModuleLearning.focusAreas) && currentModuleLearning.focusAreas.length > 0
+                          ? currentModuleLearning.focusAreas.map((area, idx) => (
                               <span
                                 key={`focus-${idx}`}
                                 className="px-2 py-1 rounded-full bg-[#031C3A]/70 border border-[#00FFFF25] text-xs"
@@ -590,8 +877,8 @@ if (!userData) {
                     <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18]">
                       <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Plan Queries</p>
                       <div className="flex flex-wrap gap-2 mt-2">
-                        {(userData.planQueries || []).length > 0
-                          ? userData.planQueries.map((query, idx) => (
+                        {Array.isArray(currentModuleLearning.planQueries) && currentModuleLearning.planQueries.length > 0
+                          ? currentModuleLearning.planQueries.map((query, idx) => (
                               <span
                                 key={`query-${idx}`}
                                 className="px-2 py-1 rounded-full bg-[#031C3A]/70 border border-[#00FFFF25] text-xs"
