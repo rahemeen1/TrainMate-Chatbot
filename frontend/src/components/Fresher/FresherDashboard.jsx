@@ -18,67 +18,7 @@ import { auth, db } from "../../firebase";
 import OnboardingPage from "./OnboardingPage";
 import FresherShellLayout from "./FresherShellLayout";
 import { apiUrl } from "../../services/api";
-
-const toDateSafe = (value) => {
-  if (!value) return null;
-  if (value instanceof Date) return value;
-  if (value?.toDate) return value.toDate();
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-};
-
-const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
-
-const APP_TIMEZONE = "Asia/Karachi";
-
-const getDateKey = (date, timeZone = APP_TIMEZONE) =>
-  new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(date);
-
-const calculateCurrentStreak = (activeDates) => {
-  if (!activeDates || activeDates.size === 0) return 0;
-
-  const today = startOfDay(new Date());
-  const todayKey = getDateKey(today);
-  const cursor = activeDates.has(todayKey)
-    ? new Date(today)
-    : new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
-
-  let streak = 0;
-  while (activeDates.has(getDateKey(cursor))) {
-    streak += 1;
-    cursor.setDate(cursor.getDate() - 1);
-  }
-
-  return streak;
-};
-
-const parseTrainingDurationDays = (duration) => {
-  if (Number.isFinite(duration)) return Math.max(1, Math.round(duration));
-
-  const raw = String(duration || "").trim().toLowerCase();
-  if (!raw) return null;
-
-  const numeric = Number(raw);
-  if (Number.isFinite(numeric) && numeric > 0) return Math.round(numeric);
-
-  const match = raw.match(/(\d+(?:\.\d+)?)\s*(day|days|week|weeks|month|months)/i);
-  if (!match) return null;
-
-  const value = Number(match[1]);
-  const unit = match[2].toLowerCase();
-
-  if (!Number.isFinite(value) || value <= 0) return null;
-  if (unit.startsWith("day")) return Math.round(value);
-  if (unit.startsWith("week")) return Math.round(value * 7);
-  if (unit.startsWith("month")) return Math.round(value * 30);
-
-  return null;
-};
+import { getCompanyLicensePlan } from "../../services/companyLicense";
 
 // Custom scrollbar styles
 const scrollbarStyles = `
@@ -116,6 +56,7 @@ export default function FresherDashboard() {
   const [missedDateInfo, setMissedDateInfo] = useState(null);
   const [showMissedDates, setShowMissedDates] = useState(true);
   const [onboardingNotice, setOnboardingNotice] = useState("");
+  const [licensePlan, setLicensePlan] = useState("License Basic");
 
   const state = location.state || {};
 
@@ -158,146 +99,21 @@ const checkRoadmapExists = useCallback(async () => {
   }
 }, [companyId, deptId, userId]);
 
-// Build dashboard stats from Firestore so production does not depend on the API route
+// Build dashboard stats from backend so streak/missed-day logic stays centralized.
 const fetchMissedDates = useCallback(async () => {
   try {
     if (!companyId || !deptId || !userId) return;
-
-    // Company onboarding answer (Q2) is the source of truth for training duration.
-    let companyTrainingDurationDays = null;
-    try {
-      const onboardingRef = collection(db, "companies", companyId, "onboardingAnswers");
-      const onboardingSnap = await getDocs(onboardingRef);
-      if (!onboardingSnap.empty) {
-        const latestDoc = [...onboardingSnap.docs].sort((a, b) => {
-          const aTime = toDateSafe(a.data()?.createdAt)?.getTime() || 0;
-          const bTime = toDateSafe(b.data()?.createdAt)?.getTime() || 0;
-          return bTime - aTime;
-        })[0];
-
-        const answers = latestDoc?.data()?.answers || {};
-        const rawTrainingDuration =
-          answers["2"] || answers[2] || answers["1"] || answers[1] || null;
-        companyTrainingDurationDays = parseTrainingDurationDays(rawTrainingDuration);
-      }
-    } catch (onboardingErr) {
-      console.warn("Unable to fetch company onboarding duration:", onboardingErr);
-    }
-
-    const roadmapRef = collection(
-      db,
-      "freshers",
-      companyId,
-      "departments",
-      deptId,
-      "users",
-      userId,
-      "roadmap"
-    );
-
-    const roadmapSnap = await getDocs(roadmapRef);
-
-    if (roadmapSnap.empty) {
-      setMissedDateInfo({
-        success: true,
-        hasMissedDates: false,
-        missedDates: [],
-        firstMissedDate: null,
-        missedCount: 0,
-        activeDays: 0,
-        missedDays: 0,
-        totalExpectedDays: 0,
-        currentStreak: 0,
-        activeModuleName: "No roadmap",
-      });
-      return;
-    }
-
-    const allModules = roadmapSnap.docs.map((moduleDoc) => ({
-      id: moduleDoc.id,
-      ...moduleDoc.data(),
-    }));
-
-    const roadmapGeneratedAt =
-      toDateSafe(userData?.roadmapAgentic?.generatedAt) ||
-      toDateSafe(userData?.roadmapGeneratedAt) ||
-      toDateSafe(allModules[0]?.startedAt) ||
-      toDateSafe(allModules[0]?.FirstTimeCreatedAt) ||
-      toDateSafe(allModules[0]?.createdAt);
-
-    const uniqueActiveDates = new Set();
-    const chatSessionSnaps = await Promise.all(
-      allModules.map((module) => {
-        const chatSessionsRef = collection(
-          db,
-          "freshers",
-          companyId,
-          "departments",
-          deptId,
-          "users",
-          userId,
-          "roadmap",
-          module.id,
-          "chatSessions"
-        );
-        return getDocs(chatSessionsRef);
-      })
-    );
-    chatSessionSnaps.forEach((chatSessionsSnap) => {
-      chatSessionsSnap.docs.forEach((docSnap) => uniqueActiveDates.add(docSnap.id));
+    const response = await fetch(apiUrl("/api/chat/missed-dates"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, companyId, deptId }),
     });
 
-    const activeDaysFromFirestore = uniqueActiveDates.size;
-    const estimatedTotalDaysFromRoadmap = allModules.reduce(
-      (sum, module) => sum + (Number(module.estimatedDays) || 1),
-      0
-    );
-
-    const sortedModules = [...allModules].sort((a, b) => {
-      const aOrder = Number(a.order) || 0;
-      const bOrder = Number(b.order) || 0;
-      return aOrder - bOrder;
-    });
-
-    const activeModule =
-      sortedModules.find((module) => module.status === "in-progress") ||
-      sortedModules.find((module) => module.status === "pending") ||
-      sortedModules[0];
-
-    const activeModuleName = activeModule?.moduleTitle || "No active module";
-
-    let missedDates = [];
-    if (roadmapGeneratedAt) {
-      const startDate = startOfDay(roadmapGeneratedAt);
-      const today = startOfDay(new Date());
-      const endDate = new Date(today);
-      endDate.setDate(endDate.getDate() - 1);
-
-      if (endDate >= startDate) {
-        const currentDate = new Date(startDate);
-        while (currentDate <= endDate) {
-          const dateKey = getDateKey(currentDate);
-          if (!uniqueActiveDates.has(dateKey)) {
-            missedDates.push(dateKey);
-          }
-          currentDate.setDate(currentDate.getDate() + 1);
-        }
-      }
+    const data = await response.json();
+    if (!response.ok || !data?.success) {
+      throw new Error(data?.error || "Failed to fetch attendance stats");
     }
 
-    const trainingStats = userData?.trainingStats || {};
-    const userTrainingDurationDays =
-      parseTrainingDurationDays(userData?.trainingDurationFromOnboarding) ||
-      parseTrainingDurationDays(userData?.trainingDuration) ||
-      parseTrainingDurationDays(userData?.roadmapAgentic?.trainingDuration);
-    const activeDays = activeDaysFromFirestore;
-    const totalExpectedDays =
-      companyTrainingDurationDays ||
-      userTrainingDurationDays ||
-      Number(trainingStats.totalExpectedDays) ||
-      estimatedTotalDaysFromRoadmap;
-    const missedDays = missedDates.length;
-    const currentStreak = calculateCurrentStreak(uniqueActiveDates);
     const latestScoreRaw =
       userData?.finalAssessment?.lastScore ??
       userData?.certificateFinalQuizScore ??
@@ -310,16 +126,8 @@ const fetchMissedDates = useCallback(async () => {
 
     setMissedDateInfo({
       success: true,
-      hasMissedDates: missedDays > 0,
-      missedDates,
-      firstMissedDate: missedDates.length > 0 ? missedDates[0] : null,
-      missedCount: missedDays,
-      activeDays,
-      missedDays,
-      totalExpectedDays,
-      currentStreak,
+      ...data,
       latestScore,
-      activeModuleName,
     });
   } catch (err) {
     console.error("Error fetching missed dates:", err);
@@ -422,6 +230,9 @@ useEffect(() => {
     navigate("/", { replace: true });
   } else {
     checkRoadmapExists();
+    getCompanyLicensePlan(companyId)
+      .then((plan) => setLicensePlan(plan))
+      .catch((err) => console.warn("Failed to fetch license plan:", err));
     if (userData) {
       fetchMissedDates();
     }
@@ -632,7 +443,7 @@ if (loading) {
     );
   }
 
-  const isTrainingLocked = Boolean(userData?.trainingLocked);
+  const isTrainingLocked = licensePlan === "License Pro" && Boolean(userData?.trainingLocked);
 
   return (
     <>

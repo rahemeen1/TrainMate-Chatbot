@@ -387,7 +387,7 @@ function areAllModulesCompleted(modules = []) {
 	return modules.every((m) => {
 		const status = String(m.status || "").toLowerCase();
 		if (status === "expired") return false;
-		return status === "completed" || !!m.completed;
+		return m.completed === true;
 	});
 }
 

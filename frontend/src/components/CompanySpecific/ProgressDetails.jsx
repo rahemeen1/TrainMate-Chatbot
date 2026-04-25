@@ -19,6 +19,25 @@ export default function ProgressDetails() {
   const [userInfo, setUserInfo] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const isModuleLocked = (module) => {
+    const status = String(module?.status || "").toLowerCase();
+    return status === "locked" || !!module?.moduleLocked || !!module?.quizLocked;
+  };
+
+  const isModuleCompleted = (module) => {
+    const status = String(module?.status || "").toLowerCase();
+    if (status === "expired" || isModuleLocked(module)) return false;
+    return status === "completed" || !!module?.completed || !!module?.quizPassed;
+  };
+
+  const getModuleDisplayStatus = (module) => {
+    const status = String(module?.status || "").toLowerCase();
+    if (status === "expired") return "EXPIRED";
+    if (isModuleLocked(module)) return "IN PROGRESS";
+    if (isModuleCompleted(module)) return "COMPLETED";
+    return "IN PROGRESS";
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -136,7 +155,7 @@ export default function ProgressDetails() {
               key={m.id}
               className={`relative pl-6 border-l-4 rounded-xl p-5
                 ${
-                  m.status === "completed"
+                  isModuleCompleted(m)
                     ? "border-teal-400 bg-teal-400/10"
                     : "border-yellow-400 bg-yellow-400/5"
                 }
@@ -150,13 +169,13 @@ export default function ProgressDetails() {
                 <span
                   className={`px-3 py-1 text-xs rounded font-bold
                     ${
-                      m.status === "completed"
+                      isModuleCompleted(m)
                         ? "bg-teal-400 text-black"
                         : "bg-yellow-400/20 text-yellow-300"
                     }
                   `}
                 >
-                  {m.status.toUpperCase()}
+                  {getModuleDisplayStatus(m)}
                 </span>
               </div>
 

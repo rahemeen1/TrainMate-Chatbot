@@ -141,7 +141,7 @@ export default function About() {
   const steps = licensePlan === "License Pro" ? proSteps : basicSteps;
 
   // Show training locked screen if training is locked and roadmap is generated
-  if (userData?.trainingLocked && roadmapGenerated) {
+  if (licensePlan === "License Pro" && userData?.trainingLocked && roadmapGenerated) {
     return <TrainingLockedScreen userData={userData} />;
   }
 

@@ -517,7 +517,7 @@ export default function FresherProgress() {
 if (loading) return <CompanyPageLoader message="Loading progress data..." layout="page" />;
 
 // Check if training is locked
-if (userData?.trainingLocked) {
+if (licensePlan === "License Pro" && userData?.trainingLocked) {
   return <TrainingLockedScreen userData={userData} />;
 }
 

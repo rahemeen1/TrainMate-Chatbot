@@ -350,7 +350,7 @@ export default function FresherTraining() {
   }
 
   // Check if training is locked
-  if (userData?.trainingLocked) {
+  if (licensePlan === "License Pro" && userData?.trainingLocked) {
     return <TrainingLockedScreen userData={userData} />;
   }
 

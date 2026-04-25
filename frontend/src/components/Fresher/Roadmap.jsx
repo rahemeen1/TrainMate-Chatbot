@@ -4,10 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useLocation, useNavigate, Navigate } from "react-router-dom";
 import { db } from "../../firebase";
 import { apiUrl } from "../../services/api";
-import { collection, getDocs, doc, getDoc, updateDoc } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc, updateDoc, deleteField } from "firebase/firestore";
 import axios from "axios";
 import FresherShellLayout from "./FresherShellLayout";
-import TrainingLockedScreen from "./TrainingLockedScreen";
 import { getCompanyLicensePlan } from "../../services/companyLicense";
 import CompanyPageLoader from "../CompanySpecific/CompanyPageLoader";
 
@@ -41,6 +40,113 @@ export default function Roadmap() {
   const [licensePlan, setLicensePlan] = useState("License Basic");
   const [cvValidationWarning, setCvValidationWarning] = useState(null);
   const generationRequestedRef = useRef(false);
+  const isBasicPlan = licensePlan === "License Basic";
+
+const isModuleLocked = (module) => {
+  const status = String(module?.status || "").toLowerCase();
+  return status === "locked" || !!module?.locked || !!module?.moduleLocked || !!module?.quizLocked;
+};
+
+const isModuleEffectivelyCompleted = (module) => {
+  const status = String(module?.status || "").toLowerCase();
+  if (status === "expired" || isModuleLocked(module)) return false;
+  return status === "completed" || !!module?.completed || !!module?.quizPassed;
+};
+
+const getModuleDisplayStatus = (module) => {
+  const status = String(module?.status || "").toLowerCase();
+  if (status === "expired" || module?.moduleExpired) return "⏰ EXPIRED";
+  if (isModuleLocked(module)) return "In Progress";
+  if (isModuleEffectivelyCompleted(module)) return "✓ Completed";
+  return "In Progress";
+};
+
+const isBasicModuleWindowElapsed = (module) => {
+  if (!module || isModuleEffectivelyCompleted(module)) return false;
+
+  const startRaw = module.startedAt || module.FirstTimeCreatedAt || module.createdAt;
+  if (!startRaw) return false;
+
+  const startDate = startRaw.toDate ? startRaw.toDate() : new Date(startRaw);
+  if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime())) return false;
+
+  const totalDays = Number(module.estimatedDays) || 1;
+  const deadline = new Date(startDate.getTime() + totalDays * 24 * 60 * 60 * 1000);
+
+  return Date.now() >= deadline.getTime();
+};
+
+const applyBasicPlanAutoProgress = async (modules) => {
+  if (!isBasicPlan || !Array.isArray(modules) || modules.length === 0) return;
+
+  const updates = [];
+  const sortedModules = sortRoadmapModules(modules);
+
+  for (const module of sortedModules) {
+    if (!module?.id) continue;
+
+    if (!isModuleEffectivelyCompleted(module) && isBasicModuleWindowElapsed(module)) {
+      const moduleRef = doc(
+        db,
+        "freshers",
+        companyId,
+        "departments",
+        deptId,
+        "users",
+        userId,
+        "roadmap",
+        module.id
+      );
+
+      updates.push(
+        updateDoc(moduleRef, {
+          completed: true,
+          status: "completed",
+          completedAt: new Date(),
+          moduleLocked: false,
+          quizLocked: false,
+          requiresAdminContact: false,
+        })
+      );
+    }
+  }
+
+  const nextModule = sortedModules.find((module) => !isModuleEffectivelyCompleted(module));
+  if (nextModule?.id && nextModule.status !== "in-progress") {
+    const nextModuleRef = doc(
+      db,
+      "freshers",
+      companyId,
+      "departments",
+      deptId,
+      "users",
+      userId,
+      "roadmap",
+      nextModule.id
+    );
+
+    updates.push(
+      updateDoc(nextModuleRef, {
+        status: "in-progress",
+        moduleLocked: false,
+        quizLocked: false,
+        requiresAdminContact: false,
+      })
+    );
+  }
+
+  const userRef = doc(db, "freshers", companyId, "departments", deptId, "users", userId);
+  updates.push(
+    updateDoc(userRef, {
+      trainingLocked: false,
+      requiresAdminContact: false,
+      trainingLockedAt: deleteField(),
+      trainingLockedReason: deleteField(),
+    })
+  );
+
+  await Promise.all(updates);
+};
 
 const getModuleStartDate = (module) => {
   // Prioritize actual start time when module was unlocked/started
@@ -63,6 +169,14 @@ const getModuleStartDate = (module) => {
 };
 
   const checkQuizTimeUnlock = (module) => {
+    if (isBasicPlan) {
+      return {
+        isUnlocked: true,
+        remainingTime: null,
+        message: "Quiz workflow is disabled for basic plan.",
+      };
+    }
+
     const startDate = getModuleStartDate(module);
     const estimatedDays = Number(module?.estimatedDays) || 1;
     const configuredUnlockPercent = Number(userData?.quizPolicy?.quizUnlockPercent);
@@ -128,7 +242,7 @@ const getModuleStartDate = (module) => {
       const modules = roadmapSnap.docs.map((doc) => doc.data());
 
       const totalModules = modules.length;
-      const completedModules = modules.filter((m) => m.completed).length;
+      const completedModules = modules.filter((m) => isModuleEffectivelyCompleted(m)).length;
       const progressPercent = Math.round((completedModules / totalModules) * 100);
 
       const userRef = doc(db, "freshers", companyId, "departments", deptId, "users", userId);
@@ -205,9 +319,17 @@ const getModuleStartDate = (module) => {
 
           roadmapSnap = await getDocs(roadmapRef);
         }
-  const modules = sortRoadmapModules(
+  let modules = sortRoadmapModules(
     roadmapSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
   );
+
+  if (planType === "License Basic") {
+    await applyBasicPlanAutoProgress(modules);
+    roadmapSnap = await getDocs(roadmapRef);
+    modules = sortRoadmapModules(
+      roadmapSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+    );
+  }
 
   setRoadmap(modules);
 
@@ -249,10 +371,19 @@ const getModuleStartDate = (module) => {
           userId,
           "roadmap"
         );
-        const roadmapSnap = await getDocs(roadmapRef);
-        const modules = sortRoadmapModules(
+        let roadmapSnap = await getDocs(roadmapRef);
+        let modules = sortRoadmapModules(
           roadmapSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
         );
+
+        if (licensePlan === "License Basic") {
+          await applyBasicPlanAutoProgress(modules);
+          roadmapSnap = await getDocs(roadmapRef);
+          modules = sortRoadmapModules(
+            roadmapSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+          );
+        }
+
         setRoadmap(modules);
       } catch (err) {
         console.warn("⚠️ Roadmap refresh failed:", err);
@@ -260,7 +391,7 @@ const getModuleStartDate = (module) => {
     }, 5000);
 
     return () => clearInterval(refreshInterval);
-  }, [companyId, deptId, userId]);
+  }, [companyId, deptId, userId, licensePlan]);
 
   const markDone = async (moduleId) => {
   try {
@@ -305,7 +436,7 @@ const getModuleStartDate = (module) => {
 };
 const markInProgress = async (module) => {
   // ❌ Do nothing if already in-progress or completed
-  if (module.status === "in-progress" || module.completed) return;
+  if (module.status === "in-progress" || isModuleEffectivelyCompleted(module)) return;
 
   try {
     const moduleRef = doc(
@@ -343,7 +474,7 @@ const getUnlockedModules = () => {
   return roadmap.map((module) => {
     const unlocked = unlockedNext;
     const isExpiredStatus = module.status === "expired";
-    if (!module.completed && !isExpiredStatus) unlockedNext = false;
+    if (!isModuleEffectivelyCompleted(module) && !isExpiredStatus) unlockedNext = false;
 
     const moduleMaxAttempts = Math.max(3, Number(module.maxAttemptsOverride) || 0);
     const moduleAttempts = Number(module.quizAttempts) || 0;
@@ -358,27 +489,29 @@ const getUnlockedModules = () => {
     const moduleAttemptLimit = Number.isInteger(module.maxAttemptsOverride)
       ? module.maxAttemptsOverride
       : BASE_MAX_QUIZ_ATTEMPTS;
-    const quizAttemptLimitReached = !module.quizPassed && (module.quizAttempts || 0) >= moduleAttemptLimit;
-    const isLocked = !unlocked || moduleExpired || module.moduleLocked || quizAttemptLimitReached;
+    const quizAttemptLimitReached = !isBasicPlan && !module.quizPassed && (module.quizAttempts || 0) >= moduleAttemptLimit;
+    const isLocked = isBasicPlan
+      ? !unlocked
+      : (!unlocked || moduleExpired || module.moduleLocked || quizAttemptLimitReached);
 
     return {
       ...module,
       locked: isLocked,
       quizAttemptLimitReached,
       moduleAttemptLimit,
-      quizTimeUnlocked: quizUnlockStatus.isUnlocked,
+      quizTimeUnlocked: isBasicPlan ? true : quizUnlockStatus.isUnlocked,
       quizUnlockMessage: quizUnlockStatus.message || "",
       timeRemaining,
-      moduleExpired,
+      moduleExpired: isBasicPlan ? false : moduleExpired,
       moduleMaxAttempts,
-      quizAttemptsExhausted,
+      quizAttemptsExhausted: isBasicPlan ? false : quizAttemptsExhausted,
     };
   });
 };
 
 // Calculate time remaining to complete module
 const getModuleTimeRemaining = (module) => {
-  if (module.completed) return { days: 0, hours: 0, expired: false, message: "Completed" };
+  if (isModuleEffectivelyCompleted(module)) return { days: 0, hours: 0, expired: false, message: "Completed" };
 
   const startDate = getModuleStartDate(module);
 
@@ -417,7 +550,7 @@ const getModuleTimeRemaining = (module) => {
 };
 
 const getDaysLeft = (module) => {
-  if (module.completed) return 0;
+  if (isModuleEffectivelyCompleted(module)) return 0;
   const startDate = getModuleStartDate(module);
   const totalDays = module.estimatedDays || 1;
   if (!startDate) return totalDays;
@@ -431,7 +564,7 @@ const getDaysLeft = (module) => {
 };
 
 const getCompletionDays = (module) => {
-  if (!module.completed) return null;
+  if (!isModuleEffectivelyCompleted(module)) return null;
   const startDate = getModuleStartDate(module);
   if (!startDate) return null;
 
@@ -449,7 +582,7 @@ const getCompletionDays = (module) => {
 const isModuleExpired = (module) => {
   if (module.status === "expired") return true;
   const timeInfo = getModuleTimeRemaining(module);
-  return timeInfo.expired && !module.completed;
+  return timeInfo.expired && !isModuleEffectivelyCompleted(module);
 };
 
   // Navigate to fresher training page
@@ -587,7 +720,7 @@ if (!roadmap.length)
   key={module.id}
   className={`relative bg-[#021B36]/80 border border-[#00FFFF30]
   rounded-xl p-6 shadow-md transition
-  ${module.completed ? "opacity-60" : ""}
+  ${isModuleEffectivelyCompleted(module) ? "opacity-60" : ""}
   ${module.locked ? "opacity-40" : ""}`}
 >
   {/* Lock icon */}
@@ -625,14 +758,14 @@ if (!roadmap.length)
       </p>
     )}
     
-    {module.completed && !module.moduleExpired && getCompletionDays(module) && (
+    {isModuleEffectivelyCompleted(module) && !module.moduleExpired && getCompletionDays(module) && (
       <p className="text-xs text-green-400 mb-2">
         ✓ Completed in {getCompletionDays(module)} day{getCompletionDays(module) !== 1 ? "s" : ""}
       </p>
     )}
     
     {/* Time Remaining Display - Moved below to avoid overlap with status badge */}
-    {!module.locked && !module.completed && (
+    {!module.locked && !isModuleEffectivelyCompleted(module) && (
       <div className={`text-sm font-semibold mt-2 ${
         module.timeRemaining.expired ? "text-red-400" : 
         module.timeRemaining.days === 0 ? "text-yellow-400" : 
@@ -651,16 +784,16 @@ if (!roadmap.length)
   <span className={`absolute top-4 right-4 px-3 py-1 rounded-full text-xs font-semibold
     ${module.moduleExpired
       ? "bg-red-600/30 text-red-400"
-      : module.completed
+      : isModuleEffectivelyCompleted(module)
       ? "bg-green-500/20 text-green-400"
       : "bg-yellow-500/20 text-yellow-400"}`}
   >
-    {module.moduleExpired ? "⏰ EXPIRED" : module.completed ? "✓ Completed" : "In Progress"}
+    {getModuleDisplayStatus(module)}
   </span>
 
   {/* 🔒 TIME LOCK WARNING: Quiz not yet available (Pro only) */}
   {/* Displayed when quiz is locked due to insufficient time elapsed (< unlock threshold of module time) */}
-  {licensePlan === "License Pro" && !module.locked && !module.completed && !module.quizTimeUnlocked && (
+  {licensePlan === "License Pro" && !module.locked && !isModuleEffectivelyCompleted(module) && !module.quizTimeUnlocked && (
     <div className="mt-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
       <div className="flex items-start gap-2">
         <span className="text-yellow-400 text-xl">⚠️</span>
@@ -677,7 +810,7 @@ if (!roadmap.length)
   
   {/* 🔓 TIME LOCK CLEARED: Quiz is now available (Pro only) */}
   {/* Displayed when the module unlock threshold has elapsed - quiz is unlocked and ready */}
-  {licensePlan === "License Pro" && !module.locked && !module.completed && module.quizTimeUnlocked && !module.quizPassed && (
+  {licensePlan === "License Pro" && !module.locked && !isModuleEffectivelyCompleted(module) && module.quizTimeUnlocked && !module.quizPassed && (
     <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
       <div className="flex items-start gap-2">
         <span className="text-blue-400 text-xl">📝</span>
@@ -703,7 +836,7 @@ if (!roadmap.length)
   )}
 
   {/* Actions */}
-  {!module.locked && !module.completed && (
+  {!module.locked && !isModuleEffectivelyCompleted(module) && (
     <div className="flex gap-3 mt-4">
       
       <button

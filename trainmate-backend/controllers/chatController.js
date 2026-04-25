@@ -12,6 +12,7 @@ import { searchStackOverflow } from "../knowledge/stackoverflow.js";
 import { searchDevTo } from "../knowledge/devto.js";
 import { aggregateKnowledge } from "../knowledge/knowledgeAggregator.js";
 import { queueAgentRunIncrement } from "../services/agentHealthStorage.service.js";
+import { calculateAttendanceStats } from "../utils/trainingAttendanceStats.js";
 
 dotenv.config();
 
@@ -43,6 +44,49 @@ function initializeChatModel() {
 
 /* ================= COHERE ================= */
 const cohere = new CohereClient({ token: process.env.COHERE_API_KEY });
+
+function normalizeLicensePlan(value) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim().toLowerCase();
+  if (trimmed === "license pro" || trimmed === "pro") return "License Pro";
+  if (trimmed === "license basic" || trimmed === "basic") return "License Basic";
+  return null;
+}
+
+async function resolveCompanyLicensePlan(companyId) {
+  try {
+    const companyRef = db.collection("companies").doc(companyId);
+
+    const companySnap = await companyRef.get();
+    const companyPlan = normalizeLicensePlan(companySnap.data()?.licensePlan || companySnap.data()?.plan);
+    if (companyPlan) return companyPlan;
+
+    const onboardingSnap = await companyRef.collection("onboardingAnswers").get();
+    if (!onboardingSnap.empty) {
+      const latestDoc = onboardingSnap.docs
+        .slice()
+        .sort((a, b) => {
+          const aDate = a.data()?.createdAt?.toDate?.() || new Date(0);
+          const bDate = b.data()?.createdAt?.toDate?.() || new Date(0);
+          return bDate.getTime() - aDate.getTime();
+        })[0];
+
+      const answers = latestDoc?.data()?.answers || {};
+      const onboardingPlan =
+        normalizeLicensePlan(answers?.[2]) ||
+        normalizeLicensePlan(answers?.["2"]) ||
+        normalizeLicensePlan(answers?.[0]) ||
+        normalizeLicensePlan(answers?.["0"]);
+
+      if (onboardingPlan) return onboardingPlan;
+    }
+  } catch (err) {
+    console.warn("[CHAT][LICENSE] Failed to resolve plan:", err?.message || err);
+  }
+
+  return "License Basic";
+}
+
 async function embedText(text) {
   const res = await cohere.embed({
     model: "embed-english-v3.0",
@@ -153,6 +197,42 @@ function calculateTrainingProgress(moduleData, startDateOverride) {
 const DEFAULT_TIMEZONE = process.env.DEFAULT_TIMEZONE || "Asia/Karachi";
 const FEEDBACK_PROMPT_INTERVAL = 5;
 const MAX_FEEDBACK_ENTRIES = 30;
+const LOG_THROTTLE_MS = Math.max(1000, Number(process.env.LOG_THROTTLE_MS) || 10 * 60 * 1000);
+const throttledLogTimestamps = new Map();
+
+function shouldEmitThrottledLog(key, ttlMs = LOG_THROTTLE_MS) {
+  const now = Date.now();
+  const lastLoggedAt = throttledLogTimestamps.get(key) || 0;
+
+  if (now - lastLoggedAt < ttlMs) {
+    return false;
+  }
+
+  throttledLogTimestamps.set(key, now);
+
+  // Keep memory bounded for long-running instances.
+  if (throttledLogTimestamps.size > 1000) {
+    for (const [entryKey, ts] of throttledLogTimestamps.entries()) {
+      if (now - ts > ttlMs * 2) {
+        throttledLogTimestamps.delete(entryKey);
+      }
+    }
+  }
+
+  return true;
+}
+
+function logThrottled(key, ...args) {
+  if (shouldEmitThrottledLog(key)) {
+    console.log(...args);
+  }
+}
+
+function warnThrottled(key, ...args) {
+  if (shouldEmitThrottledLog(key)) {
+    console.warn(...args);
+  }
+}
 
 function getDateKey(date, timeZone = DEFAULT_TIMEZONE) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -252,12 +332,18 @@ function getModuleStartDateByOrder(sortedModules, moduleId, roadmapGeneratedAt) 
  */
 async function checkAndUnlockModulesComprehensive(companyId, deptId, userId, roadmapRef, roadmapGeneratedAt) {
   try {
+    const licensePlan = await resolveCompanyLicensePlan(companyId);
+    const isBasicPlan = licensePlan === "License Basic";
+
     const roadmapSnap = await roadmapRef.get();
     const allModules = roadmapSnap.docs
       .map((doc) => ({ id: doc.id, data: doc.data() }))
       .sort((a, b) => (a.data.order || 0) - (b.data.order || 0));
 
-    console.log(`📋 Scanning ALL ${allModules.length} modules for expiration...`);
+    logThrottled(
+      `scan-all-modules:${companyId}:${deptId}:${userId}:${allModules.length}`,
+      `📋 Scanning ALL ${allModules.length} modules for expiration...`
+    );
 
     const expiredModuleIds = [];
     let nextActiveModule = null;
@@ -269,12 +355,25 @@ async function checkAndUnlockModulesComprehensive(companyId, deptId, userId, roa
       const moduleStartDate = getModuleStartDateByOrder(allModules, module.id, roadmapGeneratedAt);
       const progress = calculateTrainingProgress(module.data, moduleStartDate);
       const isExpired = progress.remainingDays <= 0;
-      const appearsCompleted = module.data.status === "completed" || !!module.data.completed;
+      const appearsCompleted = module.data.completed === true;
       const hasQuizCompletionEvidence = !!(
         module.data.quizPassed ||
         module.data.lastQuizSubmitted ||
         module.data.completedAt
       );
+
+      if (isBasicPlan && isExpired && !appearsCompleted) {
+        await roadmapRef.doc(module.id).update({
+          status: "completed",
+          completed: true,
+          completedAt: new Date(),
+          moduleLocked: false,
+          quizLocked: false,
+          requiresAdminContact: false,
+        });
+        console.log(`✅ [BASIC] Auto-completed module ${module.data.order} after timeline elapsed`);
+        continue;
+      }
 
       // Backfill/repair path: if legacy data marked module as completed without quiz/chat evidence,
       // treat it as expired once its deadline has passed.
@@ -305,7 +404,10 @@ async function checkAndUnlockModulesComprehensive(companyId, deptId, userId, roa
       } else if (!isExpired && module.data.status === "in-progress" && !hasInProgressModule && !appearsCompleted) {
         hasInProgressModule = true;
         nextActiveModule = module;
-        console.log(`🎯 Active module remains: ${module.data.order} (${module.data.moduleTitle})`);
+        logThrottled(
+          `active-module-remains:${companyId}:${deptId}:${userId}:${module.id}`,
+          `🎯 Active module remains: ${module.data.order} (${module.data.moduleTitle})`
+        );
       } else if (!isExpired && !nextActiveModule && !appearsCompleted) {
         // Found first non-expired, non-completed module
         nextActiveModule = module;
@@ -420,103 +522,77 @@ async function getActualSkillsCovered(companyId, deptId, userId, moduleId, skill
 
 /* ================= MISSED DATES ================= */
 /**
- * Get missed dates and active days stats for a user in the active module
+ * Collect date-keyed attendance events from roadmap chat sessions.
+ * These date keys act as the daily training attendance calendar.
+ * @param {string} companyId
+ * @param {string} deptId
+ * @param {string} userId
+ * @param {string[]} moduleIds
+ * @returns {Promise<Set<string>>}
+ */
+async function collectAttendanceDateKeys(companyId, deptId, userId, moduleIds = []) {
+  const attendanceDates = new Set();
+  const uniqueModuleIds = Array.from(new Set(moduleIds.filter(Boolean)));
+
+  if (uniqueModuleIds.length === 0) {
+    return attendanceDates;
+  }
+
+  const chatSessionSnaps = await Promise.all(
+    uniqueModuleIds.map((moduleId) =>
+      db
+        .collection("freshers")
+        .doc(companyId)
+        .collection("departments")
+        .doc(deptId)
+        .collection("users")
+        .doc(userId)
+        .collection("roadmap")
+        .doc(moduleId)
+        .collection("chatSessions")
+        .get()
+    )
+  );
+
+  chatSessionSnaps.forEach((chatSnap) => {
+    chatSnap.docs.forEach((doc) => attendanceDates.add(doc.id));
+  });
+
+  return attendanceDates;
+}
+
+/**
+ * Get missed dates and streak stats using daily attendance calendar keys.
  * @param {string} companyId 
  * @param {string} deptId 
  * @param {string} userId 
- * @param {string} activeModuleId 
- * @param {Object} moduleData - Module data with createdAt
+ * @param {string[]} moduleIds
+ * @param {Date|Object|string|null} startDate
  * @returns {Promise<Object>} { hasMissedDates, missedDates, firstMissedDate, missedCount, activeDays, totalExpectedDays, streak }
  */
-async function getMissedDates(companyId, deptId, userId, activeModuleId, moduleData, startDateOverride) {
+async function getMissedDates(companyId, deptId, userId, moduleIds, startDate) {
   try {
-    const chatSessionsRef = db
-      .collection("freshers")
-      .doc(companyId)
-      .collection("departments")
-      .doc(deptId)
-      .collection("users")
-      .doc(userId)
-      .collection("roadmap")
-      .doc(activeModuleId)
-      .collection("chatSessions");
+    const attendanceDates = await collectAttendanceDateKeys(
+      companyId,
+      deptId,
+      userId,
+      moduleIds
+    );
 
-    const chatSnap = await chatSessionsRef.get();
-    const activeDates = new Set(chatSnap.docs.map(doc => doc.id));
-    const activeDays = activeDates.size;
-
-    // Calculate expected dates (from module start to today)
-    if (!startDateOverride && !moduleData.createdAt) {
-      return {
-        hasMissedDates: false,
-        missedDates: [],
-        firstMissedDate: null,
-        missedCount: 0,
-        activeDays: 0,
-        totalExpectedDays: 0,
-        streak: 0
-      };
-    }
-
-    const startBase = startDateOverride || moduleData.createdAt;
-    const startDate = startBase.toDate ? startBase.toDate() : new Date(startBase);
-
-    const now = new Date();
-    const today = new Date(now);
-    startDate.setHours(0, 0, 0, 0);
-    today.setHours(0, 0, 0, 0);
-
-    // Only count full days that have completed (exclude the current day).
-    const endDate = new Date(today);
-    endDate.setDate(endDate.getDate() - 1);
-
-    if (endDate < startDate) {
-      return {
-        hasMissedDates: false,
-        missedDates: [],
-        firstMissedDate: null,
-        missedCount: 0,
-        activeDays,
-        totalExpectedDays: 0,
-        streak: activeDates.has(getDateKey(today)) ? 1 : 0
-      };
-    }
-
-    const missedDates = [];
-    const currentDate = new Date(startDate);
-
-    while (currentDate <= endDate) {
-      const dateStr = getDateKey(currentDate);
-      if (!activeDates.has(dateStr)) {
-        missedDates.push(dateStr);
-      }
-      currentDate.setDate(currentDate.getDate() + 1);
-    }
-
-    // Calculate total expected days
-    const totalExpectedDays = Math.floor((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
-
-    // Calculate current streak (consecutive days from today backwards)
-    let streak = 0;
-    const streakDate = new Date(activeDates.has(getDateKey(today)) ? today : endDate);
-    while (true) {
-      const dateStr = getDateKey(streakDate);
-      if (activeDates.has(dateStr)) {
-        streak++;
-        streakDate.setDate(streakDate.getDate() - 1);
-      } else {
-        break;
-      }
-    }
+    const stats = calculateAttendanceStats({
+      attendanceDateKeys: attendanceDates,
+      startDate,
+      strictTodayStreak: true,
+    });
 
     return {
-      hasMissedDates: missedDates.length > 0,
-      missedDates,
-      firstMissedDate: missedDates.length > 0 ? missedDates[0] : null,
-      missedCount: missedDates.length,
-      activeDays,
-      totalExpectedDays,
-      streak
+      hasMissedDates: stats.hasMissedDates,
+      missedDates: stats.missedDates,
+      firstMissedDate: stats.firstMissedDate,
+      missedCount: stats.missedCount,
+      activeDays: stats.activeDays,
+      totalExpectedDays: stats.totalExpectedDays,
+      streak: stats.currentStreak
     };
   } catch (err) {
     console.error("❌ Error calculating missed dates:", err);
@@ -703,9 +779,6 @@ Congratulations!
 <div style="color: #E0EAF5; font-size: 16px; margin-bottom: 12px;">
 You've completed all training modules.
 </div>
-<div style="color: #AFCBE3; font-size: 14px; font-style: italic;">
-Contact your company admin for next steps.
-</div>
 </div>`,
       });
     }
@@ -737,14 +810,14 @@ Contact your company admin for next steps.
 </div>`;
     }
 
-    // Check for missed dates
+    // Check attendance-based missed dates and strict streak across training days.
+    const trainingModuleIds = comprehensiveCheck.allModules.map((module) => module.id);
     const missedDateInfo = await getMissedDates(
       companyId,
       deptId,
       userId,
-      finalActiveModule.id,
-      finalModuleData,
-      moduleStartDate
+      trainingModuleIds,
+      roadmapGeneratedAt || moduleStartDate || finalModuleData.createdAt || null
     );
 
     const lastMissedAlertShownForCount = Number(
@@ -972,7 +1045,7 @@ About: ${description}
 
     let finalActiveModule = comprehensiveCheck.nextActiveModule;
     if (!finalActiveModule) {
-      return res.json({ reply: "🎉 You've completed all training modules. Contact your company admin for next steps." });
+      return res.json({ reply: "🎉 You've completed all training modules." });
     }
 
     const finalModuleData = comprehensiveCheck.nextActiveModuleData;
@@ -1022,6 +1095,7 @@ About: ${description}
     /* ---------- CHECK FOR UNLOCK-RELATED QUESTIONS ---------- */
     const messageLower = String(newMessage || "").toLowerCase();
     const explainIntent = /\b(explain|easy words|simple words|summarize|what does this mean|meaning)\b/i.test(messageLower);
+    const simplifyIntent = /\b(in simple words|simple words|easy words|plain english|for beginner|as a beginner|eli5|like i(?: am|'m)? five|simplify|in easy language)\b/i.test(messageLower);
     const detailedIntent = /\b(detailed|in detail|deep dive|comprehensive|thorough|elaborate|step by step|full explanation|long explanation|explain deeply)\b/i.test(messageLower);
     const concisePointMode = !detailedIntent;
     const stepByStepIntent = /\b(step by step|how to|what should i do|next step|plan|roadmap|practice plan|action plan)\b/i.test(messageLower);
@@ -1276,8 +1350,10 @@ AGENTIC RESPONSE POLICY:
 - Give at least one concrete next action the learner can do now.
 - If the user asks how to do something, provide an ordered mini plan.
 - If user asks concept-only questions, explain briefly first, then add "what to do next".
+- User explicitly requested simplification: ${simplifyIntent ? "yes" : "no"}
 - Prefer this structure for concise mode:
-  - <p><b>In simple words:</b> ...</p>
+  - Only when user explicitly requested simplification: <p><b>In simple words:</b> ...</p>
+  - Otherwise, do NOT use the exact phrase "In simple words:".
   - <ul><li>Actionable points...</li></ul>
   - <p><b>Next step:</b> one practical step</p>
 - Prefer this structure for detailed mode:
@@ -1329,6 +1405,13 @@ RESPOND WITH: Direct educational content addressing the question, using both com
     if (!/[?؟]/.test(plainReply)) {
       const moduleTitle = (finalModuleData?.moduleTitle || "this module").trim();
       botReply = `${botReply.trim()}\n\nWhat would you like to learn next about ${moduleTitle}: concept, example, or a quick practice task?`;
+    }
+
+    // Remove the heading unless the user explicitly asked for a simplified explanation.
+    if (!simplifyIntent) {
+      botReply = botReply
+        .replace(/^\s*<p>\s*<b>\s*In simple words:\s*<\/b>\s*/i, "<p>")
+        .replace(/^\s*In simple words:\s*/i, "");
     }
 
     /* ---------- SAVE CHAT ---------- */
@@ -1532,57 +1615,27 @@ export const getMissedDatesController = async (req, res) => {
                              allModules.reduce((sum, module) => sum + (module.estimatedDays || 0), 0) ||
                              90; // fallback to 90 days (3 months)
 
-    console.log("📊 Training duration:", trainingDuration || "not set", "→", totalExpectedDays, "days");
+    logThrottled(
+      `training-duration:${companyId}:${deptId}:${userId}:${String(trainingDuration || "not-set")}:${totalExpectedDays}`,
+      "📊 Training duration:",
+      trainingDuration || "not set",
+      "→",
+      totalExpectedDays,
+      "days"
+    );
 
-    // Calculate total active days across ALL modules
-    let totalActiveDays = 0;
-    const allActiveDates = new Set();
+    const allModuleIds = allModules.map((module) => module.id);
+    const attendanceStats = await getMissedDates(
+      companyId,
+      deptId,
+      userId,
+      allModuleIds,
+      roadmapGeneratedAt || null
+    );
 
-    for (const module of allModules) {
-      const chatSessionsRef = db
-        .collection("freshers")
-        .doc(companyId)
-        .collection("departments")
-        .doc(deptId)
-        .collection("users")
-        .doc(userId)
-        .collection("roadmap")
-        .doc(module.id)
-        .collection("chatSessions");
-
-      const chatSnap = await chatSessionsRef.get();
-      chatSnap.docs.forEach(doc => allActiveDates.add(doc.id));
-    }
-
-    totalActiveDays = allActiveDates.size;
-
-    // Calculate missed days from roadmap generation
-    let missedDaysCount = 0;
-    const missedDates = [];
-
-    if (roadmapGeneratedAt) {
-      const startDate = new Date(roadmapGeneratedAt);
-      startDate.setHours(0, 0, 0, 0);
-
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      // Only count full days that have completed (exclude current day)
-      const endDate = new Date(today);
-      endDate.setDate(endDate.getDate() - 1);
-
-      if (endDate >= startDate) {
-        const currentDate = new Date(startDate);
-        while (currentDate <= endDate) {
-          const dateStr = getDateKey(currentDate);
-          if (!allActiveDates.has(dateStr)) {
-            missedDates.push(dateStr);
-          }
-          currentDate.setDate(currentDate.getDate() + 1);
-        }
-        missedDaysCount = missedDates.length;
-      }
-    }
+    const totalActiveDays = attendanceStats.activeDays;
+    const missedDates = attendanceStats.missedDates;
+    const missedDaysCount = attendanceStats.missedCount;
 
     // 🔄 COMPREHENSIVE CHECK: Scan ALL modules, mark expired ones as expired, unlock next
     const comprehensiveCheck = await checkAndUnlockModulesComprehensive(
@@ -1605,7 +1658,7 @@ export const getMissedDatesController = async (req, res) => {
         activeDays: totalActiveDays,
         missedDays: missedDaysCount,
         totalExpectedDays,
-        currentStreak: 0,
+        currentStreak: attendanceStats.streak,
         activeModuleName: "No active module"
       });
     }
@@ -1619,39 +1672,19 @@ export const getMissedDatesController = async (req, res) => {
     const startDateOverride = moduleStartDate || roadmapGeneratedAt || null;
 
     if (!startDateOverride) {
-      console.warn("⚠️ Missed-dates start date not found; falling back to module createdAt");
-    } else {
-      console.log("🗓️ Missed-dates start date:", startDateOverride.toISOString());
-    }
-    
-    // Check if module was actually started (has chat sessions)
-    const moduleChatSessionsRef = db
-      .collection("freshers")
-      .doc(companyId)
-      .collection("departments")
-      .doc(deptId)
-      .collection("users")
-      .doc(userId)
-      .collection("roadmap")
-      .doc(activeModule.id)
-      .collection("chatSessions");
-    
-    const priorChatSnap = await moduleChatSessionsRef.limit(1).get();
-    const hasModuleStarted = !priorChatSnap.empty;
-
-    // Calculate streak from active module
-    let streak = 0;
-    if (hasModuleStarted) {
-      const missedDateInfo = await getMissedDates(
-        companyId,
-        deptId,
-        userId,
-        activeModule.id,
-        moduleData,
-        startDateOverride
+      warnThrottled(
+        `missed-dates-start-missing:${companyId}:${deptId}:${userId}`,
+        "⚠️ Missed-dates start date not found; falling back to module createdAt"
       );
-      streak = missedDateInfo.streak;
+    } else {
+      logThrottled(
+        `missed-dates-start:${companyId}:${deptId}:${userId}:${startDateOverride.toISOString()}`,
+        "🗓️ Missed-dates start date:",
+        startDateOverride.toISOString()
+      );
     }
+    
+    const streak = attendanceStats.streak;
 
     await userRef.update({
       trainingStats: {

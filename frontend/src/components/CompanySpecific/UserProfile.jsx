@@ -6,6 +6,7 @@ import { db } from "../../firebase";
 import { apiUrl } from "../../services/api";
 import CompanyPageLoader from "./CompanyPageLoader";
 import CompanyShellLayout from "./CompanyShellLayout";
+import { getCompanyLicensePlan } from "../../services/companyLicense";
 
 const toDateSafe = (value) => {
   if (!value) return null;
@@ -14,8 +15,6 @@ const toDateSafe = (value) => {
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
-
-const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
 
 const parseTrainingDurationDays = (duration) => {
   if (Number.isFinite(duration)) return Math.max(1, Math.round(duration));
@@ -61,6 +60,7 @@ export default function UserProfile() {
   const [notificationMeta, setNotificationMeta] = useState(null);
   const [notificationResolveLoading, setNotificationResolveLoading] = useState(false);
   const [companyTrainingDurationDays, setCompanyTrainingDurationDays] = useState(null);
+  const [licensePlan, setLicensePlan] = useState("License Basic");
   const [derivedStats, setDerivedStats] = useState({
     activeDays: 0,
     missedDays: 0,
@@ -121,6 +121,9 @@ export default function UserProfile() {
   useEffect(() => {
     const fetchUser = async () => {
       try {
+        const detectedPlan = await getCompanyLicensePlan(companyId);
+        setLicensePlan(detectedPlan);
+
         const userRef = doc(db, "freshers", companyId, "departments", deptId, "users", userId);
         const snap = await getDoc(userRef);
 
@@ -209,68 +212,27 @@ export default function UserProfile() {
       if (!companyId || !deptId || !userId) return;
 
       try {
-        const uniqueActiveDates = new Set();
+        const response = await fetch(apiUrl("/api/chat/missed-dates"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId, companyId, deptId }),
+        });
 
-        for (const module of roadmapModules) {
-          const chatSessionsRef = collection(
-            db,
-            "freshers",
-            companyId,
-            "departments",
-            deptId,
-            "users",
-            userId,
-            "roadmap",
-            module.id,
-            "chatSessions"
-          );
-          const chatSessionsSnap = await getDocs(chatSessionsRef);
-          chatSessionsSnap.docs.forEach((docSnap) => uniqueActiveDates.add(docSnap.id));
+        const data = await response.json();
+        if (!response.ok || !data?.success) {
+          throw new Error(data?.error || "Failed to fetch attendance stats");
         }
 
-        const activeDays = uniqueActiveDates.size;
         const estimatedTotalDaysFromRoadmap = roadmapModules.reduce(
           (sum, module) => sum + (Number(module?.estimatedDays) || 1),
           0
         );
 
-        const roadmapGeneratedAt =
-          toDateSafe(user?.roadmapAgentic?.generatedAt) ||
-          toDateSafe(user?.roadmapGeneratedAt) ||
-          toDateSafe(roadmapModules[0]?.startedAt) ||
-          toDateSafe(roadmapModules[0]?.FirstTimeCreatedAt) ||
-          toDateSafe(roadmapModules[0]?.createdAt);
-
-        let missedDays = 0;
-        if (roadmapGeneratedAt) {
-          const startDate = startOfDay(roadmapGeneratedAt);
-          const today = startOfDay(new Date());
-          const endDate = new Date(today);
-          endDate.setDate(endDate.getDate() - 1);
-
-          if (endDate >= startDate) {
-            const currentDate = new Date(startDate);
-            while (currentDate <= endDate) {
-              const dateKey = currentDate.toISOString().slice(0, 10);
-              if (!uniqueActiveDates.has(dateKey)) missedDays += 1;
-              currentDate.setDate(currentDate.getDate() + 1);
-            }
-          }
-        }
-
-        let currentStreak = 0;
-        const today = startOfDay(new Date());
-        const cursor = new Date(today);
-        while (uniqueActiveDates.has(cursor.toISOString().slice(0, 10))) {
-          currentStreak += 1;
-          cursor.setDate(cursor.getDate() - 1);
-        }
-
         setDerivedStats({
-          activeDays,
-          missedDays,
-          currentStreak,
-          totalExpectedDays: estimatedTotalDaysFromRoadmap,
+          activeDays: Number(data.activeDays) || 0,
+          missedDays: Number(data.missedDays ?? data.missedCount) || 0,
+          currentStreak: Number(data.currentStreak) || 0,
+          totalExpectedDays: Number(data.totalExpectedDays) || estimatedTotalDaysFromRoadmap,
         });
       } catch (err) {
         console.warn("Failed to derive training stats:", err);
@@ -280,13 +242,27 @@ export default function UserProfile() {
     loadDerivedStats();
   }, [companyId, deptId, userId, roadmapModules, user]);
 
+  const isModuleLocked = (module) => {
+    const status = String(module?.status || "").toLowerCase();
+    return status === "locked" || !!module?.moduleLocked || !!module?.quizLocked;
+  };
+
   const isModuleCompleted = (module) => {
     const status = String(module?.status || "").toLowerCase();
-    if (status === "expired") return false;
+    if (status === "expired" || isModuleLocked(module)) return false;
     return status === "completed" || !!module?.completed || !!module?.quizPassed;
   };
 
+  const getModuleDisplayStatus = (module) => {
+    const status = String(module?.status || "").toLowerCase();
+    if (status === "expired") return "Expired";
+    if (isModuleLocked(module)) return "In Progress";
+    if (isModuleCompleted(module)) return "Completed";
+    return "In Progress";
+  };
+
   const completedModulesCount = roadmapModules.filter((m) => isModuleCompleted(m)).length;
+  const isBasicLicense = licensePlan === "License Basic";
   const totalQuizAttempts = roadmapModules.reduce(
     (sum, m) => sum + (m.quizAttempts ?? 0),
     0
@@ -650,7 +626,7 @@ if (!user) {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 w-full lg:w-[540px]">
+              <div className={`grid grid-cols-2 ${isBasicLicense ? "md:grid-cols-2 lg:w-[420px]" : "md:grid-cols-3 lg:w-[540px]"} gap-3 w-full`}>
                 <div className="profile-pill-card rounded-xl border border-[#00FFFF2D] bg-[#031C3A]/65 p-3 text-center">
                   <p className="text-[11px] uppercase tracking-wide text-[#AFCBE3]">Progress</p>
                   <p className="mt-1 text-lg font-semibold text-[#00FFFF]">{user.progress || 0}%</p>
@@ -659,22 +635,26 @@ if (!user) {
                   <p className="text-[11px] uppercase tracking-wide text-[#AFCBE3]">Modules</p>
                   <p className="mt-1 text-lg font-semibold text-[#00FFFF]">{completedModulesCount}/{roadmapModules.length}</p>
                 </div>
-                <div className="profile-pill-card rounded-xl border border-[#00FFFF2D] bg-[#031C3A]/65 p-3 text-center">
-                  <p className="text-[11px] uppercase tracking-wide text-[#AFCBE3]">Quiz Attempts</p>
-                  <p className="mt-1 text-lg font-semibold text-[#00FFFF]">{totalQuizAttempts}</p>
-                </div>
+                {!isBasicLicense && (
+                  <div className="profile-pill-card rounded-xl border border-[#00FFFF2D] bg-[#031C3A]/65 p-3 text-center">
+                    <p className="text-[11px] uppercase tracking-wide text-[#AFCBE3]">Quiz Attempts</p>
+                    <p className="mt-1 text-lg font-semibold text-[#00FFFF]">{totalQuizAttempts}</p>
+                  </div>
+                )}
                 <div className="profile-pill-card rounded-xl border border-[#00FFFF2D] bg-[#031C3A]/65 p-3 text-center">
                   <p className="text-[11px] uppercase tracking-wide text-[#AFCBE3]">Certificate</p>
                   <p className={`mt-1 text-sm font-semibold ${user.certificateUnlocked ? "text-emerald-400" : "text-yellow-300"}`}>
                     {user.certificateUnlocked ? "Unlocked" : "Locked"}
                   </p>
                 </div>
-                <div className="profile-pill-card rounded-xl border border-[#00FFFF2D] bg-[#031C3A]/65 p-3 text-center">
-                  <p className="text-[11px] uppercase tracking-wide text-[#AFCBE3]">Final Score</p>
-                  <p className="mt-1 text-lg font-semibold text-[#00FFFF]">
-                    {typeof user.certificateFinalQuizScore === "number" ? `${Math.round(user.certificateFinalQuizScore)}%` : "N/A"}
-                  </p>
-                </div>
+                {!isBasicLicense && (
+                  <div className="profile-pill-card rounded-xl border border-[#00FFFF2D] bg-[#031C3A]/65 p-3 text-center">
+                    <p className="text-[11px] uppercase tracking-wide text-[#AFCBE3]">Final Score</p>
+                    <p className="mt-1 text-lg font-semibold text-[#00FFFF]">
+                      {typeof user.certificateFinalQuizScore === "number" ? `${Math.round(user.certificateFinalQuizScore)}%` : "N/A"}
+                    </p>
+                  </div>
+                )}
                 <div className="profile-pill-card rounded-xl border border-[#00FFFF2D] bg-[#031C3A]/65 p-3 text-center">
                   <p className="text-[11px] uppercase tracking-wide text-[#AFCBE3]">Level</p>
                   <p className="mt-1 text-sm font-semibold text-[#D4F3FF]">{user.trainingLevel || "N/A"}</p>
@@ -707,7 +687,7 @@ if (!user) {
           <section className="profile-shell-enter profile-shell-delay-2 company-card p-5 md:p-6">
             <h2 className="text-xl font-semibold text-[#00FFFF] mb-4">Training Roadmap</h2>
 
-            {roadmapModules.some((m) => m.quizLocked || m.moduleLocked) && (
+            {!isBasicLicense && roadmapModules.some((m) => m.quizLocked || m.moduleLocked) && (
               <div className="mb-6 rounded-2xl border border-[#00FFFF55] bg-[#031C3A]/70 p-4 md:p-5">
                 <div className="flex items-center gap-3 mb-3">
                   <span className="px-2 py-1 text-xs font-semibold rounded-full bg-[#00FFFF]/15 text-[#00FFFF]">Action Required</span>
@@ -863,33 +843,44 @@ if (!user) {
                         )}
                       </div>
 
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5 min-w-[320px] md:min-w-[360px]">
+                      <div className={`grid gap-3.5 min-w-[320px] md:min-w-[360px] ${isBasicLicense ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-3"}`}>
                         <div className="profile-metric-card">
                           <p className="profile-metric-label">Status</p>
                           <div className="profile-metric-subvalue flex items-center justify-center">
                             <span className={`text-center ${
-                              isModuleCompleted(m) ? "text-emerald-300" : "text-yellow-300"
+                              getModuleDisplayStatus(m) === "Completed" ? "text-emerald-300" : "text-yellow-300"
                             }`}>
-                              {isModuleCompleted(m) ? "Completed" : "Pending"}
+                              {getModuleDisplayStatus(m)}
                             </span>
                           </div>
                         </div>
 
-                        <div className="profile-metric-card">
-                          <p className="profile-metric-label">Quiz</p>
-                          <div className="profile-metric-subvalue flex items-center justify-center">
-                            <span className={`text-center ${
-                              m.quizGenerated ? "text-blue-300" : "text-slate-300"
-                            }`}>
-                              {m.quizGenerated ? "Generated" : "Not Generated"}
-                            </span>
+                        {!isBasicLicense && (
+                          <div className="profile-metric-card">
+                            <p className="profile-metric-label">Quiz</p>
+                            <div className="profile-metric-subvalue flex items-center justify-center">
+                              <span className={`text-center ${
+                                m.quizGenerated ? "text-blue-300" : "text-slate-300"
+                              }`}>
+                                {m.quizGenerated ? "Generated" : "Not Generated"}
+                              </span>
+                            </div>
                           </div>
-                        </div>
+                        )}
 
-                        <div className="profile-metric-card">
-                          <p className="profile-metric-label">Attempts</p>
-                          <p className="profile-metric-value">{m.quizAttempts ?? 0}</p>
-                        </div>
+                        {!isBasicLicense && (
+                          <div className="profile-metric-card">
+                            <p className="profile-metric-label">Attempts</p>
+                            <p className="profile-metric-value">{m.quizAttempts ?? 0}</p>
+                          </div>
+                        )}
+
+                        {isBasicLicense && (
+                          <div className="profile-metric-card">
+                            <p className="profile-metric-label">Timeline</p>
+                            <p className="profile-metric-value">{getRemainingTimeLabel(m)}</p>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </article>

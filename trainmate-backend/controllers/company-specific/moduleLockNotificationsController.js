@@ -3,9 +3,76 @@ import { db } from "../../config/firebase.js";
 import { sendTrainingLockedEmail } from "../../services/emailService.js";
 
 const BASE_MAX_QUIZ_ATTEMPTS = 3;
+const VALID_LICENSE_PLANS = new Set(["License Basic", "License Pro"]);
+
+function normalizeLicensePlan(value) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (VALID_LICENSE_PLANS.has(trimmed)) return trimmed;
+
+  const normalized = trimmed.toLowerCase();
+  if (normalized === "license pro" || normalized === "pro") return "License Pro";
+  if (normalized === "license basic" || normalized === "basic") return "License Basic";
+
+  return null;
+}
+
+function toMillis(value) {
+  if (!value) return 0;
+  if (value instanceof Date) return value.getTime();
+  if (typeof value?.toDate === "function") return value.toDate().getTime();
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+}
+
+function getLatestDocData(snapshot) {
+  if (!snapshot || snapshot.empty) return null;
+
+  const docs = snapshot.docs.slice().sort((a, b) => {
+    const aMs = toMillis(a.data()?.createdAt);
+    const bMs = toMillis(b.data()?.createdAt);
+    return bMs - aMs;
+  });
+
+  return docs[0]?.data() || null;
+}
+
+async function resolveCompanyLicensePlan(companyId, preloadedCompanySnap = null) {
+  const companyRef = db.collection("companies").doc(companyId);
+
+  try {
+    const billingSnap = await companyRef.collection("billingPayments").get();
+    const latestBilling = getLatestDocData(billingSnap);
+    const billingPlan = normalizeLicensePlan(latestBilling?.plan || latestBilling?.Plan);
+    if (billingPlan) return billingPlan;
+
+    const onboardingSnap = await companyRef.collection("onboardingAnswers").get();
+    const latestOnboarding = getLatestDocData(onboardingSnap);
+    const answers = latestOnboarding?.answers || {};
+    const onboardingPlan =
+      normalizeLicensePlan(answers?.[2]) ||
+      normalizeLicensePlan(answers?.["2"]) ||
+      normalizeLicensePlan(answers?.[0]) ||
+      normalizeLicensePlan(answers?.["0"]);
+    if (onboardingPlan) return onboardingPlan;
+
+    const companySnap = preloadedCompanySnap || (await companyRef.get());
+    const companyPlan = normalizeLicensePlan(companySnap.data()?.licensePlan || companySnap.data()?.plan);
+    if (companyPlan) return companyPlan;
+  } catch (err) {
+    console.warn("[NOTIFICATIONS][LICENSE] Failed to resolve plan:", err?.message || err);
+  }
+
+  return "License Basic";
+}
 
 async function ensurePendingNotificationsForLockedUsers(companyId) {
   const companySnap = await db.collection("companies").doc(companyId).get();
+  const companyPlan = await resolveCompanyLicensePlan(companyId, companySnap);
+  if (companyPlan === "License Basic") {
+    return;
+  }
+
   const companyData = companySnap.exists ? companySnap.data() : {};
   const companyName = companyData?.name || "TrainMate Company";
   const companyEmail = companyData?.email || companyData?.companyEmail || null;
@@ -124,6 +191,11 @@ export const getModuleLockNotifications = async (req, res) => {
       return res.status(400).json({ error: "companyId is required" });
     }
 
+    const companyPlan = await resolveCompanyLicensePlan(companyId);
+    if (companyPlan === "License Basic") {
+      return res.json({ success: true, notifications: [] });
+    }
+
     if (status === "pending" || status === "all") {
       await ensurePendingNotificationsForLockedUsers(companyId);
     }
@@ -167,9 +239,14 @@ export const getCompanyAdminNotifications = async (req, res) => {
       return res.status(400).json({ error: "companyId is required" });
     }
 
+    const companyPlan = await resolveCompanyLicensePlan(companyId);
+
     const allowedTypes = new Set(["module_lock", "training_completion", "training_summary_report"]);
     const types = requestedTypes.filter((t) => allowedTypes.has(t));
-    const effectiveTypes = types.length ? types : ["module_lock", "training_completion", "training_summary_report"];
+    let effectiveTypes = types.length ? types : ["module_lock", "training_completion", "training_summary_report"];
+    if (companyPlan === "License Basic") {
+      effectiveTypes = effectiveTypes.filter((type) => type !== "module_lock");
+    }
 
     if ((status === "pending" || status === "all") && effectiveTypes.includes("module_lock")) {
       await ensurePendingNotificationsForLockedUsers(companyId);
