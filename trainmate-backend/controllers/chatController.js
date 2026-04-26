@@ -823,8 +823,12 @@ You've completed all training modules.
     const lastMissedAlertShownForCount = Number(
       userData?.trainingStats?.missedAlertShownForCount || 0
     );
+    const missedAlertShownOnce = Boolean(
+      userData?.trainingStats?.missedAlertShownOnce
+    );
     const shouldShowMissedDatesNotification =
       missedDateInfo.hasMissedDates &&
+      !missedAlertShownOnce &&
       missedDateInfo.missedCount > lastMissedAlertShownForCount;
 
     // Chat session today
@@ -865,16 +869,16 @@ You've completed all training modules.
 
     // Update user document with live stats
     await userRef.update({
-      trainingStats: {
-        activeDays: missedDateInfo.activeDays,
-        missedDays: missedDateInfo.missedCount,
-        totalExpectedDays: missedDateInfo.totalExpectedDays,
-        currentStreak: missedDateInfo.streak,
-        missedAlertShownForCount: shouldShowMissedDatesNotification
-          ? missedDateInfo.missedCount
-          : lastMissedAlertShownForCount,
-        lastUpdated: new Date()
-      }
+      "trainingStats.activeDays": missedDateInfo.activeDays,
+      "trainingStats.missedDays": missedDateInfo.missedCount,
+      "trainingStats.totalExpectedDays": missedDateInfo.totalExpectedDays,
+      "trainingStats.currentStreak": missedDateInfo.streak,
+      "trainingStats.missedAlertShownForCount": shouldShowMissedDatesNotification
+        ? missedDateInfo.missedCount
+        : lastMissedAlertShownForCount,
+      "trainingStats.missedAlertShownOnce":
+        missedAlertShownOnce || shouldShowMissedDatesNotification,
+      "trainingStats.lastUpdated": new Date()
     });
 
     // First time today reply (without company info)
@@ -1687,13 +1691,14 @@ export const getMissedDatesController = async (req, res) => {
     const streak = attendanceStats.streak;
 
     await userRef.update({
-      trainingStats: {
-        activeDays: totalActiveDays,
-        missedDays: missedDaysCount,
-        totalExpectedDays,
-        currentStreak: streak,
-        lastUpdated: new Date()
-      }
+      "trainingStats.activeDays": totalActiveDays,
+      "trainingStats.missedDays": missedDaysCount,
+      "trainingStats.totalExpectedDays": totalExpectedDays,
+      "trainingStats.currentStreak": streak,
+      "trainingStats.missedAlertShownForCount": Number(
+        userData?.trainingStats?.missedAlertShownForCount || 0
+      ),
+      "trainingStats.lastUpdated": new Date()
     }).catch(err => {
       console.warn("⚠️ Failed to update user stats:", err.message);
     });
