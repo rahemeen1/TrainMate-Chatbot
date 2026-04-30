@@ -1457,10 +1457,7 @@ You've completed all training modules.
 Welcome to Day ${dayNumber} of ${totalDays}
 </div>
 
-    <div style="background:#00FFFF1A; border-left: 4px solid #00FFFF; padding: 10px; border-radius: 6px; margin-bottom: 12px;">
-    <div style="color:#00FFFF; font-weight:600; margin-bottom:4px;">Onboarding Flow</div>
-    <div style="color:#D5ECFF; font-size:14px;">Stage: Welcome -> Role Setup -> Baseline Assessment -> Learning Plan -> Daily Coach -> Weekly Checkpoint -> Final Readiness</div>
-    </div>
+
 
 <div style="color: #FFFFFF; font-size: 16px; font-weight: 500; margin-bottom: 16px;">
 ${finalModuleData.moduleTitle}
