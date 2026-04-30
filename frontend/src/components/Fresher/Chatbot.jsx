@@ -6,10 +6,64 @@ import { db } from "../../firebase";
 import { apiUrl } from "../../services/api";
 import { collection, doc, getDoc, getDocs, setDoc } from "firebase/firestore";
 import { PaperAirplaneIcon, ArrowLeftIcon } from "@heroicons/react/24/solid";
-import { UserCircleIcon, CpuChipIcon } from "@heroicons/react/24/solid";
+import { UserCircleIcon, CpuChipIcon, BookOpenIcon } from "@heroicons/react/24/solid";
 import { FEATURE_FLAGS, isFeatureAvailable } from "../../services/featureAccess";
 import { getCompanyLicensePlan } from "../../services/companyLicense";
 import CompanyPageLoader from "../CompanySpecific/CompanyPageLoader";
+
+// Markdown to HTML converter utility
+const markdownToHtml = (text) => {
+  if (!text || typeof text !== 'string') return text;
+  
+  // If already contains HTML tags, return as-is
+  if (/<[^>]+>/.test(text)) return text;
+  
+  let html = text;
+  
+  // Escape any remaining special characters
+  html = html.replace(/&(?!amp;|lt;|gt;|quot;|apos;)/g, '&amp;');
+  
+  // Bold: **text** or *text* → <b>text</b>
+  html = html.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+  
+  // Italic: __text__ or _text_ → <i>text</i>
+  html = html.replace(/__(.+?)__/g, '<i>$1</i>');
+  html = html.replace(/(?<!\*|_)_([^_*\n]+?)_(?!\*|_)/g, '<i>$1</i>');
+  
+  // Headings: # text → <h3>text</h3>
+  html = html.replace(/^#{1,3}\s+(.+?)$/gm, '<h3>$1</h3>');
+  
+  // Code blocks: ```code``` → <pre><code>code</code></pre>
+  html = html.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
+  
+  // Inline code: `code` → <code>code</code>
+  html = html.replace(/`([^`\n]+?)`/g, '<code>$1</code>');
+  
+  // Ordered lists: 1. item → <ol><li>item</li></ol>
+  const olMatches = html.match(/^\d+\.\s+.+?$/gm);
+  if (olMatches) {
+    const olContent = olMatches.map(item => `<li>${item.replace(/^\d+\.\s+/, '')}</li>`).join('');
+    html = html.replace(/(?:^\d+\.\s+.+?$\n?)+/gm, `<ol>${olContent}</ol>`);
+  }
+  
+  // Unordered lists: - item or * item → <ul><li>item</li></ul>
+  const ulMatches = html.match(/^[\-\*]\s+.+?$/gm);
+  if (ulMatches && !html.includes('<ol>')) {
+    const ulContent = ulMatches.map(item => `<li>${item.replace(/^[\-\*]\s+/, '')}</li>`).join('');
+    html = html.replace(/(?:^[\-\*]\s+.+?$\n?)+/gm, `<ul>${ulContent}</ul>`);
+  }
+  
+  // Line breaks: single newline → stay as text, double newline → paragraph break
+  html = html.split('\n\n').map(para => {
+    const trimmed = para.trim();
+    if (trimmed && !trimmed.includes('<') && !trimmed.includes('</')) {
+      return `<p>${trimmed}</p>`;
+    }
+    return trimmed;
+  }).filter(Boolean).join('');
+  
+  return html;
+};
 
 
 export default function FresherChatbot() {
@@ -31,6 +85,23 @@ export default function FresherChatbot() {
   const [feedbackRating, setFeedbackRating] = useState(0);
   const [feedbackText, setFeedbackText] = useState("");
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
+  const [showArtifactsModal, setShowArtifactsModal] = useState(false);
+  const [artifactsLoading, setArtifactsLoading] = useState(false);
+  const [learningArtifacts, setLearningArtifacts] = useState({
+    learningNotes: [],
+    revisionCards: [],
+    masteredThisWeek: [],
+    weekKey: null,
+  });
+  const [replyTo, setReplyTo] = useState(null); // { index, text }
+
+  const stripHtml = (html) =>
+    String(html || "")
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
 
   const [activeModuleId, setActiveModuleId] = useState(null);
   const [availableDates, setAvailableDates] = useState([]);
@@ -293,8 +364,10 @@ useEffect(() => {
   const handleSend = async () => {
     if (!input.trim() || mode === "read") return;
 
-    const userMsg = { from: "user", text: input };
+    const userMsg = replyTo ? { from: "user", text: input, replyTo } : { from: "user", text: input };
     setMessages(prev => [...prev, userMsg]);
+    // Clear reply UI immediately so the reply pill above the input goes away
+    setReplyTo(null);
     setInput("");
     setTyping(true);
 
@@ -302,7 +375,7 @@ useEffect(() => {
       const res = await fetch(apiUrl("/api/chat"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, companyId, deptId, newMessage: input })
+        body: JSON.stringify({ userId, companyId, deptId, newMessage: input, replyTo })
       });
 
       const data = await res.json();
@@ -380,6 +453,37 @@ useEffect(() => {
       setShowFeedbackModal(false);
       setFeedbackRating(0);
       setFeedbackText("");
+    }
+  };
+
+  const handleOpenArtifacts = async () => {
+    setShowArtifactsModal(true);
+    setArtifactsLoading(true);
+    try {
+      const res = await fetch(apiUrl("/api/chat/artifacts"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, companyId, deptId }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data?.artifacts) {
+        setLearningArtifacts({
+          learningNotes: data.artifacts.learningNotes || [],
+          revisionCards: data.artifacts.revisionCards || [],
+          masteredThisWeek: data.artifacts.masteredThisWeek || [],
+          weekKey: data.artifacts.weekKey || null,
+        });
+      }
+    } catch (err) {
+      setLearningArtifacts({
+        learningNotes: ["I could not load notes right now. Please try again."],
+        revisionCards: [],
+        masteredThisWeek: [],
+        weekKey: null,
+      });
+    } finally {
+      setArtifactsLoading(false);
     }
   };
 
@@ -574,6 +678,13 @@ useEffect(() => {
 
           <div className="flex w-full sm:w-auto items-center gap-2 relative">
             <button
+              onClick={handleOpenArtifacts}
+              className="w-full sm:w-auto justify-center flex items-center gap-2 border border-cyan-400/60 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm text-cyan-300 hover:bg-cyan-400/10 transition"
+            >
+              <BookOpenIcon className="w-4 h-4" /> Learning Artifacts
+            </button>
+
+            <button
               onClick={() =>
                 navigate("/previous-chats", {
                   state: { userId, companyId, deptId, activeModuleId }
@@ -609,7 +720,7 @@ useEffect(() => {
 <div className="flex-1 min-h-0 flex flex-col overflow-hidden relative">
 
   {/* CHAT MESSAGES - SCROLLABLE */}
-  <div ref={messagesScrollRef} className="flex-1 min-h-0 overflow-y-auto scroll-smooth px-3 sm:px-5 md:px-8 pt-5 sm:pt-6 md:pt-8 pb-32 sm:pb-36 md:pb-40">
+  <div ref={messagesScrollRef} className="flex-1 min-h-0 overflow-y-auto scroll-smooth px-3 sm:px-5 md:px-8 pt-5 sm:pt-6 md:pt-8 pb-4 sm:pb-5">
    {messages.map((msg, i) => (
   <div key={i} className="mb-5 sm:mb-6">
     <div className={`flex items-start gap-0 sm:gap-3 ${msg.from === "user" ? "justify-end" : "justify-start"}`}>
@@ -632,13 +743,29 @@ useEffect(() => {
           ${mode === "read" ? "opacity-50" : ""}
         `}
         style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}
-        dangerouslySetInnerHTML={{ __html: msg.text }}
-      />
+      >
+        {msg.replyTo && (
+          <div className="mb-2 p-2 rounded-lg bg-[#012235] border border-cyan-400/20 text-xs text-[#AFCBE3] max-w-[80%] truncate">
+            Replying to: {msg.replyTo.text}
+          </div>
+        )}
+        <div dangerouslySetInnerHTML={{ __html: markdownToHtml(msg.text) }} />
+      </div>
 
       {msg.from === "user" && (
         <UserCircleIcon className="hidden sm:block sm:w-8 sm:h-8 text-cyan-400 flex-shrink-0 mt-1" />
       )}
     </div>
+    {msg.from === "bot" && (
+      <div className="mt-2 flex items-center gap-2">
+        <button
+          onClick={() => setReplyTo({ index: i, text: stripHtml(msg.text).slice(0, 200) })}
+          className="text-xs text-cyan-300 border border-cyan-400/20 px-2 py-1 rounded-lg hover:bg-cyan-400/6"
+        >
+          Reply
+        </button>
+      </div>
+    )}
   </div>
 ))}
 {typing && (
@@ -662,8 +789,15 @@ useEffect(() => {
         </div>
 
         {/* INPUT */}
-        <div className="fixed bottom-0 left-0 right-0 sm:sticky z-10 px-3 sm:px-5 md:px-8 pt-3 sm:pt-4 pb-[calc(env(safe-area-inset-bottom)+10px)] sm:pb-[calc(env(safe-area-inset-bottom)+12px)] border-t border-[#00FFFF50] flex gap-2 items-end bg-[#021B36]/95 backdrop-blur-sm flex-none max-w-full"
+         <div className="fixed bottom-0 left-0 right-0 sm:sticky z-10 px-3 sm:px-5 md:px-8 pt-3 sm:pt-4 pb-[calc(env(safe-area-inset-bottom)+10px)] sm:pb-[calc(env(safe-area-inset-bottom)+12px)] border-t border-[#00FFFF50] flex gap-2 items-end bg-[#021B36]/95 backdrop-blur-sm flex-none max-w-full"
           style={{ maxWidth: '100%' }}>
+          {replyTo && (
+            <div className="absolute left-4 top-[-3.2rem] bg-[#021B36] border border-cyan-400/30 px-3 py-2 rounded-lg flex items-center gap-3">
+              <div className="text-xs text-[#AFCBE3]">Replying to:</div>
+              <div className="text-sm text-white max-w-[60vw] truncate">{replyTo.text}</div>
+              <button onClick={() => setReplyTo(null)} className="text-xs text-cyan-300 px-2">✕</button>
+            </div>
+          )}
           <textarea
             disabled={mode === "read"}
             value={input}
@@ -744,6 +878,65 @@ useEffect(() => {
               {feedbackSubmitting ? "Saving..." : "Submit"}
             </button>
           </div>
+        </div>
+      </div>
+    )}
+
+    {showArtifactsModal && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
+        <div className="w-full max-w-2xl rounded-2xl border border-cyan-400/40 bg-[#021B36] p-6 shadow-2xl max-h-[85vh] overflow-y-auto">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-xl font-bold text-cyan-300">My Learning Artifacts</h3>
+            <button
+              onClick={() => setShowArtifactsModal(false)}
+              className="rounded-lg border border-cyan-400/40 px-3 py-1.5 text-xs text-cyan-200 hover:bg-cyan-400/10"
+            >
+              Close
+            </button>
+          </div>
+
+          {artifactsLoading ? (
+            <div className="text-sm text-[#AFCBE3]">Building your notes, revision cards, and weekly mastery summary...</div>
+          ) : (
+            <div className="space-y-6">
+              <section>
+                <h4 className="text-cyan-200 font-semibold mb-2">My Learning Notes</h4>
+                <ul className="list-disc pl-5 space-y-1 text-sm text-[#DCEAF7]">
+                  {(learningArtifacts.learningNotes || []).length === 0 && <li>No notes yet.</li>}
+                  {(learningArtifacts.learningNotes || []).map((note, idx) => (
+                    <li key={`note-${idx}`}>{note}</li>
+                  ))}
+                </ul>
+              </section>
+
+              <section>
+                <h4 className="text-cyan-200 font-semibold mb-2">Revision Cards</h4>
+                <div className="space-y-2">
+                  {(learningArtifacts.revisionCards || []).length === 0 && (
+                    <div className="text-sm text-[#AFCBE3]">No revision cards yet.</div>
+                  )}
+                  {(learningArtifacts.revisionCards || []).map((card, idx) => (
+                    <div key={`card-${idx}`} className="rounded-lg border border-cyan-400/25 bg-[#031C3A] p-3">
+                      <div className="text-xs uppercase tracking-wide text-cyan-300 mb-1">Question</div>
+                      <div className="text-sm text-white mb-2">{card.question}</div>
+                      <div className="text-xs uppercase tracking-wide text-cyan-300 mb-1">Answer</div>
+                      <div className="text-sm text-[#DCEAF7]">{card.answer}</div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section>
+                <h4 className="text-cyan-200 font-semibold mb-2">What I Mastered This Week</h4>
+                <ul className="list-disc pl-5 space-y-1 text-sm text-[#DCEAF7]">
+                  {(learningArtifacts.masteredThisWeek || []).length === 0 && <li>No mastery highlights yet.</li>}
+                  {(learningArtifacts.masteredThisWeek || []).map((item, idx) => (
+                    <li key={`mastered-${idx}`}>{item}</li>
+                  ))}
+                </ul>
+              </section>
+            </div>
+          )}
         </div>
       </div>
     )}

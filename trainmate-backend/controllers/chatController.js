@@ -7,6 +7,7 @@ import { CohereClient } from "cohere-ai";
 import dotenv from "dotenv";
 import { isDocAllowed } from "../utils/relevanceGuard.js";
 import { updateMemoryAfterChat, getAgentMemory } from "../services/memoryService.js";
+import { generateMicroAssessmentAgentically } from "../utils/agenticAssessmentHelper.js";
 import { searchMDN } from "../knowledge/mdn.js";
 import { searchStackOverflow } from "../knowledge/stackoverflow.js";
 import { searchDevTo } from "../knowledge/devto.js";
@@ -199,6 +200,397 @@ const FEEDBACK_PROMPT_INTERVAL = 5;
 const MAX_FEEDBACK_ENTRIES = 30;
 const LOG_THROTTLE_MS = Math.max(1000, Number(process.env.LOG_THROTTLE_MS) || 10 * 60 * 1000);
 const throttledLogTimestamps = new Map();
+const ONBOARDING_STAGE_ORDER = [
+  "welcome",
+  "role_setup",
+  "baseline_assessment",
+  "learning_plan",
+  "daily_coach",
+  "weekly_checkpoint",
+  "final_readiness",
+];
+const MICRO_ASSESSMENT_EVERY_TURNS = 3;
+const MASTERY_PASS_SCORE = 70;
+
+function stripHtmlTags(value) {
+  return String(value || "")
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Convert markdown formatted text to HTML
+ * Safety net to ensure consistent formatting when LLM returns markdown
+ * @param {string} text - Input text (markdown or plain)
+ * @returns {string} HTML formatted text
+ */
+function markdownToHtml(text) {
+  if (!text || typeof text !== 'string') return text;
+  
+  // If already contains HTML tags, return as-is
+  if (/<[^>]+>/.test(text)) return text;
+  
+  let html = text;
+  
+  // Bold: **text** → <b>text</b>
+  html = html.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+  
+  // Italic: __text__ → <i>text</i>
+  html = html.replace(/__(.+?)__/g, '<i>$1</i>');
+  
+  // Headings: # text → <h3>text</h3>
+  html = html.replace(/^#{1,3}\s+(.+?)$/gm, '<h3>$1</h3>');
+  
+  // Code blocks: ```code``` → <pre><code>code</code></pre>
+  html = html.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
+  
+  // Inline code: `code` → <code>code</code>
+  html = html.replace(/`([^`\n]+?)`/g, '<code>$1</code>');
+  
+  // Ordered lists: 1. item
+  const olMatches = html.match(/^\d+\.\s+.+?$/gm);
+  if (olMatches) {
+    const olItems = olMatches.map(item => item.replace(/^\d+\.\s+/, '')).join('');
+    const olContent = olMatches.map(item => `<li>${item.replace(/^\d+\.\s+/, '')}</li>`).join('');
+    html = html.replace(new RegExp(olMatches.map(m => m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'gm'), '');
+    html = `<ol>${olContent}</ol>${html}`;
+  }
+  
+  // Unordered lists: - item or * item
+  const ulMatches = html.match(/^[\-\*]\s+.+?$/gm);
+  if (ulMatches && !html.includes('<ol>')) {
+    const ulContent = ulMatches.map(item => `<li>${item.replace(/^[\-\*]\s+/, '')}</li>`).join('');
+    html = html.replace(new RegExp(ulMatches.map(m => m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'gm'), '');
+    html = `<ul>${ulContent}</ul>${html}`;
+  }
+  
+  // Paragraphs: double newline → <p>...</p>
+  html = html.split('\n\n')
+    .map(para => {
+      const trimmed = para.trim();
+      if (trimmed && !trimmed.includes('<') && !trimmed.includes('</')) {
+        return `<p>${trimmed}</p>`;
+      }
+      return trimmed;
+    })
+    .filter(Boolean)
+    .join('');
+  
+  return html;
+}
+
+function getWeekKey(date = new Date(), timeZone = DEFAULT_TIMEZONE) {
+  const dateKey = getDateKey(date, timeZone);
+  const parsed = new Date(`${dateKey}T00:00:00Z`);
+  const day = parsed.getUTCDay();
+  const distanceToMonday = day === 0 ? 6 : day - 1;
+  parsed.setUTCDate(parsed.getUTCDate() - distanceToMonday);
+  return parsed.toISOString().slice(0, 10);
+}
+
+function getDefaultCoachingFlow(moduleData = {}, userData = {}) {
+  const userName = userData?.name || "Learner";
+  const moduleTitle = moduleData?.moduleTitle || "Current Module";
+  const coreSkills = Array.isArray(moduleData?.skillsCovered)
+    ? moduleData.skillsCovered.slice(0, 3)
+    : [];
+  const objective = coreSkills.length > 0
+    ? `By the end of this session, ${userName} should explain and apply ${coreSkills.join(", ")} in ${moduleTitle}.`
+    : `By the end of this session, ${userName} should understand the key concepts of ${moduleTitle}.`;
+
+  return {
+    stageOrder: ONBOARDING_STAGE_ORDER,
+    currentStage: "welcome",
+    turnCount: 0,
+    objective,
+    objectiveStatus: "active",
+    assessments: {
+      asked: 0,
+      passed: 0,
+      failed: 0,
+      lastScore: null,
+    },
+    pendingAssessment: null,
+    stageHistory: [{ stage: "welcome", at: new Date().toISOString() }],
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function mergeCoachingFlow(existingFlow, moduleData = {}, userData = {}) {
+  if (!existingFlow || typeof existingFlow !== "object") {
+    return getDefaultCoachingFlow(moduleData, userData);
+  }
+
+  const defaults = getDefaultCoachingFlow(moduleData, userData);
+  const merged = {
+    ...defaults,
+    ...existingFlow,
+    assessments: {
+      ...defaults.assessments,
+      ...(existingFlow.assessments || {}),
+    },
+  };
+
+  if (!merged.objective || typeof merged.objective !== "string") {
+    merged.objective = defaults.objective;
+  }
+  if (!Array.isArray(merged.stageOrder) || merged.stageOrder.length === 0) {
+    merged.stageOrder = ONBOARDING_STAGE_ORDER;
+  }
+  if (!ONBOARDING_STAGE_ORDER.includes(merged.currentStage)) {
+    merged.currentStage = "welcome";
+  }
+
+  return merged;
+}
+
+function maybeAdvanceOnboardingStage(flow, options = {}) {
+  const nextFlow = { ...flow };
+  const {
+    hasAssessmentSignal = false,
+    isObjectiveStrong = false,
+    askForCheckpoint = false,
+  } = options;
+
+  const stageIndex = ONBOARDING_STAGE_ORDER.indexOf(nextFlow.currentStage);
+  if (stageIndex < 0 || stageIndex >= ONBOARDING_STAGE_ORDER.length - 1) {
+    return nextFlow;
+  }
+
+  const advanceTo = (stage) => {
+    if (nextFlow.currentStage === stage) return;
+    nextFlow.currentStage = stage;
+    nextFlow.stageHistory = Array.isArray(nextFlow.stageHistory) ? nextFlow.stageHistory : [];
+    nextFlow.stageHistory.push({ stage, at: new Date().toISOString() });
+  };
+
+  if (nextFlow.currentStage === "welcome" && nextFlow.turnCount >= 1) {
+    advanceTo("role_setup");
+  }
+  if (nextFlow.currentStage === "role_setup" && nextFlow.turnCount >= 2) {
+    advanceTo("baseline_assessment");
+  }
+  if (nextFlow.currentStage === "baseline_assessment" && hasAssessmentSignal) {
+    advanceTo("learning_plan");
+  }
+  if (nextFlow.currentStage === "learning_plan" && nextFlow.turnCount >= 4) {
+    advanceTo("daily_coach");
+  }
+  if (nextFlow.currentStage === "daily_coach" && askForCheckpoint) {
+    advanceTo("weekly_checkpoint");
+  }
+  if (
+    nextFlow.currentStage === "weekly_checkpoint" &&
+    isObjectiveStrong &&
+    Number(nextFlow.assessments?.passed || 0) >= 2
+  ) {
+    advanceTo("final_readiness");
+  }
+
+  return nextFlow;
+}
+
+function shouldAskMicroAssessment(flow) {
+  if (flow?.pendingAssessment) return false;
+  if (flow?.currentStage === "welcome") return false;
+  if (flow?.objectiveStatus === "mastered") return false;
+  return Number(flow?.turnCount || 0) > 0 && Number(flow.turnCount) % MICRO_ASSESSMENT_EVERY_TURNS === 0;
+}
+
+function extractJsonBlock(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return null;
+  const fenced = raw.match(/```json\s*([\s\S]*?)```/i);
+  if (fenced?.[1]) return fenced[1].trim();
+  const objectMatch = raw.match(/\{[\s\S]*\}/);
+  return objectMatch ? objectMatch[0] : null;
+}
+
+// Agentic context extraction moved to agenticAssessmentHelper.js (no hardcoding)"}}]
+
+
+// Hardcoded generateMicroAssessment removed - using generateMicroAssessmentAgentically from agenticAssessmentHelper.js
+
+async function evaluateMicroAssessmentAnswer({ question, expectedPoints = [], answer, objective, model }) {
+  try {
+    const prompt = `Evaluate a learner answer to a micro-assessment.
+Return strict JSON only with keys: score (0-100 number), passed (boolean), feedback (string), remediation (string).
+
+Objective: ${objective}
+Question: ${question}
+Expected points: ${expectedPoints.join(", ") || "N/A"}
+Learner answer: ${answer}
+`;
+    const result = await model.generateContent(prompt);
+    const text = result?.response?.text?.() || "";
+    const jsonText = extractJsonBlock(text);
+    const parsed = jsonText ? JSON.parse(jsonText) : null;
+    if (!parsed) throw new Error("invalid-eval-json");
+
+    const score = Math.max(0, Math.min(100, Number(parsed.score) || 0));
+    const passed = typeof parsed.passed === "boolean" ? parsed.passed : score >= MASTERY_PASS_SCORE;
+    return {
+      score,
+      passed,
+      feedback: String(parsed.feedback || "Good effort. Keep practicing.").trim(),
+      remediation: String(parsed.remediation || "Review the core idea once and try again.").trim(),
+    };
+  } catch (error) {
+    const normalizedAnswer = stripHtmlTags(answer).toLowerCase();
+    const hintsHit = expectedPoints.filter((point) =>
+      normalizedAnswer.includes(String(point || "").toLowerCase())
+    ).length;
+    const score = expectedPoints.length > 0
+      ? Math.round((hintsHit / expectedPoints.length) * 100)
+      : Math.min(100, normalizedAnswer.length >= 25 ? 70 : 50);
+    const passed = score >= MASTERY_PASS_SCORE;
+    return {
+      score,
+      passed,
+      feedback: passed
+        ? "Nice work. You captured the main points."
+        : "You are close, but a few key points are missing.",
+      remediation: passed
+        ? "Try applying this in one practical example now."
+        : "Revisit the concept definition and explain one use case in your own words.",
+    };
+  }
+}
+
+function formatAssessmentFeedbackHtml(result) {
+  const color = result.passed ? "#00FFB3" : "#FFB366";
+  const title = result.passed ? "Micro-Assessment Passed" : "Micro-Assessment Feedback";
+  return `<div style="margin-top: 14px; border-left: 4px solid ${color}; background: ${color}22; padding: 10px; border-radius: 6px;">
+<div style="font-weight: 600; color: ${color}; margin-bottom: 4px;">${title} (${result.score}%)</div>
+<div style="color: #E0EAF5; font-size: 14px; margin-bottom: 6px;">${result.feedback}</div>
+<div style="color: #BBD6EA; font-size: 13px;"><b>Next step:</b> ${result.remediation}</div>
+</div>`;
+}
+
+async function generateLearningArtifacts({ model, sessions = [], moduleTitle = "Training" }) {
+  const sessionLines = sessions
+    .slice(-14)
+    .map((session) => {
+      const lines = (session.messages || [])
+        .slice(-10)
+        .map((m) => `${m?.from === "user" ? "User" : "Assistant"}: ${stripHtmlTags(m?.text || "")}`)
+        .filter(Boolean)
+        .join("\n");
+      return `Date ${session.dateKey} (${session.moduleTitle || moduleTitle})\n${lines}`;
+    })
+    .join("\n\n")
+    .slice(0, 14000);
+
+  if (!sessionLines) {
+    return {
+      learningNotes: ["Start chatting with the assistant to generate personalized learning notes."],
+      revisionCards: [],
+      masteredThisWeek: ["No mastery data yet for this week."],
+      weekKey: getWeekKey(),
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  try {
+    const prompt = `You are a learning artifact agent.
+From the chat transcript below, return strict JSON with keys:
+- learningNotes: array of 5 to 8 short bullet strings
+- revisionCards: array of objects with keys question and answer (3 to 6 cards)
+- masteredThisWeek: array of 3 to 6 concise achievements
+
+Rules:
+- Keep wording simple for freshers.
+- Prefer evidence from user messages and assistant explanations.
+- Do not include markdown.
+
+Transcript:
+${sessionLines}`;
+
+    const result = await model.generateContent(prompt);
+    const text = result?.response?.text?.() || "";
+    const jsonText = extractJsonBlock(text);
+    const parsed = jsonText ? JSON.parse(jsonText) : null;
+
+    if (!parsed) throw new Error("artifact-json-missing");
+
+    const learningNotes = Array.isArray(parsed.learningNotes)
+      ? parsed.learningNotes.map((item) => String(item).trim()).filter(Boolean).slice(0, 8)
+      : [];
+    const revisionCards = Array.isArray(parsed.revisionCards)
+      ? parsed.revisionCards
+          .map((card) => ({
+            question: String(card?.question || "").trim(),
+            answer: String(card?.answer || "").trim(),
+          }))
+          .filter((card) => card.question && card.answer)
+          .slice(0, 6)
+      : [];
+    const masteredThisWeek = Array.isArray(parsed.masteredThisWeek)
+      ? parsed.masteredThisWeek.map((item) => String(item).trim()).filter(Boolean).slice(0, 6)
+      : [];
+
+    return {
+      learningNotes: learningNotes.length > 0 ? learningNotes : ["Notes are being built from your latest chats."],
+      revisionCards,
+      masteredThisWeek: masteredThisWeek.length > 0 ? masteredThisWeek : ["Continue daily practice to unlock mastery highlights."],
+      weekKey: getWeekKey(),
+      generatedAt: new Date().toISOString(),
+    };
+  } catch (error) {
+    const fallbackNotes = [];
+    const fallbackCards = [];
+    for (const session of sessions.slice(-7)) {
+      for (const message of (session.messages || []).slice(-8)) {
+        const text = stripHtmlTags(message?.text || "");
+        if (!text) continue;
+        if (message?.from === "assistant" && fallbackNotes.length < 6) {
+          fallbackNotes.push(text.slice(0, 160));
+        }
+        if (message?.from === "user" && /\?$/.test(text) && fallbackCards.length < 4) {
+          fallbackCards.push({
+            question: text.slice(0, 140),
+            answer: "Review this question and explain it in your own words before checking notes.",
+          });
+        }
+      }
+    }
+
+    return {
+      learningNotes: fallbackNotes.length > 0 ? fallbackNotes : ["Continue chatting to build notes."],
+      revisionCards: fallbackCards,
+      masteredThisWeek: ["Consistent participation in training conversations."],
+      weekKey: getWeekKey(),
+      generatedAt: new Date().toISOString(),
+    };
+  }
+}
+
+function renderLearningArtifactsHtml(artifacts) {
+  const notesHtml = (artifacts.learningNotes || [])
+    .map((note) => `<li>${note}</li>`)
+    .join("");
+  const cardsHtml = (artifacts.revisionCards || [])
+    .map(
+      (card) =>
+        `<li><b>Q:</b> ${card.question}<br/><b>A:</b> ${card.answer}</li>`
+    )
+    .join("");
+  const masteredHtml = (artifacts.masteredThisWeek || [])
+    .map((item) => `<li>${item}</li>`)
+    .join("");
+
+  return `<div style="line-height: 1.7;">
+<h3 style="color:#00FFFF; margin: 0 0 8px;">My Learning Notes</h3>
+<ul>${notesHtml || "<li>No notes yet.</li>"}</ul>
+<h3 style="color:#00FFFF; margin: 14px 0 8px;">Revision Cards</h3>
+<ul>${cardsHtml || "<li>No revision cards yet.</li>"}</ul>
+<h3 style="color:#00FFFF; margin: 14px 0 8px;">What I Mastered This Week</h3>
+<ul>${masteredHtml || "<li>No mastery highlights yet.</li>"}</ul>
+</div>`;
+}
 
 function shouldEmitThrottledLog(key, ttlMs = LOG_THROTTLE_MS) {
   const now = Date.now();
@@ -982,7 +1374,11 @@ You've completed all training modules.
     let firstTimeToday = false;
     if (!chatSnap.exists) {
       firstTimeToday = true;
-      await chatSessionRef.set({ startedAt: new Date(), messages: [] });
+      await chatSessionRef.set({
+        startedAt: new Date(),
+        messages: [],
+        coachingFlow: getDefaultCoachingFlow(finalModuleData, userData),
+      });
     }
 
     // ✅ Company onboarding info (keep it for later, but don’t send now)
@@ -999,12 +1395,17 @@ You've completed all training modules.
     });
 
     // Store companyDescription in chat metadata or session for LLM use
+    const existingFlow = mergeCoachingFlow(chatSnap.exists ? chatSnap.data()?.coachingFlow : null, finalModuleData, userData);
     await chatSessionRef.update({ 
       companyDescription, 
       missedCount: missedDateInfo.missedCount,
       activeDays: missedDateInfo.activeDays,
       totalExpectedDays: missedDateInfo.totalExpectedDays,
-      streak: missedDateInfo.streak
+      streak: missedDateInfo.streak,
+      coachingFlow: {
+        ...existingFlow,
+        updatedAt: new Date().toISOString(),
+      }
     });
 
     // Update user document with live stats
@@ -1055,6 +1456,11 @@ You've completed all training modules.
 <div style="color: #00FFFF; font-size: 18px; font-weight: 600; margin-bottom: 12px; border-bottom: 2px solid #00FFFF; padding-bottom: 8px;">
 Welcome to Day ${dayNumber} of ${totalDays}
 </div>
+
+    <div style="background:#00FFFF1A; border-left: 4px solid #00FFFF; padding: 10px; border-radius: 6px; margin-bottom: 12px;">
+    <div style="color:#00FFFF; font-weight:600; margin-bottom:4px;">Onboarding Flow</div>
+    <div style="color:#D5ECFF; font-size:14px;">Stage: Welcome -> Role Setup -> Baseline Assessment -> Learning Plan -> Daily Coach -> Weekly Checkpoint -> Final Readiness</div>
+    </div>
 
 <div style="color: #FFFFFF; font-size: 16px; font-weight: 500; margin-bottom: 16px;">
 ${finalModuleData.moduleTitle}
@@ -1108,7 +1514,7 @@ Your active module is <span style="color: #FFFFFF; font-weight: 500;">${finalMod
 
 export const chatController = async (req, res) => {
   try {
-    const { userId, companyId, deptId, newMessage } = req.body;
+    const { userId, companyId, deptId, newMessage, replyTo } = req.body;
     if (!userId || !companyId || !deptId || !newMessage) {
       return res.json({ reply: "Missing parameters" });
     }
@@ -1207,14 +1613,22 @@ About: ${description}
       .doc(today);
 
     const chatSessionSnap = await chatSessionRef.get();
+    const chatSessionData = chatSessionSnap.exists ? chatSessionSnap.data() : {};
     const existingMessages = chatSessionSnap.exists
       ? chatSessionSnap.data()?.messages || []
       : [];
     const isFirstMessageToday = !chatSessionSnap.exists;
     
     if (isFirstMessageToday) {
-      await chatSessionRef.set({ startedAt: new Date(), messages: [] });
+      await chatSessionRef.set({
+        startedAt: new Date(),
+        messages: [],
+        coachingFlow: getDefaultCoachingFlow(finalModuleData, userData),
+      });
     }
+
+    let coachingFlow = mergeCoachingFlow(chatSessionData?.coachingFlow, finalModuleData, userData);
+    coachingFlow.turnCount = Number(coachingFlow.turnCount || 0) + 1;
 
     /* ---------- MEMORY (DYNAMIC) ---------- */
     const memoryData = await getAgentMemory({
@@ -1238,6 +1652,30 @@ About: ${description}
 
     /* ---------- CHECK FOR UNLOCK-RELATED QUESTIONS ---------- */
     const messageLower = String(newMessage || "").toLowerCase();
+    // Reply-to context handling: prefer explicit reply, else if short reply assume it's answering last bot message
+    const stripHtmlServer = (html) => String(html || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+    let replyContext = null;
+    try {
+      if (replyTo && replyTo.text) {
+        replyContext = `User replied to: "${stripHtmlServer(replyTo.text).slice(0,1000)}"`;
+      } else {
+        // If no explicit replyTo, and the user reply is short/ambiguous, attach last bot message as context
+        const shortReply = /^(idk|i don't know|dont know|not sure|maybe|i guess|no idea)$|^\w+(\s+\w+){0,3}$/i.test(messageLower.trim());
+        if (shortReply) {
+          const lastBot = existingMessages.slice().reverse().find(m => m.from === 'bot');
+          if (lastBot && lastBot.text) {
+            replyContext = `User likely responded to: "${stripHtmlServer(lastBot.text).slice(0,1000)}"`;
+          }
+        }
+      }
+    } catch (err) {
+      // ignore
+      replyContext = null;
+    }
+    if (replyContext) {
+      console.debug(`[CHAT][replyTo] user=${userId} replyTo=${JSON.stringify(replyTo)} replyContext=${replyContext.slice(0,200)}`);
+    }
+    const artifactIntent = /\b(my learning notes|learning notes|revision cards?|what i mastered this week|mastered this week|my notes)\b/i.test(messageLower);
     const historyIntent = /\b(what (have|did) (i|we) (study|learn)|studied so far|learned so far|summary of (my|our) chats|previous chats?|recap|revise|revision|what did we cover)\b/i.test(messageLower);
     const explainIntent = /\b(explain|easy words|simple words|summarize|what does this mean|meaning)\b/i.test(messageLower);
     const simplifyIntent = /\b(in simple words|simple words|easy words|plain english|for beginner|as a beginner|eli5|like i(?: am|'m)? five|simplify|in easy language)\b/i.test(messageLower);
@@ -1259,6 +1697,84 @@ About: ${description}
     const hasUnlockIntent = unlockIntentPatterns.some((pattern) => pattern.test(messageLower));
     const hasModuleContext = moduleContextKeywords.some((keyword) => messageLower.includes(keyword));
     const isUnlockQuestion = !explainIntent && hasUnlockIntent && hasModuleContext;
+
+    const shouldAttemptAssessmentEvaluation = Boolean(coachingFlow.pendingAssessment);
+    let assessmentResult = null;
+
+    if (shouldAttemptAssessmentEvaluation) {
+      assessmentResult = await evaluateMicroAssessmentAnswer({
+        question: coachingFlow.pendingAssessment.question,
+        expectedPoints: coachingFlow.pendingAssessment.expectedPoints || [],
+        answer: newMessage,
+        objective: coachingFlow.objective,
+        model: initializeChatModel(),
+      });
+
+      coachingFlow.assessments = coachingFlow.assessments || { asked: 0, passed: 0, failed: 0, lastScore: null };
+      coachingFlow.assessments.lastScore = assessmentResult.score;
+      if (assessmentResult.passed) {
+        coachingFlow.assessments.passed = Number(coachingFlow.assessments.passed || 0) + 1;
+      } else {
+        coachingFlow.assessments.failed = Number(coachingFlow.assessments.failed || 0) + 1;
+      }
+      coachingFlow.pendingAssessment = null;
+
+      if (assessmentResult.passed && assessmentResult.score >= 85) {
+        coachingFlow.objectiveStatus = "mastered";
+      } else if (assessmentResult.passed) {
+        coachingFlow.objectiveStatus = "progressing";
+      } else {
+        coachingFlow.objectiveStatus = "needs_remediation";
+      }
+    }
+
+    coachingFlow = maybeAdvanceOnboardingStage(coachingFlow, {
+      hasAssessmentSignal: Boolean(assessmentResult),
+      isObjectiveStrong: Number(coachingFlow?.assessments?.lastScore || 0) >= 80,
+      askForCheckpoint: coachingFlow.turnCount >= 12,
+    });
+
+    if (artifactIntent) {
+      const artifactSessions = await collectCrossModuleChatSessions(roadmapRef, comprehensiveCheck.allModules || []);
+      const artifacts = await generateLearningArtifacts({
+        model: initializeChatModel(),
+        sessions: artifactSessions,
+        moduleTitle: finalModuleData.moduleTitle,
+      });
+
+      await userRef.set(
+        {
+          learningArtifacts: {
+            ...artifacts,
+            updatedAt: new Date(),
+          },
+        },
+        { merge: true }
+      );
+
+      const artifactsReply = renderLearningArtifactsHtml(artifacts);
+
+      await chatSessionRef.set(
+        {
+          coachingFlow: {
+            ...coachingFlow,
+            updatedAt: new Date().toISOString(),
+          },
+          messages: admin.firestore.FieldValue.arrayUnion(
+            { from: "user", text: newMessage, timestamp: new Date() },
+            { from: "bot", text: artifactsReply, timestamp: new Date() }
+          ),
+        },
+        { merge: true }
+      );
+
+      return res.json({
+        reply: artifactsReply,
+        askForFeedback: false,
+        botRepliesToday: existingMessages.filter((message) => message?.from === "bot").length + 1,
+        stage: coachingFlow.currentStage,
+      });
+    }
 
     if (isUnlockQuestion) {
       const unlockResponse = `I understand you're asking about module progression and unlocking. 
@@ -1471,6 +1987,25 @@ Skills Covered So Far: ${skillProgress.actualSkillsCovered.length > 0 ? skillPro
 Skills Still to Cover: ${finalModuleData.skillsCovered ? finalModuleData.skillsCovered.filter(s => !skillProgress.actualSkillsCovered.includes(s)).join(", ") : "N/A"}` 
   : `Time-Based Progress: ${calculateTrainingProgress(finalModuleData, moduleStartDate).remainingDays} days remaining to complete this module`}
 
+ONBOARDING FLOW STATE:
+Current Stage: ${coachingFlow.currentStage}
+Stage Sequence: ${ONBOARDING_STAGE_ORDER.join(" -> ")}
+Turn Count Today: ${coachingFlow.turnCount}
+
+PEDAGOGICAL CONTROL:
+Session Objective: ${coachingFlow.objective}
+Objective Status: ${coachingFlow.objectiveStatus}
+Assessments Asked: ${Number(coachingFlow?.assessments?.asked || 0)}
+Assessments Passed: ${Number(coachingFlow?.assessments?.passed || 0)}
+Last Assessment Score: ${coachingFlow?.assessments?.lastScore ?? "N/A"}
+${assessmentResult ? `
+Latest Assessment Result:
+- Score: ${assessmentResult.score}
+- Passed: ${assessmentResult.passed ? "yes" : "no"}
+- Feedback: ${assessmentResult.feedback}
+- Remediation: ${assessmentResult.remediation}
+` : ""}
+
 AGENTIC GUIDELINES:
 - You have access to company training materials AND external sources (MDN, StackOverflow, Dev.to)
 - Adapt style based on recent user feedback (pace, clarity, and depth)
@@ -1505,6 +2040,16 @@ AGENTIC RESPONSE POLICY:
 - Give at least one concrete next action the learner can do now.
 - If the user asks how to do something, provide an ordered mini plan.
 - If user asks concept-only questions, explain briefly first, then add "what to do next".
+- Use stage-aware coaching:
+  - welcome: short welcome + confirm learner goal
+  - role_setup: ask one short question about role/context
+  - baseline_assessment: ask one diagnostic question
+  - learning_plan: give a mini plan for this session
+  - daily_coach: teach + check understanding
+  - weekly_checkpoint: summarize progress + gaps
+  - final_readiness: confirm mastery and final prep
+- Enforce pedagogy loop each response where possible: objective set -> teach -> check understanding -> quick quiz -> remediation.
+- If objectiveStatus is "needs_remediation", reduce depth first, then reteach with one simple example before advancing.
 - User explicitly requested simplification: ${simplifyIntent ? "yes" : "no"}
 - Prefer this structure for concise mode:
   - Only when user explicitly requested simplification: <p><b>In simple words:</b> ...</p>
@@ -1531,8 +2076,19 @@ STRICT RULES:
 - When asked to create a learning plan or divide remaining time, use the "Days Remaining" and "Skills to Learn" to create a structured day-by-day plan
 - For learning plan requests: Break down skills across available days, prioritize fundamentals first, include practice time
 - Give practical examples when helpful
-- Use <b>, <i>, <ul>, <li>, <p> HTML tags for formatting
-- Do NOT use markdown formatting (no **, ##, __, etc.)
+
+FORMATTING REQUIREMENTS (CRITICAL):
+- ALWAYS format responses using HTML tags ONLY - never use markdown
+- Bold text: <b>text</b> (NOT **text**)
+- Italic text: <i>text</i> (NOT _text_)
+- Headings: <h3>Section Title</h3>
+- Paragraphs: <p>text content</p>
+- Bullet lists: <ul><li>item</li><li>item</li></ul>
+- Numbered lists: <ol><li>item</li><li>item</li></ol>
+- Code snippets: <code>code</code> for inline, <pre><code>multi-line code</code></pre> for blocks
+- Line breaks: Use </p><p> between paragraphs, NOT \n\n
+- NEVER use markdown formatting (no **, ##, __, --, etc.)
+- Structure all content with semantic HTML tags for clean rendering
 ${weaknessWelcome ? '' : '- NEVER repeat greetings or introductions\n'}- NEVER repeat step numbers or progress status (e.g., "You've completed 2 of 6 steps")
 - NEVER say "ready to dive", "let's move on", or similar transition phrases
 - Get straight to answering the question with teaching content
@@ -1552,6 +2108,7 @@ ${crossModuleHistory.summary}
 
 USER MESSAGE:
 ${newMessage}
+${replyContext ? `\nREPLY CONTEXT:\n${replyContext}\n` : ""}
 
 RESPOND WITH: Direct educational content addressing the question, using both company materials and external sources intelligently. No progress updates or step announcements.
 `;
@@ -1561,6 +2118,8 @@ RESPOND WITH: Direct educational content addressing the question, using both com
     let botReply =
       completion?.response?.text() ||
       "I’m here to help with your training module.";
+  // Convert markdown to HTML (safety net for LLM responses)
+  botReply = markdownToHtml(botReply);
 
     // Safety net in case model misses the prompt rule.
     // Only append when there is no question at all, to avoid duplicate end questions.
@@ -1577,13 +2136,41 @@ RESPOND WITH: Direct educational content addressing the question, using both com
         .replace(/^\s*In simple words:\s*/i, "");
     }
 
+    if (assessmentResult) {
+      botReply = `${botReply}\n\n${formatAssessmentFeedbackHtml(assessmentResult)}`;
+    }
+
+    if (shouldAskMicroAssessment(coachingFlow)) {
+      const microAssessment = await generateMicroAssessmentAgentically({
+        objective: coachingFlow.objective,
+        moduleTitle: finalModuleData.moduleTitle,
+        model: initializeChatModel(),
+        conversationHistory: existingMessages,
+      });
+
+      coachingFlow.pendingAssessment = {
+        ...microAssessment,
+        askedAt: new Date().toISOString(),
+      };
+      coachingFlow.assessments = coachingFlow.assessments || { asked: 0, passed: 0, failed: 0, lastScore: null };
+      coachingFlow.assessments.asked = Number(coachingFlow.assessments.asked || 0) + 1;
+
+      botReply = `${botReply}\n\n<div style="margin-top: 12px; border-left: 4px solid #00FFFF; background: #00FFFF1A; padding: 10px; border-radius: 6px;">
+<div style="color:#00FFFF; font-weight:600; margin-bottom:4px;">Quick Micro-Assessment</div>
+<div style="color:#E0EAF5; font-size:14px;">${microAssessment.question}</div>
+</div>`;
+    }
+
+    coachingFlow.updatedAt = new Date().toISOString();
+
     /* ---------- SAVE CHAT ---------- */
-    await chatSessionRef.update({
+    await chatSessionRef.set({
+      coachingFlow,
       messages: admin.firestore.FieldValue.arrayUnion(
         { from: "user", text: newMessage, timestamp: new Date() },
         { from: "bot", text: botReply, timestamp: new Date() }
       ),
-    });
+    }, { merge: true });
 
     const botRepliesToday =
       existingMessages.filter((message) => message?.from === "bot").length + 1;
@@ -1605,6 +2192,8 @@ RESPOND WITH: Direct educational content addressing the question, using both com
       sourceUsed: relevantDocs.length > 0,
       askForFeedback,
       botRepliesToday,
+      stage: coachingFlow.currentStage,
+      objectiveStatus: coachingFlow.objectiveStatus,
     });
 
   } catch (err) {
@@ -1881,5 +2470,75 @@ export const getMissedDatesController = async (req, res) => {
       success: false,
       error: "Failed to get missed dates"
     });
+  }
+};
+
+export const getLearningArtifactsController = async (req, res) => {
+  try {
+    const { userId, companyId, deptId } = req.body;
+
+    if (!userId || !companyId || !deptId) {
+      return res.status(400).json({ success: false, error: "Missing required identifiers" });
+    }
+
+    const userRef = db
+      .collection("freshers")
+      .doc(companyId)
+      .collection("departments")
+      .doc(deptId)
+      .collection("users")
+      .doc(userId);
+
+    const userSnap = await userRef.get();
+    const userData = userSnap.exists ? userSnap.data() : {};
+    const cachedArtifacts = userData?.learningArtifacts;
+
+    if (cachedArtifacts?.weekKey === getWeekKey() && Array.isArray(cachedArtifacts?.learningNotes) && cachedArtifacts.learningNotes.length > 0) {
+      return res.json({
+        success: true,
+        artifacts: {
+          learningNotes: cachedArtifacts.learningNotes || [],
+          revisionCards: cachedArtifacts.revisionCards || [],
+          masteredThisWeek: cachedArtifacts.masteredThisWeek || [],
+          weekKey: cachedArtifacts.weekKey,
+          generatedAt: cachedArtifacts.generatedAt || null,
+          source: "cache",
+        },
+      });
+    }
+
+    const roadmapRef = userRef.collection("roadmap");
+    const roadmapSnap = await roadmapRef.get();
+    const modules = roadmapSnap.docs
+      .map((doc) => ({ id: doc.id, data: doc.data() }))
+      .sort((a, b) => (a.data.order || 0) - (b.data.order || 0));
+
+    const sessions = await collectCrossModuleChatSessions(roadmapRef, modules);
+    const artifacts = await generateLearningArtifacts({
+      model: initializeChatModel(),
+      sessions,
+      moduleTitle: modules[0]?.data?.moduleTitle || "Training",
+    });
+
+    await userRef.set(
+      {
+        learningArtifacts: {
+          ...artifacts,
+          updatedAt: new Date(),
+        },
+      },
+      { merge: true }
+    );
+
+    return res.json({
+      success: true,
+      artifacts: {
+        ...artifacts,
+        source: "generated",
+      },
+    });
+  } catch (error) {
+    console.error("❌ getLearningArtifactsController error:", error);
+    return res.status(500).json({ success: false, error: "Failed to generate learning artifacts" });
   }
 };
