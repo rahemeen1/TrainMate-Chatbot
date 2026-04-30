@@ -546,7 +546,7 @@ useEffect(() => {
       </style>
 
       {/* MAIN */}
-      <div className="h-full min-h-0 flex flex-col overflow-hidden">
+      <div className="h-full min-h-0 flex flex-col overflow-hidden relative">
 
         {/* HEADER */}
         <div className="bg-gradient-to-r from-[#021B36]/95 via-[#031C3A]/90 to-[#021B36]/95 px-4 py-3 sm:p-4 md:p-5 border-b border-[#00FFFF40] flex flex-col gap-3 sm:gap-3 sm:flex-row sm:justify-between sm:items-center flex-none">
@@ -606,10 +606,10 @@ useEffect(() => {
       
      
 {/* CHAT CONTAINER */}
-<div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+<div className="flex-1 min-h-0 flex flex-col overflow-hidden relative">
 
   {/* CHAT MESSAGES - SCROLLABLE */}
-  <div ref={messagesScrollRef} className="flex-1 min-h-0 overflow-y-auto scroll-smooth px-3 sm:px-5 md:px-8 pt-5 sm:pt-6 md:pt-8 pb-24 sm:pb-28 md:pb-32">
+  <div ref={messagesScrollRef} className="flex-1 min-h-0 overflow-y-auto scroll-smooth px-3 sm:px-5 md:px-8 pt-5 sm:pt-6 md:pt-8 pb-32 sm:pb-36 md:pb-40">
    {messages.map((msg, i) => (
   <div key={i} className="mb-5 sm:mb-6">
     <div className={`flex items-start gap-0 sm:gap-3 ${msg.from === "user" ? "justify-end" : "justify-start"}`}>
@@ -662,7 +662,8 @@ useEffect(() => {
         </div>
 
         {/* INPUT */}
-        <div className="mt-auto sticky bottom-0 z-10 px-3 sm:px-5 md:px-8 pt-3 sm:pt-4 pb-[calc(env(safe-area-inset-bottom)+10px)] sm:pb-[calc(env(safe-area-inset-bottom)+12px)] border-t border-[#00FFFF50] flex gap-2 items-end bg-[#021B36]/95 backdrop-blur-sm flex-none">
+        <div className="fixed bottom-0 left-0 right-0 sm:sticky z-10 px-3 sm:px-5 md:px-8 pt-3 sm:pt-4 pb-[calc(env(safe-area-inset-bottom)+10px)] sm:pb-[calc(env(safe-area-inset-bottom)+12px)] border-t border-[#00FFFF50] flex gap-2 items-end bg-[#021B36]/95 backdrop-blur-sm flex-none max-w-full"
+          style={{ maxWidth: '100%' }}>
           <textarea
             disabled={mode === "read"}
             value={input}

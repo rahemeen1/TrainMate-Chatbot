@@ -607,6 +607,146 @@ async function getMissedDates(companyId, deptId, userId, moduleIds, startDate) {
     };
   }
 }
+
+async function collectCrossModuleChatSessions(roadmapRef, modules = []) {
+  if (!modules.length) return [];
+
+  const sessionSnaps = await Promise.all(
+    modules.map((module) =>
+      roadmapRef.doc(module.id).collection("chatSessions").get()
+    )
+  );
+
+  const sessions = [];
+
+  sessionSnaps.forEach((snap, index) => {
+    const module = modules[index];
+    const moduleTitle = module?.data?.moduleTitle || `Module ${module?.data?.order || ""}`.trim();
+    snap.forEach((docSnap) => {
+      sessions.push({
+        moduleId: module.id,
+        moduleTitle,
+        moduleOrder: module?.data?.order || 0,
+        dateKey: docSnap.id,
+        messages: docSnap.data()?.messages || [],
+      });
+    });
+  });
+
+  return sessions.sort((a, b) => {
+    if (a.dateKey === b.dateKey) {
+      return (a.moduleOrder || 0) - (b.moduleOrder || 0);
+    }
+    return a.dateKey < b.dateKey ? -1 : 1;
+  });
+}
+
+function buildCrossModuleDigestFromSessions(sessions = [], currentModuleId) {
+  if (!sessions.length) {
+    return {
+      digestText: "No prior cross-module chat history available.",
+      stats: {
+        modulesTouched: 0,
+        totalSessions: 0,
+        totalMessages: 0,
+      },
+    };
+  }
+
+  const modulesTouched = new Set();
+  let totalMessages = 0;
+
+  const digestBlocks = sessions.map((session) => {
+    modulesTouched.add(session.moduleTitle);
+    const messageLines = (session.messages || [])
+      .slice(-8)
+      .map((m) => {
+        const role = m?.from === "user" ? "User" : "Assistant";
+        const text = String(m?.text || "")
+          .replace(/<[^>]*>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+        return text ? `${role}: ${text}` : null;
+      })
+      .filter(Boolean);
+
+    totalMessages += messageLines.length;
+
+    const currentTag = session.moduleId === currentModuleId ? " [Current Module]" : "";
+    return `Date: ${session.dateKey} | Module: ${session.moduleTitle}${currentTag}\n${messageLines.join("\n")}`;
+  });
+
+  return {
+    digestText: digestBlocks.join("\n\n").slice(0, 14000),
+    stats: {
+      modulesTouched: modulesTouched.size,
+      totalSessions: sessions.length,
+      totalMessages,
+    },
+  };
+}
+
+async function buildCrossModuleLearningSummary({
+  model,
+  roadmapRef,
+  modules = [],
+  currentModuleId,
+  includeSummary,
+}) {
+  if (!includeSummary) {
+    return {
+      summary: "Cross-module summary skipped (not requested by intent).",
+      stats: {
+        modulesTouched: 0,
+        totalSessions: 0,
+        totalMessages: 0,
+      },
+    };
+  }
+
+  const sessions = await collectCrossModuleChatSessions(roadmapRef, modules);
+  const { digestText, stats } = buildCrossModuleDigestFromSessions(sessions, currentModuleId);
+
+  if (!sessions.length) {
+    return {
+      summary: "No previous cross-module conversations found yet.",
+      stats,
+    };
+  }
+
+  const summaryPrompt = `
+You are a learning-memory agent.
+
+Summarize what the learner has studied so far across ALL training modules using the chat history digest below.
+
+Rules:
+1. Focus only on learning content, concepts, and practical topics discussed.
+2. Mention modules/topics already covered and open gaps if visible.
+3. Keep concise: max 7 bullet points in plain text.
+4. Avoid greetings, status messages, and progress slogans.
+5. If evidence is weak, explicitly say "insufficient evidence" for that part.
+
+CHAT DIGEST:
+${digestText}
+
+Return only the summary bullets.
+`;
+
+  try {
+    const result = await model.generateContent(summaryPrompt);
+    const text = result?.response?.text?.()?.trim();
+    return {
+      summary: text || "Unable to generate cross-module learning summary.",
+      stats,
+    };
+  } catch (error) {
+    console.warn("⚠️ Cross-module summary generation failed:", error.message);
+    return {
+      summary: "Cross-module summary unavailable right now.",
+      stats,
+    };
+  }
+}
       
 
 /* ================= PINECONE ================= */
@@ -1098,6 +1238,7 @@ About: ${description}
 
     /* ---------- CHECK FOR UNLOCK-RELATED QUESTIONS ---------- */
     const messageLower = String(newMessage || "").toLowerCase();
+    const historyIntent = /\b(what (have|did) (i|we) (study|learn)|studied so far|learned so far|summary of (my|our) chats|previous chats?|recap|revise|revision|what did we cover)\b/i.test(messageLower);
     const explainIntent = /\b(explain|easy words|simple words|summarize|what does this mean|meaning)\b/i.test(messageLower);
     const simplifyIntent = /\b(in simple words|simple words|easy words|plain english|for beginner|as a beginner|eli5|like i(?: am|'m)? five|simplify|in easy language)\b/i.test(messageLower);
     const detailedIntent = /\b(detailed|in detail|deep dive|comprehensive|thorough|elaborate|step by step|full explanation|long explanation|explain deeply)\b/i.test(messageLower);
@@ -1288,6 +1429,15 @@ I will focus our conversation on strengthening these areas. Let's start from the
         ? contextParts.join("\n\n")
         : "No additional context.";
 
+    /* ---------- CROSS-MODULE HISTORY SUMMARY (AGENTIC) ---------- */
+    const crossModuleHistory = await buildCrossModuleLearningSummary({
+      model: initializeChatModel(),
+      roadmapRef,
+      modules: comprehensiveCheck.allModules,
+      currentModuleId: finalActiveModule.id,
+      includeSummary: historyIntent,
+    });
+
     /* ---------- PROMPT ---------- */
     const finalPrompt = `
 SYSTEM ROLE:
@@ -1326,6 +1476,7 @@ AGENTIC GUIDELINES:
 - Adapt style based on recent user feedback (pace, clarity, and depth)
 - Prioritize company training materials for module-specific content
 - Use external sources for general programming concepts, best practices, or when depth is needed
+- If user asks what they studied so far or asks for a recap/revision, use HISTORICAL LEARNING SUMMARY as the primary source and answer across modules.
 - Adjust explanation depth based on Training Level: "easy" = simple terms, "medium" = moderate depth, "hard" = advanced/in-depth
 - When external source is highly relevant, cite it: "<b>Source: MDN / StackOverflow / Dev.to</b>"
 - Combine company knowledge with external expertise for richer answers
@@ -1374,6 +1525,7 @@ STRICT RULES:
 - When asked about the company, ALWAYS check the COMPANY INFORMATION section above first
 - If COMPANY INFORMATION shows "Not available", then say you don't have company details
 - If COMPANY INFORMATION has an "About" field, use that to answer questions about the company
+- For "what we studied so far" type questions, answer from HISTORICAL LEARNING SUMMARY across all modules and keep it evidence-based.
 - When asked about "how many days left", "time remaining", or "deadline", use the "Days Remaining" value from ACTIVE MODULE section
 - When asked about "what will I learn", "module content", or "skills to cover", reference the "Skills to Learn" and "Description" from ACTIVE MODULE section
 - When asked to create a learning plan or divide remaining time, use the "Days Remaining" and "Skills to Learn" to create a structured day-by-day plan
@@ -1390,6 +1542,13 @@ ${weaknessWelcome ? '' : '- NEVER repeat greetings or introductions\n'}- NEVER r
 
 CONTEXT:
 ${context}
+
+HISTORICAL LEARNING SUMMARY (ALL MODULES):
+Requested by user intent: ${historyIntent ? "yes" : "no"}
+Modules touched: ${crossModuleHistory.stats.modulesTouched}
+Total prior chat sessions: ${crossModuleHistory.stats.totalSessions}
+Total summarized messages: ${crossModuleHistory.stats.totalMessages}
+${crossModuleHistory.summary}
 
 USER MESSAGE:
 ${newMessage}
