@@ -3,9 +3,8 @@ import { getPineconeIndex } from "../config/pinecone.js";
 import { chunkText } from "../utils/chunkText.js";
 import { extractFileText } from "../utils/TextExtractor.js";
 
-/* ---------------------------------
-   NORMALIZE EMBEDDING VALUES
----------------------------------- */
+
+// NORMALIZE EMBEDDING VALUES
 const normalizeValues = (vals) => {
   if (Array.isArray(vals)) return vals.map(Number);
   if (ArrayBuffer.isView(vals)) return Array.from(vals).map(Number);
@@ -19,9 +18,8 @@ const normalizeValues = (vals) => {
   }
 };
 
-/* =================================
-   INGEST DOCUMENT INTO PINECONE
-================================= */
+
+//INGEST DOCUMENT INTO PINECONE
 export const ingestDocAsync = async ({
   fileUrl,
   companyId,
@@ -33,38 +31,31 @@ export const ingestDocAsync = async ({
   const cohereClient = getCohereClient();
 
   console.log("\n================ INGEST START =================");
-  console.log("📄 File:", fileName);
-  console.log("🏢 Company:", companyId);
-  console.log("🏷️ Dept:", deptName);
+  console.log("File:", fileName);
+  console.log("Company:", companyId);
+  console.log("Dept:", deptName);
 
   try {
-    /* ---------------------------------
-       1️⃣ LOAD FILE
-    ---------------------------------- */
+
     const fileBuffer = await fetch(fileUrl).then(r => r.arrayBuffer());
     const fileType = fileName.split(".").pop().toLowerCase();
 
-    console.log("📦 File type detected:", fileType);
+    console.log("File type detected:", fileType);
 
     const text = await extractFileText(fileBuffer, fileType);
 
-    console.log("📝 Extracted text length:", text?.length);
+    console.log("Extracted text length:", text?.length);
 
     if (!text || text.trim().length < 50) {
-      console.warn("⚠️ Extracted text is very small");
+      console.warn("Extracted text is very small");
     }
-
-    /* ---------------------------------
-       2️⃣ CHUNK TEXT
-    ---------------------------------- */
+    //CHUNK TEXT
     const chunks = chunkText(text, 500);
-    console.log("🧩 Total chunks created:", chunks.length);
+    console.log("Total chunks created:", chunks.length);
 
     const records = [];
 
-    /* ---------------------------------
-       3️⃣ CREATE EMBEDDINGS + RECORDS
-    ---------------------------------- */
+    //CREATE EMBEDDINGS + RECORDS
     for (const [i, chunk] of chunks.entries()) {
       console.log(`🔹 Embedding chunk ${i} (chars: ${chunk.length})`);
 
@@ -96,28 +87,27 @@ export const ingestDocAsync = async ({
           fileName,
           docId, 
           chunkIndex: i,
-          text: chunk, // ✅ CRITICAL FIX
+          text: chunk, 
         },
       });
     }
 
     console.log("📦 Total records prepared:", records.length);
 
-    /* ---------------------------------
-       4️⃣ UPSERT INTO PINECONE
-    ---------------------------------- */
+    
+    //UPSERT INTO PINECONE
     const namespace = `company-${companyId}`;
-    console.log("🧪 Pinecone namespace:", namespace);
+    console.log("Pinecone namespace:", namespace);
 
     await pineconeIndex
       .namespace(namespace)
       .upsert(records);
 
-    console.log("✅ Ingestion completed successfully");
+    console.log("Ingestion completed successfully");
     console.log("================ INGEST END ==================\n");
 
   } catch (err) {
-    console.error("🔥 [INGEST] Failed");
+    console.error("[INGEST] Failed");
     console.error(err?.stack || err);
     throw err;
   }

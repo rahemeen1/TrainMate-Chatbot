@@ -21,7 +21,7 @@ function initializeLLMs() {
   const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY);
 
   if (!hasGeminiKey) {
-    throw new Error("❌ GEMINI_API_KEY is required");
+    throw new Error("GEMINI_API_KEY is required");
   }
   
   if (hasGeminiKey) {
@@ -676,19 +676,11 @@ function buildStrictRoadmapValidation({ modules = [], mustHaveSkills = [], conte
   };
 }
 
-/**
- * AGENT ORCHESTRATOR SERVICE
- * 
- * Provides intelligent orchestration of multi-agent workflows
- * - Planner Agent: Decides execution plan
- * - Validator Agent: Checks output quality
- * - Aggregator Agent: Combines results
- * - Pivot Agent: Handles failures with alternatives
- */
+
 export class AgentOrchestrator {
   constructor() {
-    this.agents = new Map(); // Registry: { name: agent function }
-    this.executionHistory = []; // Audit log
+    this.agents = new Map(); 
+    this.executionHistory = []; 
     this.maxHistorySize = 100;
     this.coreAgentsRegistered = false;
     this.registerCoreAgents();
@@ -699,9 +691,9 @@ export class AgentOrchestrator {
       return;
     }
 
-    console.log('\n📋 Initializing Agent Registry...');
+    console.log('\nInitializing Agent Registry...');
 
-    // ==================== EXTRACTION AGENTS ====================
+    //EXTRACTION AGENTS
 
     this.registerAgent('extract-cv-skills', async ({ previousResults, context }) => {
       console.log('    🤖 CV Skills Agent: Analyzing CV...');
@@ -709,7 +701,7 @@ export class AgentOrchestrator {
 
       const { cvSkills, cvSkillProfiles, extractionDetails } = await extractSkillsAgentically({
         cvText,
-        companyDocsText: '', // Will be filled after company doc fetching
+        companyDocsText: '', 
         expertise,
         trainingOn,
         structuredCv,
@@ -725,7 +717,7 @@ export class AgentOrchestrator {
     });
 
     this.registerAgent('extract-company-skills', async ({ previousResults, context, retrievalConfig = {} }) => {
-      console.log('    🤖 Company Skills Agent: Analyzing company docs...');
+      console.log('  Company Skills Agent: Analyzing company docs...');
       const { companyDocsText, expertise, trainingOn, companyId, deptId } = context;
 
       let resolvedCompanyDocsText = String(companyDocsText || '').trim();
@@ -751,7 +743,7 @@ export class AgentOrchestrator {
             chars: resolvedCompanyDocsText.length,
           });
         } catch (error) {
-          console.warn('    ⚠️  Company Skills Agent preload retrieval failed:', error.message);
+          console.warn('  Company Skills Agent preload retrieval failed:', error.message);
         }
       }
 
@@ -772,7 +764,7 @@ export class AgentOrchestrator {
     });
 
     this.registerAgent('analyze-skill-gaps', async ({ previousResults, context }) => {
-      console.log('    🤖 Gap Analysis Agent: Identifying skill gaps...');
+      console.log('   Gap Analysis Agent: Identifying skill gaps...');
       const cvSkills = previousResults['extract-cv-skills']?.cvSkills || [];
       const companySkills = previousResults['extract-company-skills']?.companySkills || [];
       const cvSkillProfiles = previousResults['extract-cv-skills']?.cvSkillProfiles || [];
@@ -799,7 +791,7 @@ export class AgentOrchestrator {
             }))
           : [];
 
-        console.log('    📊 Gap confidence summary:', {
+        console.log('   Gap confidence summary:', {
           prioritized: Array.isArray(weighted?.prioritized) ? weighted.prioritized.length : 0,
           buckets: bucketCounts,
           topScored,
@@ -838,10 +830,10 @@ export class AgentOrchestrator {
       };
     });
 
-    // ==================== PLANNING AGENTS ====================
+    //PLANNING AGENTS
 
     this.registerAgent('plan-retrieval', async ({ previousResults, context }) => {
-      console.log('    🤖 Planning Agent: Creating retrieval strategy...');
+      console.log(' Planning Agent: Creating retrieval strategy...');
       const skillGap = previousResults['analyze-skill-gaps']?.skillGap || [];
       const explorationCandidates = previousResults['analyze-skill-gaps']?.explorationCandidates || [];
       const { trainingOn } = context;
@@ -899,7 +891,7 @@ Return JSON:
           };
         }
       } catch (error) {
-        console.warn('    ⚠️  Planner failed, using default');
+        console.warn('  Planner failed, using default');
       }
 
       return {
@@ -927,7 +919,7 @@ Return JSON:
           });
           allDocs.push(...docs);
         } catch (error) {
-          console.warn(`    ⚠️  Retrieval failed for query: ${query}`);
+          console.warn(`   Retrieval failed for query: ${query}`);
         }
       }
 
@@ -940,10 +932,10 @@ Return JSON:
       };
     });
 
-    // ==================== GENERATION AGENTS ====================
+    //GENERATION AGENTS 
 
     this.registerAgent('generate-roadmap', async ({ previousResults, context }) => {
-      console.log('    🤖 Roadmap Generation Agent: Creating learning roadmap...');
+      console.log(' Roadmap Generation Agent: Creating learning roadmap...');
 
       const skillGap = previousResults['analyze-skill-gaps']?.skillGap || [];
       const prioritizedSkills = previousResults['analyze-skill-gaps']?.gapBuckets || {
@@ -987,10 +979,10 @@ Return JSON:
       };
     });
 
-    // ==================== EVALUATION AGENTS ====================
+    //EVALUATION AGENTS
 
     this.registerAgent('evaluate-code', async ({ context }) => {
-      console.log('    🤖 Code Evaluation Agent: Evaluating code submission...');
+      console.log(' Code Evaluation Agent: Evaluating code submission...');
       const { userCode, testCases, question, language } = context;
 
       try {
@@ -1033,15 +1025,15 @@ Return JSON:
         previousResults,
       });
 
-      console.log('    📏 Strict validation summary:', {
+      console.log(' Strict validation summary:', {
         pass: strictValidation.pass,
         score: strictValidation.score,
         modules: Array.isArray(modules) ? modules.length : 0,
         mustHaveSkills: Array.isArray(mustHaveSkills) ? mustHaveSkills.length : 0,
       });
-      console.log('    📐 Strict validation gates:', strictValidation.gates);
+      console.log(' Strict validation gates:', strictValidation.gates);
       if (Array.isArray(strictValidation.hardFails) && strictValidation.hardFails.length > 0) {
-        console.warn('    ❌ Strict hard fails:', strictValidation.hardFails);
+        console.warn(' Strict hard fails:', strictValidation.hardFails);
       }
 
       return {
@@ -1054,7 +1046,7 @@ Return JSON:
     });
 
     this.coreAgentsRegistered = true;
-    console.log('✅ Agent Registry initialized (8 agents registered)\n');
+    console.log('Agent Registry initialized (8 agents registered)\n');
   }
 
   ensureCoreAgentsRegistered() {
@@ -1128,7 +1120,7 @@ Return JSON:
 
           return JSON.parse(jsonText);
         } catch (error) {
-          console.warn(`⚠️  ${modelName} failed for ${purpose}:`, error.message);
+          console.warn(`${modelName} failed for ${purpose}:`, error.message);
         }
       }
     }
@@ -1262,7 +1254,7 @@ Return JSON:
       const snap = await memoryRef.get();
       return snap.exists ? snap.data() : null;
     } catch (error) {
-      console.warn("⚠️  Failed to load orchestrator memory:", error.message);
+      console.warn("Failed to load orchestrator memory:", error.message);
       return null;
     }
   }
@@ -1313,7 +1305,7 @@ Return JSON:
         { merge: true }
       );
     } catch (error) {
-      console.warn("⚠️  Failed to save orchestrator memory:", error.message);
+      console.warn("Failed to save orchestrator memory:", error.message);
     }
   }
 
@@ -1620,9 +1612,8 @@ Return JSON only:
           reason: "roadmap goal requires roadmap generation",
         });
       }
-
-      // Company document retrieval is useful but optional in early data phases.
-      // Keep the agent in the plan, but do not allow it to block roadmap generation.
+      
+      //improve retrieval robustness for roadmap generation by making it non-critical and adding retries
       for (const step of normalizedSteps) {
         if (step.agent === "retrieve-documents") {
           if (step.critical !== false) {
@@ -1676,8 +1667,7 @@ Return JSON only:
   }
 
   /**
-   * 🎯 Main orchestration entry point
-   * 
+  
    * @param {string} goal - What needs to be accomplished
    * @param {Object} context - User data, constraints, preferences
    * @returns {Promise<Object>} { finalOutput, metadata, explanation, executionLog }
@@ -1686,7 +1676,7 @@ Return JSON only:
     initializeLLMs();
     
     console.log("\n" + "=".repeat(70));
-    console.log("🎯 AGENT ORCHESTRATOR STARTED");
+    console.log("AGENT ORCHESTRATOR STARTED");
     console.log(`Goal: ${goal}`);
     console.log("=".repeat(70));
 
@@ -1722,7 +1712,7 @@ Return JSON only:
       let successfulCycle = null;
 
       // STEP 1: Generate initial execution plan
-      console.log("\n📋 STEP 1: Generating execution plan...");
+      console.log("\nSTEP 1: Generating execution plan...");
       const rawPlan = await this.generatePlan(goal, runContext);
       const { plan, warnings, corrections } = this.normalizePlan(rawPlan, goal);
       activePlan = plan;
@@ -1730,10 +1720,10 @@ Return JSON only:
       activePlanCorrections = corrections || [];
 
       if (warnings.length > 0) {
-        console.warn("⚠️  Plan sanitization warnings:", warnings);
+        console.warn("Plan sanitization warnings:", warnings);
       }
       if (activePlanCorrections.length > 0) {
-        console.warn("🛠️  Plan corrections applied:", activePlanCorrections);
+        console.warn("Plan corrections applied:", activePlanCorrections);
       }
 
       executionLog.push({
@@ -1745,15 +1735,15 @@ Return JSON only:
         warnings,
         planCorrections: activePlanCorrections,
       });
-      console.log(`✅ Plan generated: ${plan.steps.length} steps, strategy: ${plan.errorStrategy}`);
+      console.log(`Plan generated: ${plan.steps.length} steps, strategy: ${plan.errorStrategy}`);
 
       for (let cycle = 1; cycle <= maxIterations; cycle++) {
-        console.log(`\n🔁 REASONING CYCLE ${cycle}/${maxIterations}`);
+        console.log(`\nREASONING CYCLE ${cycle}/${maxIterations}`);
         console.log("⚙️  Execute...");
         const executionResults = await this.executePlan(activePlan, activeContext, executionLog);
-        console.log(`✅ Execution complete: ${Object.keys(executionResults.results).length} results`);
+        console.log(`Execution complete: ${Object.keys(executionResults.results).length} results`);
 
-        console.log("🔍 Critique (validation)...");
+        console.log("Critique (validation)...");
         const validation = await this.validateFinalOutput(
           executionResults.results,
           goal,
@@ -1776,12 +1766,12 @@ Return JSON only:
           break;
         }
 
-        console.log(`⚠️  Cycle ${cycle} failed validation: ${validation.reason}`);
+        console.log(`Cycle ${cycle} failed validation: ${validation.reason}`);
         if (cycle >= maxIterations) {
           break;
         }
 
-        console.log("🧠 Replan + refine...");
+        console.log("Replan + refine...");
         const critique = await this.critiqueExecutionAndSuggestReplan({
           goal,
           cycle,
@@ -1812,10 +1802,10 @@ Return JSON only:
         });
 
         if (activeWarnings.length > 0) {
-          console.warn("⚠️  Replan sanitization warnings:", activeWarnings);
+          console.warn("Plan sanitization warnings:", activeWarnings);
         }
         if (activePlanCorrections.length > 0) {
-          console.warn("🛠️  Replan corrections applied:", activePlanCorrections);
+          console.warn("Plan corrections applied:", activePlanCorrections);
         }
       }
 
@@ -1824,7 +1814,7 @@ Return JSON only:
       }
 
       if (!finalValidation.pass && finalValidation.canRecover) {
-        console.log("🔄 Attempting final recovery...");
+        console.log(" Attempting final recovery...");
         const recoveryResult = await this.attemptRecovery(
           finalExecutionResults,
           finalValidation,
@@ -1883,7 +1873,7 @@ Return JSON only:
       }
 
       // STEP 4: Aggregate results
-      console.log("\n📦 STEP 4: Aggregating results...");
+      console.log("\nSTEP 4: Aggregating results...");
       const finalOutput = await this.aggregateResults(
         finalExecutionResults.results,
         goal,
@@ -1954,7 +1944,7 @@ Return JSON only:
       });
 
       console.log("\n" + "=".repeat(70));
-      console.log(`✅ ORCHESTRATION COMPLETE (${executionTime}ms)`);
+      console.log(`ORCHESTRATION COMPLETE (${executionTime}ms)`);
       console.log("=".repeat(70) + "\n");
 
       return {
@@ -1983,7 +1973,7 @@ Return JSON only:
         executionLog: executionLog,
       };
     } catch (error) {
-      console.error("\n🔥 ORCHESTRATION FAILED:", error.message);
+      console.error("\nORCHESTRATION FAILED:", error.message);
       this.logExecution({
         goal,
         error: error.message,
@@ -2013,10 +2003,8 @@ Return JSON only:
     }
   }
 
-  /**
-   * 🤖 PLANNER AGENT - Agentic decision-making
-   * Analyzes goal and decides which agents to call and in what order
-   */
+//PLANNER AGENT - Agentic decision-making. Analyzes goal and decides which agents to call and in what order
+   
   async generatePlan(goal, context) {
     const availableAgents = Array.from(this.agents.keys());
 
@@ -2034,18 +2022,17 @@ Return JSON only:
         plannerMode: "llm",
       };
     } catch (error) {
-      console.warn("⚠️  Planner agent failed:", error.message);
+      console.warn("Planner agent failed:", error.message);
       // Return fallback plan
       return this.generateFallbackPlan(goal, availableAgents, { log: true });
     }
   }
 
-  /**
-   * Generate fallback plan if planner fails
-   */
+  
+   //Generate fallback plan if planner fails 
   generateFallbackPlan(goal, availableAgents, options = {}) {
     if (options?.log !== false) {
-      console.log("🔄 Using fallback plan");
+      console.log("Using fallback plan");
     }
 
     // Simple heuristic-based planning
@@ -2225,29 +2212,27 @@ Return JSON only:
     };
   }
 
-  /**
-   * Centralized quiz decision policy.
-   */
+  
+  //Centralized quiz decision policy. 
   async decideQuizOutcome(decisionInput = {}) {
     return policyEngine.decide("quizOutcome", decisionInput);
   }
 
-  /**
-   * Centralized notification decision policy.
-   */
+  
+  // Centralized notification decision policy.
+   
   async decideNotificationStrategy(context = {}) {
     return policyEngine.decide("notification", context);
   }
 
-  /**
-   * ⚙️ Execute the generated plan with monitoring
-   */
+  
+  //Execute the generated plan with monitoring
   async executeStepWithRetries(step, context, results, stepOrderMap) {
     const stepStart = Date.now();
 
     try {
-      console.log(`\n  ⚙️  Step ${step.stepNumber}: ${step.description}`);
-      console.log(`      Agent: ${step.agent} | Critical: ${step.critical}`);
+      console.log(`\n  Step ${step.stepNumber}: ${step.description}`);
+      console.log(`     Agent: ${step.agent} | Critical: ${step.critical}`);
 
       const missingDependencies = (step.dependencies || []).filter(
         (dep) => !results[dep]
@@ -2351,9 +2336,9 @@ Return JSON only:
               },
             };
 
-            console.log(`      ✅ Success (validation: ${mergedScore}/100, band: ${scoreBand})`);
+            console.log(` Success (validation: ${mergedScore}/100, band: ${scoreBand})`);
             if (scoreBand === "degraded") {
-              console.warn(`      ⚠️  Output accepted but marked degraded: ${step.agent}`);
+              console.warn(`Output accepted but marked degraded: ${step.agent}`);
             }
             return { success: true, log: stepLog, output };
           }
@@ -2371,7 +2356,7 @@ Return JSON only:
           attemptQueued = true;
           lastError = new Error(retryReason);
           attempts++;
-          console.warn(`      ⚠️  Validation issue: ${retryReason}`);
+          console.warn(`Validation issue: ${retryReason}`);
 
           if (attempts < maxRetries) {
             const recoveryDecision = await policyEngine.decide("stepRecovery", {
@@ -2435,7 +2420,7 @@ Return JSON only:
             }
 
             if (canRetryOnScore) {
-              console.warn(`      🔁 Retrying ${step.agent} because score ${mergedScore} is below threshold`);
+              console.warn(`Retrying ${step.agent} because score ${mergedScore} is below threshold`);
             }
 
             await this.sleep(recoveryDecision.backoffMs || step.retryPolicy?.backoffMs || 1000);
@@ -2451,7 +2436,7 @@ Return JSON only:
           }
           lastError = error;
           attempts++;
-          console.warn(`      ⚠️  Attempt ${attempts}/${maxRetries} failed:`, error.message);
+          console.warn(`Attempt ${attempts}/${maxRetries} failed:`, error.message);
 
           if (attempts < maxRetries) {
             await this.sleep(step.retryPolicy?.backoffMs || 1000);
@@ -2465,7 +2450,7 @@ Return JSON only:
 
       throw new Error(`Step ${step.agent} failed without explicit error`);
     } catch (error) {
-      console.error(`      🔥 Step ${step.stepNumber} failed:`, error.message);
+      console.error(`Step ${step.stepNumber} failed:`, error.message);
       return {
         success: false,
         error,
@@ -2580,9 +2565,7 @@ Return JSON only:
     };
   }
 
-  /**
-   * 🤖 VALIDATOR AGENT - Assess output quality
-   */
+  //Validator Agents - Validate outputs of each agent to ensure quality and consistency before proceeding to next steps.
   async validateOutput(output, step) {
     if (!output) {
       return {
@@ -2719,7 +2702,7 @@ Return JSON only:
         hardFailCount: hardFails.length,
       });
       if (hardFails.length > 0) {
-        console.warn("      [STRICT-VALIDATOR] Hard fails", hardFails);
+        console.warn(" [STRICT-VALIDATOR] Hard fails", hardFails);
       }
 
       return {
@@ -2793,11 +2776,9 @@ Return ONLY valid JSON:
     };
   }
 
-  /**
-   * 🤖 RECOVERY AGENT - Attempt to fix failures
-   */
+  //Recovery Agent - Analyze failures and attempt recovery based on policy engine's decision, such as retrying steps with modified input or skipping non-critical steps.
   async attemptRecovery(executionResults, validation, context, executionLog, plan) {
-    console.log("🔧 Recovery Agent: Analyzing failure...");
+    console.log("Recovery Agent: Analyzing failure...");
 
     const issues = Array.isArray(validation?.issues) ? validation.issues : [];
     const latestKey = Object.keys(executionResults.results || {}).pop();
@@ -2884,9 +2865,8 @@ Return ONLY valid JSON:
     return { success: false };
   }
 
-  /**
-   * 🔍 Validate final output before aggregation
-   */
+  
+  //Validate final output before aggregation
   async validateFinalOutput(results, goal, executionLog) {
     // Deterministic readiness gate for roadmap goals
     if (this.isRoadmapGoal(goal)) {
@@ -2981,9 +2961,7 @@ Return JSON:
     };
   }
 
-  /**
-   * 🤖 AGGREGATOR AGENT - Synthesize results
-   */
+  //Aggregator Agent - Synthesize outputs from all agents into a cohesive final result, ensuring consistency and quality. For certain goal types, apply deterministic aggregation logic to ensure reliability.
   async aggregateResults(results, goal, executionLog) {
     // Deterministic aggregation for roadmap goals
     if (this.isRoadmapGoal(goal)) {
@@ -3048,7 +3026,7 @@ Return JSON:
         return aggregated;
       }
     } catch (error) {
-      console.warn("⚠️  Aggregator failed:", error.message);
+      console.warn("Aggregator failed:", error.message);
     }
 
     // Fallback aggregation
@@ -3079,7 +3057,7 @@ Return JSON:
    */
   registerAgent(name, agentDefinition) {
     if (this.agents.has(name)) {
-      console.warn(`⚠️  Agent already registered: ${name}, overwriting...`);
+      console.warn(`Agent already registered: ${name}, overwriting...`);
     }
 
     const normalized =
@@ -3096,12 +3074,9 @@ Return JSON:
     }
 
     this.agents.set(name, normalized);
-    console.log(`✅ Agent registered: ${name}`);
+    console.log(`Agent registered: ${name}`);
   }
 
-  /**
-   * Log execution for debugging & auditing
-   */
   logExecution(executionRecord) {
     this.executionHistory.push({
       ...executionRecord,
@@ -3113,24 +3088,17 @@ Return JSON:
       this.executionHistory.shift();
     }
   }
-
-  /**
-   * Get execution history for debugging
-   */
+// Retrieve execution history with optional limit
   getExecutionHistory(limit = 10) {
     return this.executionHistory.slice(-limit);
   }
 
-  /**
-   * Get last execution details
-   */
+  //last execution record for quick access to recent orchestration runs
   getLastExecution() {
     return this.executionHistory[this.executionHistory.length - 1] || null;
   }
 
-  /**
-   * Utility: Sleep
-   */
+  //Utility function to pause execution for a specified duration (used for backoff between retries)
   sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }

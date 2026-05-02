@@ -17,7 +17,6 @@ import authRoutes from "./routes/authRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import aiInsightsRoutes from "./routes/aiInsightsRoutes.js";
 import emailRoutes from "./routes/emailRoutes.js";
-import debugRoutes from "./routes/debugRoutes.js";
 import { initializeScheduledJobs } from "./services/scheduledJobs.js";
 import { initializeAutonomousAgentRuntime } from "./services/autonomy/runtime/runtime.service.js";
 
@@ -48,7 +47,6 @@ app.use("/api/auth", authRoutes);
 app.use("/api", notificationRoutes);
 app.use("/api", aiInsightsRoutes);
 app.use("/api", emailRoutes);
-app.use("/api/debug", debugRoutes);
 
 const PORT = process.env.PORT || 5000;
 

@@ -2,19 +2,18 @@
 import { Pinecone } from "@pinecone-database/pinecone";
 import { CohereClient } from "cohere-ai";
 import dotenv from "dotenv";
+dotenv.config(); 
 
-dotenv.config(); // must be first
-
-/* ---------------- ENV VARIABLES ---------------- */
+//ENV VARIABLES
 const INDEX_NAME = process.env.PINECONE_INDEX || "";
 const PINECONE_API_KEY = process.env.PINECONE_API_KEY || "";
 const COHERE_API_KEY = process.env.COHERE_API_KEY || "";
 
 if (!INDEX_NAME || !PINECONE_API_KEY || !COHERE_API_KEY) {
-  console.warn("⚠️ Pinecone/Cohere env vars missing. Retrieval will return empty results.");
+  console.warn(" Pinecone/Cohere env vars missing. Retrieval will return empty results.");
 }
 
-/* ---------------- INIT CLIENTS ---------------- */
+//INIT CLIENTS
 const pinecone = PINECONE_API_KEY
   ? new Pinecone({ apiKey: PINECONE_API_KEY })
   : null;
@@ -23,7 +22,7 @@ const cohere = COHERE_API_KEY
   ? new CohereClient({ token: COHERE_API_KEY })
   : null;
 
-const DEFAULT_RETRIEVAL_SCORE_THRESHOLD = 0.65;
+const DEFAULT_RETRIEVAL_SCORE_THRESHOLD = 0.60;
 const DEFAULT_FALLBACK_RETRIEVAL_SCORE = 0.45;
 
 function resolveRetrievalThreshold(value) {
@@ -61,9 +60,8 @@ function extractDocTextFromMetadata(metadata) {
   ).trim();
 }
 
-/* --------------------------------------------------
-   Retrieve department documents
--------------------------------------------------- */
+
+//Retrieve department documents
 export const retrieveDeptDocsFromPinecone = async ({
   queryText,
   companyId,
@@ -85,11 +83,11 @@ export const retrieveDeptDocsFromPinecone = async ({
   const retrievalThreshold = resolveRetrievalThreshold(minScore);
 
   if (!INDEX_NAME || !pinecone || !cohere) {
-    console.warn("⚠️ Retrieval skipped: missing Pinecone/Cohere configuration");
+    console.warn("Retrieval skipped: missing Pinecone/Cohere configuration");
     return [];
   }
 
-  /* ---------------- 1) Embedding ---------------- */
+  // Embedding 
   console.log("Generating Cohere embedding...");
   const embed = await cohere.embed({
     texts: [queryText],
@@ -100,7 +98,7 @@ export const retrieveDeptDocsFromPinecone = async ({
   const vector = embed.embeddings[0];
   console.log("Embedding vector length ->", vector.length);
 
-  /* ---------------- 2) Index + Namespace ---------------- */
+  //Index + Namespace 
   const namespace = `company-${companyId}`;
 
   console.log("Pinecone index connected");
@@ -111,7 +109,7 @@ export const retrieveDeptDocsFromPinecone = async ({
     .Index(INDEX_NAME)
     .namespace(namespace);
 
-  /* ---------------- 3) Query ---------------- */
+  // Embedding 
   console.log("Querying Pinecone...");
   const response = await index.query({
     vector,
@@ -152,8 +150,7 @@ export const retrieveDeptDocsFromPinecone = async ({
     }
   }
 
-  // Some Pinecone payloads can contain matches without numeric score.
-  // Keep grounding usable by returning top raw matches in that case.
+  // fallback to returning top-1 match if no scored matches are found, to avoid complete retrieval failure.
   if (selectedMatches.length === 0 && rawMatches.length > 0) {
     selectedMatches = rawMatches.slice(0, 1);
     fallbackMode = "raw-top-1";
