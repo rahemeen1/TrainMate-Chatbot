@@ -170,6 +170,15 @@ export const retrieveDeptDocsFromPinecone = async ({
   } else {
     console.log("Matches returned ->", selectedMatches.length);
   }
+
+  // Log exact scores for debugging
+  console.log("\n📋 EXACT SIMILARITY SCORES:");
+  selectedMatches.forEach((m, idx) => {
+    const score = typeof m?.score === "number" && Number.isFinite(m.score) ? m.score : null;
+    const text = (m?.metadata?.text || "").substring(0, 60).replace(/\n/g, " ");
+    console.log(`  ${idx + 1}. Score: ${score?.toFixed(6)} | "${text}..."`);
+  });
+
   console.log("================ PINECONE DEBUG END ================\n");
 
   return selectedMatches.map((m) => ({

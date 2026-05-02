@@ -2,6 +2,7 @@
 import { db } from "../config/firebase.js"; // Admin SDK
 import admin from "firebase-admin";
 import { getPineconeIndex } from "../config/pinecone.js";
+import { retrieveDeptDocsFromPinecone } from "../services/pineconeService.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { CohereClient } from "cohere-ai";
 import dotenv from "dotenv";
@@ -1142,12 +1143,17 @@ Return only the summary bullets.
       
 
 /* ================= PINECONE ================= */
+// DEPRECATED: Use retrieveDeptDocsFromPinecone from pineconeService.js instead
+// This function kept for backward compatibility only
 async function queryPinecone({ embedding, companyId, deptId, topK = 5 }) {
   try {
-    console.log("🔍 Pinecone query started");
+    console.log("🔍 Pinecone query started (DEPRECATED - use retrieveDeptDocsFromPinecone)");
     console.log("   Company:", companyId);
     console.log("   Department:", deptId);
     console.log("   TopK:", topK);
+
+    const STRICT_THRESHOLD = 0.65;
+    const FALLBACK_THRESHOLD = 0.45;
 
     const index = getPineconeIndex();
 
@@ -1162,14 +1168,15 @@ async function queryPinecone({ embedding, companyId, deptId, topK = 5 }) {
         },
       });
 
-    const matchCount = res?.matches?.length || 0;
+    const matches = res?.matches || [];
+    const matchCount = matches.length;
 
-    console.log(`📚 Pinecone results: ${matchCount}`);
+    console.log(`📚 Raw Pinecone results: ${matchCount}`);
 
     if (matchCount > 0) {
       console.log(
         "🧾 Pinecone sources:",
-        res.matches.map((m) => ({
+        matches.map((m) => ({
           score: m.score,
           dept: m.metadata?.deptName,
         }))
@@ -1178,7 +1185,29 @@ async function queryPinecone({ embedding, companyId, deptId, topK = 5 }) {
       console.log("⚠️ Pinecone returned no matches");
     }
 
-    return (res.matches || []).map((m) => ({
+    // Apply threshold filtering with fallback (same as pineconeService.js)
+    let filtered = matches.filter(m => m.score >= STRICT_THRESHOLD);
+    let fallbackMode = "none";
+
+    if (filtered.length === 0 && matchCount > 0) {
+      const fallbackMatches = matches
+        .filter(m => m.score >= FALLBACK_THRESHOLD)
+        .slice(0, 2);
+      
+      if (fallbackMatches.length > 0) {
+        filtered = fallbackMatches;
+        fallbackMode = "relaxed-threshold";
+      } else {
+        filtered = matches.slice(0, 1);
+        fallbackMode = "top-1";
+      }
+    }
+
+    if (fallbackMode !== "none") {
+      console.log(`⚠️ Fallback mode activated: ${fallbackMode}`);
+    }
+
+    return filtered.map((m) => ({
       text: m.metadata?.text || "",
       score: m.score || 0,
       source: "pinecone",
@@ -1876,27 +1905,37 @@ I will focus our conversation on strengthening these areas. Let's start from the
       }
     }
 
-    /* ---------- PINECONE (SAFE) ---------- */
+    /* ---------- PINECONE (WITH FALLBACK) ---------- */
     let relevantDocs = [];
 
     try {
-      const embedding = await embedText(newMessage);
-      const pineconeResults = await queryPinecone({
-        embedding,
+      // Use intelligent fallback retrieval with query text
+      const pineconeMatches = await retrieveDeptDocsFromPinecone({
+        queryText: newMessage.substring(0, 500), // Limit query size for embedding
         companyId,
-        deptId,
+        deptName: deptId,
       });
 
-      relevantDocs = pineconeResults.filter(doc =>
+      relevantDocs = pineconeMatches.filter(doc =>
         isDocAllowed({
           similarityScore: doc.score,
-          docDepartment: doc.dept,
+          docDepartment: deptId.toUpperCase(),
           userDepartment: deptId.toUpperCase(),
         })
       );
 
+      if (relevantDocs.length > 0) {
+        console.log(`✅ Retrieval: ${relevantDocs.length} docs`);
+        console.log("📊 EXACT SIMILARITY SCORES:");
+        relevantDocs.forEach((doc, idx) => {
+          const scoreStr = doc.score ? doc.score.toFixed(6) : "N/A";
+          const text = (doc.text || "").substring(0, 50).replace(/\n/g, " ");
+          console.log(`  ${idx + 1}. Score: ${scoreStr} | "${text}..."`);
+        });
+      }
+
     } catch (err) {
-      console.warn("⚠️ Pinecone skipped:", err.message);
+      console.warn("⚠️ Pinecone retrieval skipped:", err.message);
     }
 
     /* ---------- AGENTIC KNOWLEDGE FETCH ---------- */
