@@ -38,13 +38,13 @@ export default function CompanyDetails() {
   const [scheduledPlan, setScheduledPlan] = useState("License Basic");
 
 
-  // Fetch company and onboarding details
+
   useEffect(() => {
     const fetchData = async () => {
       if (!companyId) return;
 
       try {
-        // 1️⃣ Company info
+        
         const companyDoc = await getDoc(doc(db, "companies", companyId));
         if (companyDoc.exists()) {
           const companyData = companyDoc.data();
@@ -54,7 +54,7 @@ export default function CompanyDetails() {
           );
         }
 
-        // 2️⃣ Fetch the latest onboardingAnswers dynamically
+        
         const answersRef = collection(db, "companies", companyId, "onboardingAnswers");
         const q = query(answersRef, orderBy("createdAt", "desc"), limit(1));
         const snap = await getDocs(q);
@@ -74,7 +74,7 @@ export default function CompanyDetails() {
           setInitialLicense(answers[0] || "License Basic");
         }
 
-        // 3️⃣ Fetch selected departments
+        
         const deptsRef = collection(db, "companies", companyId, "departments");
         const deptsSnap = await getDocs(deptsRef);
         const deptNames = deptsSnap.docs.map(doc => doc.data().name || doc.id);
@@ -112,7 +112,7 @@ export default function CompanyDetails() {
   };
 
   const handleChange = (field, value) => {
-    if (field === 2 || field === 3) return; // Training Duration and Batch Size read-only
+    if (field === 2 || field === 3) return; 
 
     if (field === 0 && value === "License Pro" && onboardingAnswers[0] !== "License Pro") {
       setShowUpgradeModal(true);
@@ -135,9 +135,9 @@ export default function CompanyDetails() {
   };
 
   const saveChanges = async () => {
-  setSaving(true); // Change button text
+  setSaving(true); 
   try {
-    // Update latest onboardingAnswers
+   
     const answersRef = collection(db, "companies", companyId, "onboardingAnswers");
     const q = query(answersRef, orderBy("createdAt", "desc"), limit(1));
     const snap = await getDocs(q);
@@ -164,7 +164,7 @@ export default function CompanyDetails() {
             pendingChangeStatus: deleteField(),
           };
 
-    // Update company info
+    
     await updateDoc(doc(db, "companies", companyId), {
       name: companyDetails.name,
       phone: companyDetails.phone,
@@ -191,7 +191,7 @@ export default function CompanyDetails() {
     console.error("Error saving changes:", err);
     alert("Failed to save changes.");
   } finally {
-    setSaving(false); // Revert button text
+    setSaving(false); 
   }
 };
 

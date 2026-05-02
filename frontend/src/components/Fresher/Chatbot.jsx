@@ -12,13 +12,45 @@ import { getCompanyLicensePlan } from "../../services/companyLicense";
 import CompanyPageLoader from "../CompanySpecific/CompanyPageLoader";
 
 // Markdown to HTML converter utility
+const normalizeAssessmentBlocks = (text) => {
+  if (!text || typeof text !== 'string') return text;
+
+  let html = text;
+
+  const quickAssessmentPattern = /<div style="margin-top:\s*12px;\s*border-left:\s*4px solid #00FFFF;\s*background:\s*#00FFFF1A;\s*padding:\s*10px;\s*border-radius:\s*6px;">\s*<div style="color:#00FFFF;\s*font-weight:600;\s*margin-bottom:4px;">Quick Micro-Assessment<\/div>\s*<div style="color:#E0EAF5;\s*font-size:14px;">([\s\S]*?)<\/div>\s*<\/div>/i;
+  html = html.replace(
+    quickAssessmentPattern,
+    (_, question) => `
+      <div class="chat-assessment-card chat-assessment-card-prompt">
+        <div class="chat-assessment-kicker">Quick Micro-Assessment</div>
+        <div class="chat-assessment-question">${question.trim()}</div>
+      </div>
+    `
+  );
+
+  const assessmentFeedbackPattern = /<div style="margin-top:\s*14px;\s*border-left:\s*4px solid ([^;\"]+);\s*background:\s*([^;\"]+);\s*padding:\s*10px;\s*border-radius:\s*6px;">\s*<div style="font-weight:\s*600;\s*color:\s*([^;\"]+);\s*margin-bottom:\s*4px;">([^<]+) \((\d+)%\)<\/div>\s*<div style="color:\s*#E0EAF5;\s*font-size:\s*14px;\s*margin-bottom:\s*6px;">([\s\S]*?)<\/div>\s*<div style="color:\s*#BBD6EA;\s*font-size:\s*13px;"><b>Next step:<\/b>\s*([\s\S]*?)<\/div>\s*<\/div>/i;
+  html = html.replace(
+    assessmentFeedbackPattern,
+    (_, borderColor, backgroundColor, titleColor, title, score, feedback, nextStep) => `
+      <div class="chat-assessment-card chat-assessment-card-result" style="--assessment-border:${borderColor.trim()}; --assessment-bg:${backgroundColor.trim()}; --assessment-accent:${titleColor.trim()};">
+        <div class="chat-assessment-score">${title.trim()} (${score}%)</div>
+        <div class="chat-assessment-feedback">${feedback.trim()}</div>
+        <div class="chat-assessment-next-step"><span>Next step:</span> ${nextStep.trim()}</div>
+      </div>
+    `
+  );
+
+  return html;
+};
+
 const markdownToHtml = (text) => {
   if (!text || typeof text !== 'string') return text;
+  const normalizedAssessmentText = normalizeAssessmentBlocks(text);
   
   // If already contains HTML tags, return as-is
-  if (/<[^>]+>/.test(text)) return text;
+  if (/<[^>]+>/.test(normalizedAssessmentText)) return normalizedAssessmentText;
   
-  let html = text;
+  let html = normalizedAssessmentText;
   
   // Escape any remaining special characters
   html = html.replace(/&(?!amp;|lt;|gt;|quot;|apos;)/g, '&amp;');
@@ -600,6 +632,55 @@ useEffect(() => {
             border-radius: 0.25rem;
             font-family: 'Courier New', monospace;
             font-size: 0.9em;
+          }
+          .chat-assessment-card {
+            margin-top: 1rem;
+            padding: 1rem 1.05rem;
+            border-radius: 1rem;
+            border: 1px solid rgba(0, 255, 255, 0.22);
+            background: linear-gradient(180deg, rgba(1, 38, 66, 0.96), rgba(2, 27, 54, 0.98));
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+          }
+          .chat-assessment-card-prompt {
+            border-left: 4px solid #00FFFF;
+          }
+          .chat-assessment-card-result {
+            border-left: 4px solid var(--assessment-border, #00FFFF);
+            background: linear-gradient(180deg, color-mix(in srgb, var(--assessment-bg, #00FFFF1A) 90%, #021B36 10%), rgba(2, 27, 54, 0.98));
+          }
+          .chat-assessment-kicker {
+            color: #00FFFF;
+            font-size: 0.76rem;
+            font-weight: 700;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            margin-bottom: 0.6rem;
+          }
+          .chat-assessment-question {
+            color: #E0EAF5;
+            font-size: 0.98rem;
+            line-height: 1.75;
+          }
+          .chat-assessment-score {
+            color: var(--assessment-accent, #00FFFF);
+            font-weight: 700;
+            font-size: 1rem;
+            margin-bottom: 0.55rem;
+          }
+          .chat-assessment-feedback {
+            color: #E0EAF5;
+            font-size: 0.95rem;
+            line-height: 1.7;
+            margin-bottom: 0.75rem;
+          }
+          .chat-assessment-next-step {
+            color: #BBD6EA;
+            font-size: 0.9rem;
+            line-height: 1.65;
+          }
+          .chat-assessment-next-step span {
+            color: #7FFAFF;
+            font-weight: 700;
           }
           .chat-message pre {
             background-color: rgba(0, 255, 255, 0.05);

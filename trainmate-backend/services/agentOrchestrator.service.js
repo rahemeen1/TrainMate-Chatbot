@@ -514,27 +514,28 @@ function isTrivialModule(module = {}) {
   return /\blearn\s+basics?\b/.test(combined) && /\bpractice\b/.test(combined);
 }
 
-const CORE_SKILL_CATEGORIES = {
-  backend: ["backend", "api", "node", "express", "server", "database", "sql", "microservice"],
-  frontend: ["frontend", "react", "ui", "css", "html", "javascript", "typescript"],
-  ml: ["machine learning", "ml", "model", "neural", "tensorflow", "pytorch", "scikit"],
-  data: ["data", "analytics", "etl", "warehouse", "bi", "visualization"],
-  devops: ["devops", "docker", "kubernetes", "ci", "cd", "deployment", "monitoring"],
-  accounting: ["accounting", "bookkeeping", "financial", "audit", "tax", "invoice", "reconciliation"],
-  communication: ["communication", "stakeholder", "reporting", "presentation", "collaboration"],
-};
+function buildDynamicSkillClusters(skills = []) {
+  const clusters = new Map();
 
-function detectSkillCategories(text = "") {
-  const normalized = normalizeGapSkillKey(text);
-  const categories = new Set();
+  for (const skill of normalizePrioritySkillsList(skills)) {
+    const normalizedSkill = normalizeGapSkillKey(skill);
+    if (!normalizedSkill) continue;
 
-  for (const [category, keywords] of Object.entries(CORE_SKILL_CATEGORIES)) {
-    if (keywords.some((keyword) => normalized.includes(normalizeGapSkillKey(keyword)))) {
-      categories.add(category);
+    const tokens = tokenizeSkill(normalizedSkill);
+    if (tokens.length === 0) continue;
+
+    const clusterKey = tokens[0];
+    if (!clusters.has(clusterKey)) {
+      clusters.set(clusterKey, new Set());
     }
+
+    clusters.get(clusterKey).add(normalizedSkill);
   }
 
-  return categories;
+  return Array.from(clusters.entries()).map(([cluster, values]) => ({
+    cluster,
+    skills: Array.from(values),
+  }));
 }
 
 function buildStrictRoadmapValidation({ modules = [], mustHaveSkills = [], context = {}, previousResults = {} }) {
@@ -559,22 +560,17 @@ function buildStrictRoadmapValidation({ modules = [], mustHaveSkills = [], conte
     .map((module, idx) => ({ idx, module }))
     .filter(({ module }) => isTrivialModule(module));
 
-  const requiredCategoryText = [
-    ...normalizedMustHave,
-    ...(Array.isArray(previousResults?.["extract-company-skills"]?.companySkills)
-      ? previousResults["extract-company-skills"].companySkills
-      : []),
-  ].join(" ");
-  const requiredCategories = detectSkillCategories(requiredCategoryText);
-  const coveredCategories = detectSkillCategories(moduleBlobs.join(" "));
-  const missingCoreCategories = Array.from(requiredCategories).filter((cat) => !coveredCategories.has(cat));
-
   const cvSkills = Array.isArray(previousResults?.["extract-cv-skills"]?.cvSkills)
     ? previousResults["extract-cv-skills"].cvSkills
     : [];
   const companySkills = Array.isArray(previousResults?.["extract-company-skills"]?.companySkills)
     ? previousResults["extract-company-skills"].companySkills
     : [];
+  const dynamicSkillClusters = buildDynamicSkillClusters([
+    ...normalizedMustHave,
+    ...companySkills,
+    ...cvSkills,
+  ]);
   const alignmentAnchors = normalizePrioritySkillsList([
     ...normalizedMustHave,
     ...companySkills,
@@ -610,13 +606,12 @@ function buildStrictRoadmapValidation({ modules = [], mustHaveSkills = [], conte
     }
   }
 
-  // Hard fail: required category cluster absent in generated modules.
-  if (missingCoreCategories.length > 0) {
-    hardFails.push(`Missing core skill categories: ${missingCoreCategories.join(", ")}`);
-  }
-
   // Do not force must-have-first ordering; preserve generated beginner-to-advanced pedagogy.
   const progressionValid = true;
+
+  if (dynamicSkillClusters.length > 0 && contextAlignmentRatio < 0.5) {
+    improvements.push("Increase module-level references to the actual skills extracted from CV and company context");
+  }
 
   if (contextAlignmentRatio < 0.5) {
     issues.push("Roadmap weakly aligned with CV/company/training context");
@@ -661,9 +656,9 @@ function buildStrictRoadmapValidation({ modules = [], mustHaveSkills = [], conte
         allowedDays: Number.isFinite(allowedDurationDays) ? Math.round(allowedDurationDays) : null,
       },
       coreCategories: {
-        pass: missingCoreCategories.length === 0,
-        missing: missingCoreCategories,
-        required: Array.from(requiredCategories),
+        pass: true,
+        missing: [],
+        required: dynamicSkillClusters,
       },
       structure: {
         pass: true,

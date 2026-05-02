@@ -243,7 +243,7 @@ async function enforceExpiredStatusForUser(roadmapRef, now = new Date()) {
       moduleLocked: true,
       expiredAt: now,
     });
-    console.log(`⏰ Module expired (scheduler): ${moduleData.moduleTitle || moduleDoc.id}`);
+    console.log(`Module expired (scheduler): ${moduleData.moduleTitle || moduleDoc.id}`);
   }
 }
 
@@ -261,7 +261,7 @@ async function sendQuizUnlockNotifications({
   companyName,
   moduleId,
 }) {
-  console.log(`\n🔓 Quiz unlock for ${userName} - ${moduleTitle}`);
+  console.log(`\nQuiz unlock for ${userName} - ${moduleTitle}`);
   
   try {
     // Use simplified notification service - sends ONLY email notification
@@ -293,7 +293,7 @@ async function sendQuizUnlockNotifications({
     
     return true;
   } catch (error) {
-    console.error(`❌ Quiz unlock failed: ${error.message}`);
+    console.error(`Quiz unlock failed: ${error.message}`);
     return false;
   }
 }
@@ -310,9 +310,9 @@ export function scheduleDailyModuleReminders() {
   const cronExpression = process.env.DAILY_REMINDER_CRON || "0 15 * * *";
   
   cron.schedule(cronExpression, async () => {
-    console.log("\n📧 ==========================================");
-    console.log("📧 Daily Module Reminder Job Started at", new Date().toLocaleString());
-    console.log("📧 ==========================================\n");
+    console.log("\n==========================================");
+    console.log("Daily Module Reminder Job Started at", new Date().toLocaleString());
+    console.log("==========================================\n");
 
     try {
       const companies = await db.collection("freshers").get();
@@ -390,7 +390,7 @@ export function scheduleDailyModuleReminders() {
                 Number(userData?.quizPolicy?.quizUnlockPercent) || 70
               );
               if (!activeModule.quizUnlockNotificationSent && shouldUnlockQuiz(moduleStartDate, estimatedDays, quizUnlockPercent)) {
-                console.log(`🔓 Quiz unlock condition met for ${userData.email} - ${moduleTitle}`);
+                console.log(`Quiz unlock condition met for ${userData.email} - ${moduleTitle}`);
                 try {
                   await sendQuizUnlockNotifications({
                     companyId,
@@ -403,7 +403,7 @@ export function scheduleDailyModuleReminders() {
                     moduleId,
                   });
                 } catch (unlockErr) {
-                  console.error(`❌ Failed to send quiz unlock notification: ${unlockErr.message}`);
+                  console.error(`Failed to send quiz unlock notification: ${unlockErr.message}`);
                 }
               }
 
@@ -415,23 +415,23 @@ export function scheduleDailyModuleReminders() {
         }
       }
 
-      console.log("\n✅ Daily Module Reminder Job Completed\n");
+      console.log("\nDaily Module Reminder Job Completed\n");
     } catch (error) {
-      console.error("❌ Daily reminder job failed:", error);
+      console.error("Daily reminder job failed:", error);
     }
   }, {
     timezone: process.env.DEFAULT_TIMEZONE || "Asia/Karachi"
   });
 
-  console.log(`✅ Daily module reminder scheduler initialized (runs at ${cronExpression})`);
+  console.log(`Daily module reminder scheduler initialized (runs at ${cronExpression})`);
 }
 
 /**
  * Initialize all scheduled jobs
  */
 export function initializeScheduledJobs() {
-  console.log("\n🕐 Initializing scheduled jobs...");
+  console.log("\nInitializing scheduled jobs...");
   scheduleDailyModuleReminders();
   scheduleCompanyLicenseRenewalAlerts();
-  console.log("✅ All scheduled jobs initialized\n");
+  console.log("All scheduled jobs initialized\n");
 }
