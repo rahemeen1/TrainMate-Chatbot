@@ -242,26 +242,20 @@ export default function UserProfile() {
     loadDerivedStats();
   }, [companyId, deptId, userId, roadmapModules, user]);
 
-  const isModuleLocked = (module) => {
-    const status = String(module?.status || "").toLowerCase();
-    return status === "locked" || !!module?.moduleLocked || !!module?.quizLocked;
-  };
-
-  const isModuleCompleted = (module) => {
-    const status = String(module?.status || "").toLowerCase();
-    if (status === "expired" || isModuleLocked(module)) return false;
-    return status === "completed" || !!module?.completed || !!module?.quizPassed;
-  };
-
   const getModuleDisplayStatus = (module) => {
-    const status = String(module?.status || "").toLowerCase();
-    if (status === "expired") return "Expired";
-    if (isModuleLocked(module)) return "In Progress";
-    if (isModuleCompleted(module)) return "Completed";
-    return "In Progress";
+    return String(module?.status || "").trim() || "N/A";
   };
 
-  const completedModulesCount = roadmapModules.filter((m) => isModuleCompleted(m)).length;
+  const getModuleStatusTone = (module) => {
+    const status = String(module?.status || "").trim().toLowerCase();
+    if (status === "completed") return "text-emerald-300";
+    if (status === "pending") return "text-yellow-300";
+    return "text-[#00FFFF]";
+  };
+
+  const completedModulesCount = roadmapModules.filter(
+    (m) => String(m?.status || "").trim().toLowerCase() === "completed"
+  ).length;
   const isBasicLicense = licensePlan === "License Basic";
   const totalQuizAttempts = roadmapModules.reduce(
     (sum, m) => sum + (m.quizAttempts ?? 0),
@@ -292,7 +286,7 @@ export default function UserProfile() {
   };
 
   const getRemainingTimeLabel = (module) => {
-    if (isModuleCompleted(module)) return "Completed";
+    if (String(module?.status || "").trim().toLowerCase() === "completed") return "Completed";
     const startDate = getModuleStartDate(module);
     if (!startDate || !module.estimatedDays) return "Unknown";
     const deadline = new Date(startDate.getTime() + module.estimatedDays * 24 * 60 * 60 * 1000);
@@ -581,31 +575,36 @@ if (!user) {
             </div>
           )}
 
-          <div className="profile-shell-enter profile-shell-delay-1 flex flex-wrap items-center justify-between gap-3">
+          <div className="profile-shell-enter profile-shell-delay-1 flex items-center justify-between gap-4 flex-nowrap">
             <button
               onClick={() => window.history.back()}
-              className="company-outline-btn"
+              className="company-outline-btn flex-shrink-0"
             >
               Back to Users
             </button>
 
-            <div className="flex gap-3 flex-col sm:flex-row w-full sm:w-auto">
+            <div className="flex items-center gap-4 flex-shrink-0">
               {user.cvUrl && (
                 <a
                   href={user.cvUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="company-primary-btn text-center"
+                  className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg font-semibold text-sm transition-all duration-200 bg-gradient-to-r from-[#00FFFF] to-[#00FFC2] text-[#031C3A] hover:shadow-lg hover:shadow-[#00FFFF]/30 hover:scale-105 disabled:opacity-60 whitespace-nowrap"
                 >
+                  <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 16v-4m0 0V8m0 4H8m4 0h4M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
                   Download CV
                 </a>
               )}
-              <div className="rounded-xl border border-[#00FFFF30] bg-[#021B36]/75 px-3 py-2 min-w-[120px] text-center">
-                <p className="text-[11px] uppercase tracking-wide text-[#AFCBE3]">Status</p>
-                <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
-                  user.status === "active" ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"
+              <div className="flex items-center justify-center gap-3 px-5 py-2.5 rounded-lg border border-[#00FFFF30] bg-[#021B36]/70 hover:border-[#00FFFF50] transition-all duration-200 whitespace-nowrap shadow-md">
+                <span className="text-[#AFCBE3] font-semibold text-sm">Status:</span>
+                <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold transition-all ${
+                  user.status === "active" 
+                    ? "bg-emerald-400/20 text-emerald-400"
+                    : user.status === "inactive"
                 }`}>
-                  {user.status}
+                  {user.status?.toUpperCase()}
                 </span>
               </div>
             </div>
@@ -847,9 +846,7 @@ if (!user) {
                         <div className="profile-metric-card">
                           <p className="profile-metric-label">Status</p>
                           <div className="profile-metric-subvalue flex items-center justify-center">
-                            <span className={`text-center ${
-                              getModuleDisplayStatus(m) === "Completed" ? "text-emerald-300" : "text-yellow-300"
-                            }`}>
+                            <span className={`text-center ${getModuleStatusTone(m)}`}>
                               {getModuleDisplayStatus(m)}
                             </span>
                           </div>

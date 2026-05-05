@@ -149,7 +149,7 @@ export default function CompanyDashboard() {
     expiryYear: '',
     cvc: ''
   });
-  const [hasDepartments, setHasDepartments] = useState(false); // checks if onboarding is needed
+  const [hasDepartments, setHasDepartments] = useState(false); 
   const [totalUsers, setTotalUsers] = useState(0);
   const [activeUsers, setActiveUsers] = useState(0);
   const [chartData, setChartData] = useState([]);
@@ -289,18 +289,17 @@ export default function CompanyDashboard() {
     }
   };
 
-  // Handle returning from Google OAuth
   useEffect(() => {
     if (location?.state?.calendarConnected) {
       setCalendarConnectionAttempted(true);
       setShowCalendarPrompt(false);
-      alert("Google Calendar connected successfully! ✅");
-      // Clear the state
+      alert("Google Calendar connected successfully! ");
+      
       navigate(location.pathname, { replace: true, state: { companyId, companyName } });
     }
   }, [location]);
 
-  // Check if Google Calendar is already connected
+
   useEffect(() => {
     const checkCalendarConnection = async () => {
       if (!companyId) return;
@@ -309,7 +308,6 @@ export default function CompanyDashboard() {
         const companyDoc = await getDoc(doc(db, "companies", companyId));
         if (companyDoc.exists()) {
           const data = companyDoc.data();
-          // If googleOAuth exists and has tokens, calendar is connected
           if (data.googleOAuth && data.googleOAuth.refreshToken) {
             setCalendarConnectionAttempted(true);
             setShowCalendarPrompt(false);
@@ -402,7 +400,6 @@ useEffect(() => {
     fetchLicenseStatus();
   }, [companyId]);
 
-  // Fetch company name from database if not available
   useEffect(() => {
     const fetchCompanyName = async () => {
       if (!companyId) return;
@@ -435,7 +432,6 @@ useEffect(() => {
     }
   }, [companyId, companyName]);
 
-  // Redirect if no companyId
   useEffect(() => {
   const storedCompanyId = localStorage.getItem("companyId");
   if (!companyId && !storedCompanyId) {
@@ -443,7 +439,6 @@ useEffect(() => {
   }
 }, [companyId, navigate]);
 console.log("companyId:", companyId);
-  // Check if company already has departments
   useEffect(() => {
     const checkDepartments = async () => {
       try {
@@ -453,9 +448,9 @@ console.log("companyId:", companyId);
           const existing = snapshot.docs.map(doc => doc.data().name);
           setSelectedDepts(existing);
           await fetchAnalyticsForDepartments(existing, { rememberAsPreloaded: true });
-          setHasDepartments(true); // skip onboarding
+          setHasDepartments(true); 
         } else {
-          setHasDepartments(false); // first login, show onboarding
+          setHasDepartments(false); 
           await fetchAnalyticsForDepartments([], { rememberAsPreloaded: true });
         }
       } catch (err) {
@@ -521,7 +516,7 @@ console.log("companyId:", companyId);
     });
   };
 
-  // Generate Google Calendar Auth URL
+  
   const generateGoogleAuthUrl = async () => {
     console.log("Connecting to Google Calendar for company:", companyId);
     setCalendarConnectionAttempted(true);
@@ -545,9 +540,8 @@ console.log("companyId:", companyId);
       
       if (data.authUrl) {
         setGoogleAuthUrl(data.authUrl);
-        // Store current location to return after OAuth
         sessionStorage.setItem('oauth_return_url', window.location.pathname);
-        // Redirect to Google OAuth
+        
         console.log("Redirecting to Google OAuth...");
         window.location.href = data.authUrl;
       } else {
@@ -565,7 +559,7 @@ console.log("companyId:", companyId);
   const handleNextStep = () => {
     const currentQuestion = QUESTIONS[step - 1];
     
-    // Validation logic
+    
     if (currentQuestion.type === "plan-select" && !answers[0]) {
       alert("Please select a license plan to continue");
       return;
@@ -576,7 +570,6 @@ console.log("companyId:", companyId);
       return;
     }
 
-    // Validate department count based on plan
     if (currentQuestion.type === "multi-select") {
       const selectedPlan = answers[0];
       const maxDepts = selectedPlan === "License Basic" ? MAX_DEPARTMENTS_BASIC : MAX_DEPARTMENTS_PRO;
@@ -626,7 +619,6 @@ console.log("companyId:", companyId);
   };
   const handlePrevStep = () => setStep(prev => (prev > 1 ? prev - 1 : prev));
 
-  // Refresh analytics when selected departments change (skip one duplicate call after preload).
   useEffect(() => {
     const fetchAnalytics = async () => {
       if (!companyId || !hasDepartments) return;
@@ -657,7 +649,7 @@ console.log("companyId:", companyId);
   const formatDepartmentLabel = (label) => {
   if (!label) return [""];
 
-  // Explicit mappings for known long departments
+  
   const MAP = {
     SOFTWAREDEVELOPMENT: ["Software", "Development"],
     DATASCIENCE: ["Data", "Science"],
@@ -665,21 +657,18 @@ console.log("companyId:", companyId);
 
   if (MAP[label]) return MAP[label];
 
-  // Short names (HR, AI, IT)
+ 
   if (label.length <= 3) return [label];
 
-  // Fully uppercase single-word departments (ACCOUNTING, MARKETING, OPERATIONS)
   if (/^[A-Z]+$/.test(label)) {
     return [
       label.charAt(0) + label.slice(1).toLowerCase()
     ];
   }
 
-  // Fallback (should rarely happen)
   return [label];
 };
 
-// Simple SHA-256 like hash function for card details
 const generateHash = async (input) => {
   const encoder = new TextEncoder();
   const data = encoder.encode(input);
@@ -720,7 +709,6 @@ const CustomXAxisTick = ({ x, y, payload }) => {
     setShowChatbot((prev) => !prev);
   };
 
-  // Auto-select batch size based on plan
   useEffect(() => {
     if (answers[0]) {
       let batchSize = "20-40 freshers";
@@ -731,7 +719,7 @@ const CustomXAxisTick = ({ x, y, payload }) => {
     }
   }, [answers[0]]);
 
-  // Adjust department selection if plan changes and selected departments exceed new limit
+ 
   useEffect(() => {
     if (answers[0]) {
       const maxDepts = answers[0] === "License Basic" ? MAX_DEPARTMENTS_BASIC : MAX_DEPARTMENTS_PRO;
@@ -743,12 +731,10 @@ const CustomXAxisTick = ({ x, y, payload }) => {
     }
   }, [answers[0]]);
 
-  // Save answers and departments
   const saveAnswersToDB = async () => {
     if (!companyId) return;
 
     try {
-      // Validate all required fields
       if (!answers[0]) {
         alert("License plan is required");
         return;
@@ -758,7 +744,6 @@ const CustomXAxisTick = ({ x, y, payload }) => {
         return;
       }
 
-      // Validate department count based on plan
       const selectedPlan = answers[0];
       const maxDepts = selectedPlan === "License Basic" ? MAX_DEPARTMENTS_BASIC : MAX_DEPARTMENTS_PRO;
       const planName = selectedPlan === "License Basic" ? "Basic" : "Pro";
@@ -804,7 +789,6 @@ const CustomXAxisTick = ({ x, y, payload }) => {
       setSavingOnboarding(true);
       const selectedLicense = answers[0] || "License Basic";
 
-      // Save onboarding answers
       const answersRef = collection(db, "companies", companyId, "onboardingAnswers");
       const savedOnboardingDoc = await addDoc(answersRef, {
         answers: {
@@ -816,22 +800,20 @@ const CustomXAxisTick = ({ x, y, payload }) => {
           cardNumber: cardDetails.cardNumber.slice(-4).padStart(cardDetails.cardNumber.replace(/\s/g, '').length, '*'),
           expiryMonth: cardDetails.expiryMonth,
           expiryYear: cardDetails.expiryYear,
-          // CVC is not stored for security
+         
         },
         paymentMethod: answers[5],
         createdAt: serverTimestamp(),
       });
 
-      // Save selected departments only if not already created
      if (!hasDepartments && selectedDepts.length > 0) {
   const deptRef = collection(db, "companies", companyId, "departments");
   for (let dept of selectedDepts) {
-    const deptDocRef = doc(deptRef, dept); // use department name as doc ID
+    const deptDocRef = doc(deptRef, dept); 
     await setDoc(deptDocRef, { name: dept, createdAt: serverTimestamp() });
   }
 }
 
-      // Save billing payment information
       const planConfig = PLAN_OPTIONS.find(p => p.value === selectedLicense);
       
       if (!planConfig) {
@@ -847,7 +829,6 @@ const CustomXAxisTick = ({ x, y, payload }) => {
       const amountUsd = parseInt(amountUsdStr.replace(/\D/g, ''));
       const amountInr = parseInt(amountInrStr.replace(/\D/g, ''));
       
-      // Create simple hashes for card details (Note: In production, use proper crypto library)
       const cardNumberDigits = cardDetails.cardNumber.replace(/\s/g, '');
       const cardHashInput = cardNumberDigits + cardDetails.expiryMonth + cardDetails.expiryYear + cardDetails.cvc;
       const cardHash = await generateHash(cardHashInput);
@@ -882,7 +863,7 @@ const CustomXAxisTick = ({ x, y, payload }) => {
         upgradedAt: serverTimestamp(),
       });
 
-      // Mark onboarding as done and show dashboard
+   
       setHasDepartments(true);
       alert("Onboarding completed successfully! Please connect your Google Calendar to enhance your training experience.");
     } catch (err) {
@@ -915,7 +896,6 @@ const CustomXAxisTick = ({ x, y, payload }) => {
         <CompanySidebar companyId={companyId} companyName={companyName} className="min-h-screen" />
       </aside>
 
-      {/* Mobile Sidebar Drawer */}
       <div
         className={`fixed inset-0 z-[70] bg-black/50 transition-opacity duration-300 lg:hidden ${
           showMobileSidebar ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
@@ -1064,7 +1044,7 @@ const CustomXAxisTick = ({ x, y, payload }) => {
           </div>
         </div>
 
-        {/* Show onboarding only if first login */}
+      
         {!hasDepartments && step <= QUESTIONS.length && (
           <>
             {/* Progress Bar */}
@@ -1078,14 +1058,13 @@ const CustomXAxisTick = ({ x, y, payload }) => {
               <p className="text-sm text-right text-[#AFCBE3] mt-1">{step} / {QUESTIONS.length}</p>
             </div>
 
-            {/* Question Cards */}
             <div className="max-w-4xl mx-auto space-y-6">
               <div className="p-6 rounded-xl border-2 border-[#00FFFF] bg-[#021B36]/80 shadow-[0_0_20px_rgba(0,255,255,0.3)]">
                 <p className="text-[#00FFFF] font-semibold text-lg mb-2">{QUESTIONS[step - 1].text}</p>
                 {QUESTIONS[step - 1].description && (
                   <p className="text-[#AFCBE3] text-sm mb-4">{QUESTIONS[step - 1].description}</p>
                 )}
-                {/* <div className="grid grid-cols-2 md:grid-cols-3 gap-4"> */}
+                
                   <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
                    {QUESTIONS[step - 1].type === "text" ? (
   <div className="w-full">
