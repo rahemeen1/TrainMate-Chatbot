@@ -20,8 +20,6 @@ import emailRoutes from "./routes/emailRoutes.js";
 import { initializeScheduledJobs } from "./services/scheduledJobs.js";
 import { initializeAutonomousAgentRuntime } from "./services/autonomy/runtime/runtime.service.js";
 
-
-
 const app = express();
 app.use(express.json());
 app.use(cors());
@@ -40,7 +38,6 @@ app.use("/api", ingestRoutes);
 app.use("/api/roadmap", roadmapRoutes);
 app.use("/api", chatRoute);
 app.use("/api/company-chat", companyFresherChatRoutes);
-// app.use("/api/stats", statsRoutes);
 app.use("/api/module", moduleExplain);
 app.use("/api", quizRoutes);
 app.use("/api/auth", authRoutes);
@@ -54,28 +51,28 @@ async function initializeBackgroundServices() {
   try {
     await initPinecone();
   } catch (error) {
-    console.error("⚠️ Failed to initialize Pinecone, continuing without it:", error.message);
+    console.error("Failed to initialize Pinecone, continuing without it:", error.message);
   }
   
   // Initialize scheduled jobs (daily reminders, etc.)
   try {
     initializeScheduledJobs();
   } catch (error) {
-    console.error("⚠️ Failed to initialize scheduled jobs:", error.message);
+    console.error("Failed to initialize scheduled jobs:", error.message);
   }
 
   // Initialize persistent autonomous runtime loop
   try {
     initializeAutonomousAgentRuntime();
   } catch (error) {
-    console.error("⚠️ Failed to initialize autonomous runtime:", error.message);
+    console.error("Failed to initialize autonomous runtime:", error.message);
   }
 }
 
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
 
 initializeBackgroundServices().catch((error) => {
-  console.error("⚠️ Background initialization failed:", error.message);
+  console.error("Failed to initialize background services:", error.message);
 });

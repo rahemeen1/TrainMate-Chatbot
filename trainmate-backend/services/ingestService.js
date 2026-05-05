@@ -3,7 +3,6 @@ import { getPineconeIndex } from "../config/pinecone.js";
 import { chunkText } from "../utils/chunkText.js";
 import { extractFileText } from "../utils/TextExtractor.js";
 
-
 // NORMALIZE EMBEDDING VALUES
 const normalizeValues = (vals) => {
   if (Array.isArray(vals)) return vals.map(Number);
@@ -17,8 +16,6 @@ const normalizeValues = (vals) => {
     return null;
   }
 };
-
-
 //INGEST DOCUMENT INTO PINECONE
 export const ingestDocAsync = async ({
   fileUrl,
@@ -73,7 +70,7 @@ export const ingestDocAsync = async ({
       const values = normalizeValues(raw);
 
       if (!values || !Array.isArray(values) || values.length !== 1024) {
-        console.error("❌ Invalid embedding for chunk", i);
+        console.error("Invalid embedding for chunk", i);
         console.error("Raw embedding:", raw);
         throw new Error("Invalid embedding values");
       }
@@ -91,10 +88,8 @@ export const ingestDocAsync = async ({
         },
       });
     }
-
-    console.log("📦 Total records prepared:", records.length);
-
-    
+    console.log("Total records prepared:", records.length);
+ 
     //UPSERT INTO PINECONE
     const namespace = `company-${companyId}`;
     console.log("Pinecone namespace:", namespace);
@@ -105,11 +100,9 @@ export const ingestDocAsync = async ({
 
     console.log("Ingestion completed successfully");
     console.log("================ INGEST END ==================\n");
-
   } catch (err) {
     console.error("[INGEST] Failed");
     console.error(err?.stack || err);
     throw err;
   }
-  
 };

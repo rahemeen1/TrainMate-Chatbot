@@ -764,7 +764,7 @@ async function checkAndUnlockModulesComprehensive(companyId, deptId, userId, roa
           quizLocked: false,
           requiresAdminContact: false,
         });
-        console.log(`✅ [BASIC] Auto-completed module ${module.data.order} after timeline elapsed`);
+        console.log(`[BASIC] Auto-completed module ${module.data.order} after timeline elapsed`);
         continue;
       }
 
@@ -777,7 +777,7 @@ async function checkAndUnlockModulesComprehensive(companyId, deptId, userId, roa
       }
 
       if (!isExpired && appearsCompleted) {
-        console.log(`✅ Module ${module.data.order}: Already completed`);
+        console.log(`Module ${module.data.order}: Already completed`);
         continue;
       }
 
@@ -799,12 +799,12 @@ async function checkAndUnlockModulesComprehensive(companyId, deptId, userId, roa
         nextActiveModule = module;
         logThrottled(
           `active-module-remains:${companyId}:${deptId}:${userId}:${module.id}`,
-          `🎯 Active module remains: ${module.data.order} (${module.data.moduleTitle})`
+          `Active module remains: ${module.data.order} (${module.data.moduleTitle})`
         );
       } else if (!isExpired && !nextActiveModule && !appearsCompleted) {
         // Found first non-expired, non-completed module
         nextActiveModule = module;
-        console.log(`🎯 Next active module: ${module.data.order} (${module.data.moduleTitle})`);
+        console.log(` Next active module: ${module.data.order} (${module.data.moduleTitle})`);
       }
     }
 
@@ -825,7 +825,7 @@ async function checkAndUnlockModulesComprehensive(companyId, deptId, userId, roa
       allModules
     };
   } catch (err) {
-    console.error("❌ Error in comprehensive module check:", err);
+    console.error("Error in comprehensive module check:", err);
     return {
       expiredCount: 0,
       expiredModuleIds: [],
@@ -903,7 +903,7 @@ async function getActualSkillsCovered(companyId, deptId, userId, moduleId, skill
       percentage
     };
   } catch (err) {
-    console.error("❌ Error getting actual skills covered:", err);
+    console.error("Error getting actual skills covered:", err);
     return {
       actualSkillsCovered: [],
       totalCovered: 0,
@@ -913,7 +913,7 @@ async function getActualSkillsCovered(companyId, deptId, userId, moduleId, skill
   }
 }
 
-/* ================= MISSED DATES ================= */
+//missed dates
 /**
  * Collect date-keyed attendance events from roadmap chat sessions.
  * These date keys act as the daily training attendance calendar.
@@ -1109,7 +1109,6 @@ async function buildCrossModuleLearningSummary({
 
   const summaryPrompt = `
 You are a learning-memory agent.
-
 Summarize what the learner has studied so far across ALL training modules using the chat history digest below.
 
 Rules:
@@ -1121,10 +1120,7 @@ Rules:
 
 CHAT DIGEST:
 ${digestText}
-
-Return only the summary bullets.
-`;
-
+Return only the summary bullets.`;
   try {
     const result = await model.generateContent(summaryPrompt);
     const text = result?.response?.text?.()?.trim();
@@ -1133,7 +1129,7 @@ Return only the summary bullets.
       stats,
     };
   } catch (error) {
-    console.warn("⚠️ Cross-module summary generation failed:", error.message);
+    console.warn("Cross-module summary generation failed:", error.message);
     return {
       summary: "Cross-module summary unavailable right now.",
       stats,
@@ -1143,11 +1139,9 @@ Return only the summary bullets.
       
 
 /* ================= PINECONE ================= */
-// DEPRECATED: Use retrieveDeptDocsFromPinecone from pineconeService.js instead
-// This function kept for backward compatibility only
 async function queryPinecone({ embedding, companyId, deptId, topK = 5 }) {
   try {
-    console.log("🔍 Pinecone query started (DEPRECATED - use retrieveDeptDocsFromPinecone)");
+    console.log("Pinecone query started");
     console.log("   Company:", companyId);
     console.log("   Department:", deptId);
     console.log("   TopK:", topK);
@@ -1171,18 +1165,18 @@ async function queryPinecone({ embedding, companyId, deptId, topK = 5 }) {
     const matches = res?.matches || [];
     const matchCount = matches.length;
 
-    console.log(`📚 Raw Pinecone results: ${matchCount}`);
+    console.log(`Raw Pinecone results: ${matchCount}`);
 
     if (matchCount > 0) {
       console.log(
-        "🧾 Pinecone sources:",
+        "Pinecone sources:",
         matches.map((m) => ({
           score: m.score,
           dept: m.metadata?.deptName,
         }))
       );
     } else {
-      console.log("⚠️ Pinecone returned no matches");
+      console.log("Pinecone returned no matches");
     }
 
     // Apply threshold filtering with fallback (same as pineconeService.js)
@@ -1204,7 +1198,7 @@ async function queryPinecone({ embedding, companyId, deptId, topK = 5 }) {
     }
 
     if (fallbackMode !== "none") {
-      console.log(`⚠️ Fallback mode activated: ${fallbackMode}`);
+      console.log(`Fallback mode activated: ${fallbackMode}`);
     }
 
     return filtered.map((m) => ({
@@ -1213,7 +1207,7 @@ async function queryPinecone({ embedding, companyId, deptId, topK = 5 }) {
       source: "pinecone",
     }));
   } catch (err) {
-    console.error("❌ Pinecone query failed:", err.message);
+    console.error(" Pinecone query failed:", err.message);
     return [];
   }
 }
@@ -1223,7 +1217,7 @@ async function fetchAgenticKnowledge(query, companyDocs) {
   const startedAt = Date.now();
   let runStatus = "success";
   try {
-    console.log("🤖 Agentic knowledge fetch initiated for:", query.substring(0, 50));
+    console.log(" Agentic knowledge fetch initiated for:", query.substring(0, 50));
     
     // Parallel fetch from all sources
     const [mdnResults, soResults, devtoResults] = await Promise.all([
@@ -1277,7 +1271,7 @@ async function fetchAgenticKnowledge(query, companyDocs) {
 /* ================= INIT CHAT ================= */
 export const initChat = async (req, res) => {
   try {
-    console.log("🟡 initChat body:", req.body);
+    console.log("initChat body:", req.body);
     const { userId, companyId, deptId } = req.body;
 
     if (!userId || !companyId || !deptId) {
@@ -1306,7 +1300,7 @@ export const initChat = async (req, res) => {
       .collection("roadmap");
 
     const roadmapSnap = await roadmapRef.get();
-    console.log("🟢 roadmapSnap size:", roadmapSnap.size);
+    console.log("roadmapSnap size:", roadmapSnap.size);
 
     if (roadmapSnap.empty) {
       return res.json({
@@ -1410,7 +1404,7 @@ You've completed all training modules.
       });
     }
 
-    // ✅ Company onboarding info (keep it for later, but don’t send now)
+    // Company onboarding info (keep it for later, but don’t send now)
     const onboardingRef = db
       .collection("companies")
       .doc(companyId)
@@ -1593,12 +1587,12 @@ Team Size: ${teamSize}
 About: ${description}
 `;
         
-        console.log("✅ Company info loaded:", description.substring(0, 50));
+        console.log("Company info loaded:", description.substring(0, 50));
       } else {
-        console.warn("⚠️ No company onboarding answers found");
+        console.warn(" No company onboarding answers found");
       }
     } catch (err) {
-      console.warn("⚠️ Could not fetch company info:", err.message);
+      console.warn(" No company info found:", err.message);
     }
 
     /* ---------- ACTIVE MODULE ---------- */
@@ -1668,12 +1662,12 @@ About: ${description}
     const strugglingAreas = memoryData.strugglingAreas || [];
     const masteredTopics = memoryData.masteredTopics || [];
     
-    console.log(`📝 Agent Memory: ${agentMemory.substring(0, 100)}...`);
+    console.log(`Agent Memory: ${agentMemory.substring(0, 100)}...`);
     if (strugglingAreas.length > 0) {
-      console.log(`⚠️  Struggling with: ${strugglingAreas.slice(0, 3).join(", ")}`);
+      console.log(` Struggling with: ${strugglingAreas.slice(0, 3).join(", ")}`);
     }
     if (masteredTopics.length > 0) {
-      console.log(`✅ Mastered: ${masteredTopics.slice(0, 3).join(", ")}`);
+      console.log(`Mastered: ${masteredTopics.slice(0, 3).join(", ")}`);
     }
 
     /* ---------- CHECK FOR UNLOCK-RELATED QUESTIONS ---------- */
@@ -1850,7 +1844,7 @@ In the meantime, let me know if you have questions about the current module cont
           .join("\n");
         
         weaknessWelcome = `
-🔄 ROADMAP REGENERATION CONTEXT:
+ROADMAP REGENERATION CONTEXT:
 Your learning roadmap has been regenerated based on your quiz performance.
 
 AREAS YOU STRUGGLED WITH:
@@ -1864,7 +1858,7 @@ ${wrongQuestionsPreview || "No specific questions available"}
 I will focus our conversation on strengthening these areas. Let's start from the fundamentals and build your understanding step by step.
 `;
         
-        console.log(`👋 First chat after regeneration - will show weakness welcome`);
+        console.log(`First chat after regeneration - will show weakness welcome`);
         
         // Clear the flag after showing welcome once
         try {
@@ -1888,8 +1882,8 @@ I will focus our conversation on strengthening these areas. Let's start from the
     );
     
     const skillProgress = calculateSkillProgressFromActual(actualSkillsData);
-    console.log(`📊 Actual Skills Covered: ${skillProgress.masteredSkills}/${skillProgress.totalSkills} skills (${skillProgress.progressPercentage}%)`);
-    console.log(`📝 Skills covered in conversations: ${skillProgress.actualSkillsCovered.join(", ") || "None yet"}`);
+    console.log(`Actual Skills Covered: ${skillProgress.masteredSkills}/${skillProgress.totalSkills} skills (${skillProgress.progressPercentage}%)`);
+    console.log(`Skills covered in conversations: ${skillProgress.actualSkillsCovered.join(", ") || "None yet"}`);
     
     // Update module progress in Firestore with actual skills
     if (skillProgress.usingSkillTracking) {
@@ -1935,18 +1929,18 @@ I will focus our conversation on strengthening these areas. Let's start from the
       }
 
     } catch (err) {
-      console.warn("⚠️ Pinecone retrieval skipped:", err.message);
+      console.warn("Pinecone retrieval skipped:", err.message);
     }
 
     /* ---------- AGENTIC KNOWLEDGE FETCH ---------- */
-    console.log("🤖 Fetching agentic knowledge from external sources...");
+    console.log("Fetching agentic knowledge from external sources...");
     const agenticKnowledge = await fetchAgenticKnowledge(newMessage, relevantDocs);
     
     const topExternalSource = agenticKnowledge.topResult;
     const externalSources = agenticKnowledge.summary || [];
     
     if (topExternalSource) {
-      console.log(`✅ Top external source: ${topExternalSource.source}`);
+      console.log(`Top external source: ${topExternalSource.source}`);
     }
 
     /* ---------- CONTEXT ---------- */
@@ -1962,11 +1956,11 @@ I will focus our conversation on strengthening these areas. Let's start from the
     if (externalSources.length > 0) {
       const externalContext = externalSources.map(doc => {
         if (doc.source === 'mdn') {
-          return `📖 MDN: ${doc.title}\nURL: ${doc.mdn_url}\nSummary: ${doc.summary}`;
+          return `MDN: ${doc.title}\nURL: ${doc.mdn_url}\nSummary: ${doc.summary}`;
         } else if (doc.source === 'stackOverflow') {
           return `🔗 StackOverflow: ${doc.title}\nURL: ${doc.link}`;
         } else if (doc.source === 'devto') {
-          return `📝 Dev.to: ${doc.title}\nURL: ${doc.link}`;
+          return ` Dev.to: ${doc.title}\nURL: ${doc.link}`;
         }
         return `${doc.source}: ${doc.title || doc.text}`;
       }).join("\n\n");
@@ -1990,7 +1984,7 @@ I will focus our conversation on strengthening these areas. Let's start from the
       includeSummary: historyIntent,
     });
 
-    /* ---------- PROMPT ---------- */
+    //prompt
     const finalPrompt = `
 SYSTEM ROLE:
 You are TrainMate, a goal-driven onboarding agent focused on teaching concepts.
@@ -2131,7 +2125,6 @@ ${weaknessWelcome ? '' : '- NEVER repeat greetings or introductions\n'}- NEVER r
 - If completely off-topic (not module, company, or department related), say: "I'm here to help with your training module and answer questions about the company."
 - Focus on teaching concepts, not announcing progress
 
-
 CONTEXT:
 ${context}
 
@@ -2149,15 +2142,13 @@ ${replyContext ? `\nREPLY CONTEXT:\n${replyContext}\n` : ""}
 RESPOND WITH: Direct educational content addressing the question, using both company materials and external sources intelligently. No progress updates or step announcements.
 `;
 
-    /* ---------- LLM ---------- */
+//llm
     const completion = await initializeChatModel().generateContent(finalPrompt);
     let botReply =
       completion?.response?.text() ||
       "I’m here to help with your training module.";
-  // Convert markdown to HTML (safety net for LLM responses)
   botReply = markdownToHtml(botReply);
 
-    // Safety net in case model misses the prompt rule.
     // Only append when there is no question at all, to avoid duplicate end questions.
     const plainReply = botReply.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
     if (!/[?؟]/.test(plainReply)) {

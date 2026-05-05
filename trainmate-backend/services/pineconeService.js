@@ -169,7 +169,7 @@ export const retrieveDeptDocsFromPinecone = async ({
   }
 
   // Log exact scores for debugging
-  console.log("\n📋 EXACT SIMILARITY SCORES:");
+  console.log("\nEXACT SIMILARITY SCORES:");
   selectedMatches.forEach((m, idx) => {
     const score = typeof m?.score === "number" && Number.isFinite(m.score) ? m.score : null;
     const text = (m?.metadata?.text || "").substring(0, 60).replace(/\n/g, " ");

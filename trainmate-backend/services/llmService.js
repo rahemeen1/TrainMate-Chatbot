@@ -35,15 +35,13 @@ export const generateRoadmap = async ({
 }) => {
   console.log("\n================ GEMINI ROADMAP START ================");
 
-  console.log("🧠 Gemini roadmap generation started");
+  console.log("Gemini roadmap generation started");
 
   if (!genAI) {
     throw new Error("GEMINI_API_KEY missing");
   }
 
-  /* ---------------------------------
-     1️⃣ RAW INPUT DEBUG
-  ---------------------------------- */
+  //RAW INPUT DEBUG
   console.log("🧪 Raw inputs received:");
   console.log("   trainingOn       →", trainingOn);
   console.log("   expertise        →", expertise);
@@ -62,9 +60,7 @@ export const generateRoadmap = async ({
     console.warn("⚠️ CV text is very small or empty");
   }
 
-  /* ---------------------------------
-     2️⃣ SAFETY FALLBACKS
-  ---------------------------------- */
+  //safety fallbacks
   const safeTrainingOn = trainingOn || "General";
   const safeExpertise = expertise ?? 1;
   const safeLevel = trainingLevel || "Beginner";
@@ -83,12 +79,10 @@ export const generateRoadmap = async ({
     : "";
   const effectiveCompanyContext = safeCompanyContext || pineconeExcerpt || "No company documents provided.";
 
-  console.log("🧪 Normalized inputs:");
+  console.log("Normalized inputs:");
 
   try {
-    /* ---------------------------------
-       3️⃣ EXPERTISE INSTRUCTION
-    ---------------------------------- */
+    //expertise instruction
     const expertiseInstruction =
       safeExpertise <= 2
         ? "User is a beginner. Start from fundamentals with simple examples."
@@ -96,11 +90,7 @@ export const generateRoadmap = async ({
         ? "User is intermediate. Brief fundamentals then move to applied concepts."
         : "User is experienced. Skip basics and focus on advanced, real-world practices.";
 
-    console.log("🧭 Expertise instruction selected");
-
-    /* ---------------------------------
-       4️⃣ GEMINI MODEL INIT
-    ---------------------------------- */
+    //gemini model init
     const model = genAI.getGenerativeModel({
       model: "gemini-2.5-flash",
       generationConfig: {
@@ -120,18 +110,14 @@ STRICT RULES:
 
     console.log("✅ Gemini model initialized");
 
-    /* ---------------------------------
-       5️⃣ PROMPT BUILD
-    ---------------------------------- */
+    //prompt build
     const isRegeneration = safeLearningProfile?.regenerationContext;
     const weakConcepts = safeLearningProfile?.weakConcepts || [];
     const weaknessRelatedSkills = safeLearningProfile?.weaknessRelatedSkills || [];
     const otherCompanySkills = safeLearningProfile?.otherCompanySkills || [];
     const balancedApproach = safeLearningProfile?.balancedApproach || false;
     
-    /* ---------------------------------
-       5️⃣ SIMPLIFIED PROMPT
-    ---------------------------------- */
+    //prompt
     const prompt = `Generate a personalized learning roadmap as a JSON array.
 
 TARGET: ${safeTrainingOn}
@@ -162,11 +148,9 @@ Rules:
 3. Progress from fundamentals to advanced
 4. Only return valid JSON, no extra text`;
 
-    console.log("📨 Simplified prompt ready");
+    console.log("Simplified prompt ready");
     
-    /* ---------------------------------
-       6️⃣ RETRY LOGIC FOR TRUNCATION
-    ---------------------------------- */
+    //Retry logic for Gemini response
     let rawResponse = "";
     let retries = 0;
     const maxRetries = 2;
@@ -174,34 +158,30 @@ Rules:
     while (retries < maxRetries && (!rawResponse || rawResponse.length < 100)) {
       try {
         retries++;
-        console.log(`🚀 Sending to Gemini (attempt ${retries})...`);
+        console.log(`Sending to Gemini (attempt ${retries})...`);
         
         const result = await model.generateContent(prompt);
         const response = await result.response;
         rawResponse = await response.text();
 
-        console.log("📩 Gemini response received");
-        console.log("🧾 Response length:", rawResponse.length, "chars");
+        console.log("Gemini response received");
+        console.log("Response length:", rawResponse.length, "chars");
         
         if (rawResponse.length < 100) {
-          console.warn("⚠️  Response too short, might be truncated");
+          console.warn(" Response too short, might be truncated");
           if (retries < maxRetries) {
-            await new Promise(r => setTimeout(r, 1000)); // Wait 1s before retry
+            await new Promise(r => setTimeout(r, 1000)); 
             continue;
           }
         }
         break;
       } catch (geminiError) {
-        console.warn(`⚠️  Gemini attempt ${retries} failed:`, geminiError.message);
+        console.warn(`Gemini attempt ${retries} failed:`, geminiError.message);
         if (retries < maxRetries) {
           await new Promise(r => setTimeout(r, 1500));
         }
       }
     }
-
-    /* ---------------------------------
-       7️⃣ SAFE JSON PARSE
-    ---------------------------------- */
     let roadmap;
     const parseRawResponse = (text) => {
       // Try to extract JSON array from response
@@ -209,22 +189,20 @@ Rules:
       if (arrayMatch) {
         return JSON.parse(arrayMatch[0]);
       }
-      // Try direct parse
       return JSON.parse(text);
     };
 
     try {
       roadmap = parseRawResponse(rawResponse);
     } catch (parseErr) {
-      console.warn("⚠️  JSON parse failed, attempting extraction...", parseErr.message);
+      console.warn("JSON parse failed, attempting extraction...", parseErr.message);
       
-      // Try to extract JSON array pattern
       const jsonArrayMatch = rawResponse.match(/\[[\s\S]*\]/);
       if (jsonArrayMatch) {
         try {
           roadmap = JSON.parse(jsonArrayMatch[0]);
         } catch (e) {
-          console.error("❌ Could not parse extracted JSON");
+          console.error("Could not parse extracted JSON");
           throw new Error("Could not parse Gemini response as valid JSON");
         }
       } else {
@@ -233,7 +211,7 @@ Rules:
     }
 
     if (!Array.isArray(roadmap) || roadmap.length === 0) {
-      console.warn("⚠️  Invalid response format, generating fallback roadmap");
+      console.warn("Invalid response format, generating fallback roadmap");
       roadmap = [
         {
           moduleTitle: `Introduction to ${safeTrainingOn}`,
@@ -256,9 +234,6 @@ Rules:
       ];
     }
 
-    /* ---------------------------------
-       8️⃣ SANITIZE MODULES
-    ---------------------------------- */
     roadmap = roadmap.map((module, idx) => ({
       moduleTitle: module.moduleTitle ?? `Module ${idx + 1}`,
       description: module.description ?? "No description provided",
@@ -266,16 +241,13 @@ Rules:
       skillsCovered: Array.isArray(module.skillsCovered) ? module.skillsCovered : []
     }));
 
-    // Preserve LLM pedagogical ordering instead of forcing skill-bucket reordering.
-
-    console.log("🧩 Roadmap modules generated:", roadmap.length);
-
+    console.log("Roadmap modules generated:", roadmap.length);
     console.log("================ GEMINI ROADMAP END ==================\n");
 
     return roadmap;
 
   } catch (error) {
-    console.error("🔥 Gemini roadmap generation failed:", error.message);
+    console.error("Gemini roadmap generation failed:", error.message);
     throw error;
   }
 };
