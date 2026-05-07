@@ -600,23 +600,45 @@ if (!userData) {
             : 0;
 
           const totalAttempts = roadmapModulesDetailed.reduce(
-            (sum, m) => sum + (m.quizAttempts ?? 0),
+            (sum, m) => sum + Number(m.quizAttempts || 0),
             0
           );
-          const quizzesGenerated = roadmapModulesDetailed.filter(
-            (m) => m.quizGenerated
-          ).length;
+          const quizzesGenerated = roadmapModulesDetailed.reduce(
+            (sum, m) => {
+              const attempts = Number(m.quizAttempts || 0);
+              if (attempts > 0) return sum + attempts;
+              return sum + (m.quizGenerated ? 1 : 0);
+            },
+            0
+          );
           const quizzesAttempted = roadmapModulesDetailed.filter(
-            (m) => (Number(m.quizAttempts) || 0) > 0
+            (m) => Number(m.quizAttempts || 0) > 0
           ).length;
-          const quizzesPassed = roadmapModulesDetailed.filter(
-            (m) => m.quizPassed
-          ).length;
-          const quizzesFailed = roadmapModulesDetailed.filter(
-            (m) => (Number(m.quizAttempts) || 0) > 0 && !m.quizPassed
-          ).length;
-          const passRate = quizzesAttempted
-            ? Math.round((quizzesPassed / quizzesAttempted) * 100)
+          
+          // Calculate passed/failed attempts more accurately
+          // If a quiz was ultimately passed: 1 successful attempt + (attempts - 1) failed attempts
+          // If a quiz was not passed: all attempts are failed
+          let passedAttempts = 0;
+          let failedAttempts = 0;
+          
+          roadmapModulesDetailed.forEach((m) => {
+            const attempts = Number(m.quizAttempts || 0);
+            if (attempts > 0) {
+              if (m.quizPassed === true) {
+                passedAttempts += 1;
+                failedAttempts += Math.max(0, attempts - 1);
+              } else {
+                failedAttempts += attempts;
+              }
+            }
+          });
+          
+          const quizzesPassed = passedAttempts;
+          const quizzesFailed = failedAttempts;
+          
+          // Calculate pass rate based on total attempts
+          const passRate = totalAttempts > 0
+            ? Math.round((passedAttempts / totalAttempts) * 100)
             : 0;
 
           const modulePassThreshold =
@@ -654,32 +676,23 @@ if (!userData) {
             return deadline < new Date();
           }).length;
 
-          let nextDeadline = null;
-          roadmapModulesDetailed.forEach((m) => {
-            if (m.completed) return;
-            const startDate = toDate(
-              m.startedAt || m.FirstTimeCreatedAt || m.createdAt
-            );
-            if (!startDate || !m.estimatedDays) return;
-            const deadline = new Date(
-              startDate.getTime() + m.estimatedDays * 24 * 60 * 60 * 1000
-            );
-            if (deadline < new Date()) return;
-            if (!nextDeadline || deadline < nextDeadline.date) {
-              nextDeadline = {
-                date: deadline,
-                title: m.moduleTitle,
-                order: m.order,
-              };
-            }
-          });
-
-          const nextDeadlineDays = nextDeadline
-            ? Math.max(
-                0,
-                Math.ceil((nextDeadline.date - new Date()) / (1000 * 60 * 60 * 24))
-              )
-            : null;
+          // Calculate quiz unlock deadline for the current incomplete module
+          const incompleteModules = roadmapModulesDetailed.filter(m => !m.completed);
+          
+          let nextDeadlineInfo = null;
+          if (incompleteModules.length > 0) {
+            const currentModule = incompleteModules[0];
+            
+            // Get module status directly from database
+            const moduleStatus = String(currentModule.status || "pending").toLowerCase();
+            const moduleProgress = Number(currentModule.moduleProgress) || 0;
+            
+            nextDeadlineInfo = {
+              title: currentModule.moduleTitle,
+              status: moduleStatus,
+              progress: moduleProgress,
+            };
+          }
 
           return (
             <>
@@ -836,12 +849,39 @@ if (!userData) {
                         <p className="text-lg font-semibold text-[#00FFFF] mt-1">{overdueModules}</p>
                       </div>
                       <div className="p-3 rounded-lg bg-[#031C3A]/60 border border-[#00FFFF18]">
-                        <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Next Deadline</p>
-                        <p className="text-sm font-semibold text-[#00FFFF] mt-1">
-                          {nextDeadline
-                            ? `Module ${nextDeadline.order} in ${nextDeadlineDays}d`
-                            : "No upcoming"}
-                        </p>
+                        <p className="text-xs text-[#AFCBE3] uppercase tracking-wide">Module Status</p>
+                        <div className="mt-2 flex items-center gap-3">
+                          {nextDeadlineInfo ? (
+                            <>
+                              <span className={`px-3 py-1 rounded-full text-xs font-semibold border capitalize ${
+                                nextDeadlineInfo.status === "completed" 
+                                  ? "bg-green-500/10 text-green-300 border-green-400/30"
+                                  : nextDeadlineInfo.status === "in-progress"
+                                    ? "bg-[#00FFFF10] text-[#00FFFF] border-[#00FFFF30]"
+                                    : "bg-amber-500/10 text-amber-300 border-amber-400/30"
+                              }`}>
+                                {nextDeadlineInfo.status}
+                              </span>
+                              {nextDeadlineInfo.progress > 0 && (
+                                <div className="flex-1">
+                                  <div className="h-1 rounded-full bg-[#031C3A] overflow-hidden">
+                                    <div
+                                      className="h-full bg-gradient-to-r from-[#00FFFF] to-blue-400"
+                                      style={{ width: `${nextDeadlineInfo.progress}%` }}
+                                    />
+                                  </div>
+                                  <p className="text-xs text-[#AFCBE3] mt-1">{nextDeadlineInfo.progress}% Complete</p>
+                                </div>
+                              )}
+                            </>
+                          ) : completedModules === totalModules ? (
+                            <span className="px-3 py-1 rounded-full text-xs font-semibold bg-green-500/10 text-green-300 border border-green-400/30">
+                              Completed
+                            </span>
+                          ) : (
+                            <span className="text-xs text-[#AFCBE3]">No module info</span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>

@@ -70,9 +70,7 @@ export default function FresherTraining() {
           setUserData(userData); // Store userData for training lock check
           if (userData.weaknessAnalysis) {
             setWeaknessAnalysis(userData.weaknessAnalysis);
-            setShowWeaknessBanner(true);
-            // Auto-hide banner after 10 seconds
-            setTimeout(() => setShowWeaknessBanner(false), 10000);
+            // Don't show banner yet - wait for selected module to be set
           }
         }
         
@@ -103,6 +101,25 @@ export default function FresherTraining() {
 
     loadRoadmap();
   }, [companyId, deptId, userId, selectedModuleId]);
+
+  // ===============================
+  // 🎯 Show weakness banner only for current incomplete module
+  // ===============================
+  useEffect(() => {
+    if (
+      weaknessAnalysis &&
+      selectedModule &&
+      !selectedModule.completed &&
+      (weaknessAnalysis.moduleId === selectedModule.id || 
+       weaknessAnalysis.moduleName === selectedModule.moduleTitle)
+    ) {
+      setShowWeaknessBanner(true);
+      // Auto-hide banner after 10 seconds
+      setTimeout(() => setShowWeaknessBanner(false), 10000);
+    } else {
+      setShowWeaknessBanner(false);
+    }
+  }, [selectedModule, weaknessAnalysis]);
 
   // ===============================
   // 📊 Progress Calculation
@@ -379,8 +396,8 @@ return (
         </button>
       </div>
 
-      {/* ===== Weakness Analysis Banner ===== */}
-      {showWeaknessBanner && weaknessAnalysis && (
+      {/* ===== Weakness Analysis Banner (Module-wise) ===== */}
+      {showWeaknessBanner && weaknessAnalysis && selectedModule && !selectedModule.completed && (
         <div className="bg-red-500/10 border-2 border-red-500 rounded-lg p-6 animate-pulse">
           <div className="flex items-start gap-4">
             <span className="text-3xl">⚠️</span>
@@ -388,39 +405,67 @@ return (
               <h3 className="text-xl font-bold text-red-400 mb-2">
                 Quiz Setback - Let's Refocus
               </h3>
-              <p className="text-[#AFCBE3] mb-3">
+              <p className="text-[#AFCBE3] mb-4">
                 You didn't pass the quiz. Your average score was <span className="font-semibold text-red-300">{weaknessAnalysis.avgQuizScore}%</span>. 
                 Let's focus on your weak areas and come back stronger.
               </p>
               
-              <div className="bg-[#031C3A]/60 rounded-lg p-4 mb-3">
-                <p className="text-[#AFCBE3] text-sm font-semibold mb-2">Key Areas to Focus On:</p>
-                <ul className="text-[#AFCBE3] text-sm space-y-1 list-disc list-inside">
-                  {weaknessAnalysis.strugglingAreas?.map((area, idx) => (
-                    <li key={idx} className="text-red-300">{area}</li>
+              {/* Module-wise Breakdown */}
+              {weaknessAnalysis.moduleWiseBreakdown && Object.keys(weaknessAnalysis.moduleWiseBreakdown).length > 0 ? (
+                <div className="space-y-4 mb-4">
+                  {Object.entries(weaknessAnalysis.moduleWiseBreakdown).map(([moduleName, stats]) => (
+                    <div key={moduleName} className="bg-[#031C3A]/60 rounded-lg p-4 border border-red-500/20">
+                      <div className="flex items-start justify-between mb-3">
+                        <h4 className="text-[#00FFFF] font-semibold">{moduleName}</h4>
+                        <span className={`text-sm font-bold ${stats.accuracy >= 70 ? 'text-green-300' : 'text-red-300'}`}>
+                          {stats.correct}/{stats.total} ({Math.round((stats.correct / stats.total) * 100)}%)
+                        </span>
+                      </div>
+                      {stats.weakAreas && stats.weakAreas.length > 0 && (
+                        <div>
+                          <p className="text-yellow-300 text-xs font-semibold mb-2">Areas to Focus:</p>
+                          <ul className="text-[#AFCBE3] text-sm space-y-1 list-disc list-inside">
+                            {stats.weakAreas.map((area, idx) => (
+                              <li key={idx} className="text-yellow-200">{area}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
                   ))}
-                </ul>
-                {Array.isArray(weaknessAnalysis.focusAreas) && weaknessAnalysis.focusAreas.length > 0 && (
-                  <div className="mt-3">
-                    <p className="text-[#AFCBE3] text-sm font-semibold mb-2">Targeted study plan</p>
-                    <ul className="text-[#AFCBE3] text-sm space-y-1 list-disc list-inside">
-                      {weaknessAnalysis.focusAreas.map((area, idx) => (
-                        <li key={idx} className="text-cyan-200">{area}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {Array.isArray(weaknessAnalysis.recommendedActions) && weaknessAnalysis.recommendedActions.length > 0 && (
-                  <div className="mt-3">
-                    <p className="text-[#AFCBE3] text-sm font-semibold mb-2">Recommended next steps</p>
-                    <ul className="text-[#AFCBE3] text-sm space-y-1 list-disc list-inside">
-                      {weaknessAnalysis.recommendedActions.map((action, idx) => (
-                        <li key={idx} className="text-green-300">{action}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
+                </div>
+              ) : (
+                <div className="bg-[#031C3A]/60 rounded-lg p-4 mb-3">
+                  <p className="text-[#AFCBE3] text-sm font-semibold mb-2">Key Areas to Focus On:</p>
+                  <ul className="text-[#AFCBE3] text-sm space-y-1 list-disc list-inside">
+                    {weaknessAnalysis.strugglingAreas?.map((area, idx) => (
+                      <li key={idx} className="text-red-300">{area}</li>
+                    ))}
+                  </ul>
+                  {Array.isArray(weaknessAnalysis.focusAreas) && weaknessAnalysis.focusAreas.length > 0 && (
+                    <div className="mt-3">
+                      <p className="text-[#AFCBE3] text-sm font-semibold mb-2">Targeted study plan</p>
+                      <ul className="text-[#AFCBE3] text-sm space-y-1 list-disc list-inside">
+                        {weaknessAnalysis.focusAreas.map((area, idx) => (
+                          <li key={idx} className="text-cyan-200">{area}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {/* Recommended Actions */}
+              {Array.isArray(weaknessAnalysis.recommendedActions) && weaknessAnalysis.recommendedActions.length > 0 && (
+                <div className="bg-[#031C3A]/60 rounded-lg p-4 mb-3">
+                  <p className="text-[#AFCBE3] text-sm font-semibold mb-2">Recommended next steps</p>
+                  <ul className="text-[#AFCBE3] text-sm space-y-1 list-disc list-inside">
+                    {weaknessAnalysis.recommendedActions.map((action, idx) => (
+                      <li key={idx} className="text-green-300">{action}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               
               <p className="text-[#AFCBE3] text-sm">
                 💡 The chatbot is ready to help you master these concepts. Focus on understanding these areas, then retake the quiz with confidence!
@@ -428,7 +473,7 @@ return (
             </div>
             <button
               onClick={() => setShowWeaknessBanner(false)}
-              className="px-3 py-1 bg-red-500/20 text-red-300 rounded hover:bg-red-500/30 transition text-sm"
+              className="px-3 py-1 bg-red-500/20 text-red-300 rounded hover:bg-red-500/30 transition text-sm flex-shrink-0"
             >
               ✕
             </button>

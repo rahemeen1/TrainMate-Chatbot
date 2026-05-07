@@ -21,21 +21,17 @@ export default function ProgressDetails() {
 
   const isModuleLocked = (module) => {
     const status = String(module?.status || "").toLowerCase();
-    return status === "locked" || !!module?.moduleLocked || !!module?.quizLocked;
+    return status === "locked";
   };
 
   const isModuleCompleted = (module) => {
     const status = String(module?.status || "").toLowerCase();
-    if (status === "expired" || isModuleLocked(module)) return false;
-    return status === "completed" || !!module?.completed || !!module?.quizPassed;
+    return status === "completed";
   };
 
   const getModuleDisplayStatus = (module) => {
     const status = String(module?.status || "").toLowerCase();
-    if (status === "expired") return "EXPIRED";
-    if (isModuleLocked(module)) return "IN PROGRESS";
-    if (isModuleCompleted(module)) return "COMPLETED";
-    return "IN PROGRESS";
+    return status.toUpperCase();
   };
 
   useEffect(() => {
