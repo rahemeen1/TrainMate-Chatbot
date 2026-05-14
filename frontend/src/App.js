@@ -14,6 +14,8 @@ import CompanySettings from "./components/CompanySpecific/CompanySettings";
 import CompanyDetails from "./components/CompanySpecific/CompanyDetails";
 import CompanyNotifications from "./components/CompanySpecific/CompanyNotifications";
 import CompanyLicensePayment from "./components/CompanySpecific/CompanyLicensePayment";
+import CompanyLicenseRenewal from "./components/CompanySpecific/CompanyLicenseRenewal";
+import CompanyLicenseReview from "./components/CompanySpecific/CompanyLicenseReview";
 import FresherTraining from "./components/Fresher/FresherTraining";
 import FresherProgress from "./components/Fresher/FresherProgress";
 import Roadmap from "./components/Fresher/Roadmap";
@@ -70,7 +72,9 @@ export default function App() {
         <Route path="/final-quiz-results/:companyId/:deptId/:userId/:companyName" element={<FinalQuizResults />} />
         <Route path="/training-locked" element={<TrainingLockedScreen />} />
         <Route path="/CompanySpecific/CompanyDetails" element={<CompanyDetails />} />
+        <Route path="/company/license-review" element={<CompanyLicenseReview />} />
         <Route path="/company-license-payment" element={<CompanyLicensePayment />} />
+        <Route path="/company/renew-license" element={<CompanyLicenseRenewal />} />
       </Routes>
     </BrowserRouter>
   );

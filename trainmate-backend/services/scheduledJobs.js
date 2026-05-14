@@ -4,7 +4,7 @@ import { db } from "../config/firebase.js";
 import { handleQuizUnlock } from "./notificationService.js";
 import { sendCompanyLicenseRenewalAlertEmail } from "./emailService.js";
 
-const LICENSE_REMINDER_OFFSETS_DAYS = [3, 2, 1, 0];
+const LICENSE_REMINDER_OFFSETS_DAYS = [5, 4, 3, 2, 1, 0]; // Send reminders 5, 4, 3, 2, 1 days and on renewal day
 
 function timestampToDate(value) {
   if (!value) return null;
@@ -111,6 +111,7 @@ async function processCompanyLicenseRenewalAlerts() {
 
     await sendCompanyLicenseRenewalAlertEmail({
       companyEmail,
+      companyId,
       companyName: companyData.name || "Company",
       licensePlan,
       renewalDate,
@@ -136,7 +137,7 @@ async function processCompanyLicenseRenewalAlerts() {
 }
 
 export function scheduleCompanyLicenseRenewalAlerts() {
-  const cronExpression = process.env.COMPANY_LICENSE_REMINDER_CRON || "0 18 * * *";
+  const cronExpression = process.env.COMPANY_LICENSE_REMINDER_CRON || "0 15 * * *"; // 3 PM daily
 
   cron.schedule(
     cronExpression,

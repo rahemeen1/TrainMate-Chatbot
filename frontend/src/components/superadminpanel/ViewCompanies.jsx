@@ -4,6 +4,9 @@ import { apiUrl } from "../../services/api";
 export default function ViewCompanies() {
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [editingCompany, setEditingCompany] = useState(null);
+  const [newPlan, setNewPlan] = useState("");
+  const [updatingLicense, setUpdatingLicense] = useState(false);
 
   const fetchCompanies = async () => {
     try {
@@ -18,6 +21,59 @@ export default function ViewCompanies() {
       console.error("❌ Error fetching companies:", err);
     }
     setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchCompanies();
+  }, []);
+
+  const handleEditLicense = (company) => {
+    setEditingCompany(company);
+    setNewPlan(company.licensePlan || "License Basic");
+  };
+
+  const handleUpdateLicense = async () => {
+    if (!editingCompany || !newPlan) return;
+
+    setUpdatingLicense(true);
+    try {
+      const response = await fetch(apiUrl(`/api/company/${editingCompany.id}/license-plan`), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ licensePlan: newPlan }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        // Update local state with new license plan and renewal date
+        const updatedRenewalDate = new Date(data.renewalDate || Date.now() + 30 * 24 * 60 * 60 * 1000);
+        
+        setCompanies((prevCompanies) =>
+          prevCompanies.map((c) =>
+            c.id === editingCompany.id 
+              ? { 
+                  ...c, 
+                  licensePlan: newPlan,
+                  licenseRenewalDate: updatedRenewalDate,
+                  billingPeriodDays: 30,
+                  upgradedAt: new Date(),
+                } 
+              : c
+          )
+        );
+        setEditingCompany(null);
+        setNewPlan("");
+        alert(`License updated successfully!\nNew plan: ${newPlan.replace("License ", "")}\nRenewal date: ${updatedRenewalDate.toLocaleDateString("en-GB")}`);
+      } else {
+        alert(`Error: ${data.error || "Failed to update license plan"}`);
+      }
+    } catch (err) {
+      console.error("Error updating license plan:", err);
+      alert("Failed to update license plan");
+    } finally {
+      setUpdatingLicense(false);
+    }
   };
 
   useEffect(() => {
@@ -67,15 +123,20 @@ export default function ViewCompanies() {
     const planLabel = licensePlan === "License Pro" ? "Pro" : "Basic";
     const billingPeriodDays = Number(company.billingPeriodDays) || 30;
 
-    // Renewal date is based on latest billing payment createdAt + billing cycle.
-    const billingPaymentCreatedAt =
-      toDateSafe(company.latestBillingPaymentCreatedAt) ||
-      toDateSafe(company.billingPaymentCreatedAt) ||
-      toDateSafe(company.billingPayment?.createdAt);
+    // First priority: Use direct licenseRenewalDate from company document (set by payment/renewal/super-admin)
+    let normalizedRenewalDate = toDateSafe(company.licenseRenewalDate);
 
-    const normalizedRenewalDate = billingPaymentCreatedAt
-      ? new Date(billingPaymentCreatedAt.getTime() + billingPeriodDays * 24 * 60 * 60 * 1000)
-      : null;
+    // Fallback: Calculate from billing payment if direct date not available
+    if (!normalizedRenewalDate) {
+      const billingPaymentCreatedAt =
+        toDateSafe(company.latestBillingPaymentCreatedAt) ||
+        toDateSafe(company.billingPaymentCreatedAt) ||
+        toDateSafe(company.billingPayment?.createdAt);
+
+      normalizedRenewalDate = billingPaymentCreatedAt
+        ? new Date(billingPaymentCreatedAt.getTime() + billingPeriodDays * 24 * 60 * 60 * 1000)
+        : null;
+    }
 
     let daysRemaining = null;
     if (normalizedRenewalDate) {
@@ -150,6 +211,7 @@ export default function ViewCompanies() {
                     <th className="p-2 border border-[#00FFFF30] text-left">License Status</th>
                     <th className="p-2 border border-[#00FFFF30] text-left">Created At</th>
                     <th className="p-2 border border-[#00FFFF30] text-left">Status</th>
+                    <th className="p-2 border border-[#00FFFF30] text-left">Actions</th>
                   </tr>
                 </thead>
 
@@ -193,6 +255,14 @@ export default function ViewCompanies() {
                         >
                           {c.status || "unknown"}
                         </span>
+                      </td>
+                      <td className="p-2 border border-[#00FFFF30]">
+                        <button
+                          onClick={() => handleEditLicense(c)}
+                          className="px-3 py-1 rounded text-xs bg-[#00FFFF20] border border-[#00FFFF66] text-[#00FFFF] hover:bg-[#00FFFF40] transition-all cursor-pointer"
+                        >
+                          Edit License
+                        </button>
                       </td>
                     </tr>
                   )})}
@@ -253,7 +323,48 @@ export default function ViewCompanies() {
           </>
         )}
       </div>
+
+      {/* License Edit Modal */}
+      {editingCompany && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#031C3A] border border-[#00FFFF30] rounded-2xl p-6 max-w-md w-full">
+            <h2 className="text-xl font-bold text-[#E8F7FF] mb-4">Edit License Plan</h2>
+            <p className="text-sm text-[#AFCBE3] mb-4">
+              Company: <span className="font-semibold">{editingCompany.name}</span>
+            </p>
+
+            <div className="mb-6">
+              <label className="block text-sm text-[#8EB6D3] mb-2">Select License Plan</label>
+              <select
+                value={newPlan}
+                onChange={(e) => setNewPlan(e.target.value)}
+                className="w-full px-3 py-2 bg-[#021B36] border border-[#00FFFF30] rounded-lg text-[#E8F7FF] focus:outline-none focus:border-[#00FFFF66]"
+              >
+                <option value="License Basic">License Basic</option>
+                <option value="License Pro">License Pro</option>
+              </select>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setEditingCompany(null)}
+                disabled={updatingLicense}
+                className="flex-1 px-4 py-2 bg-[#031C3A] border border-[#00FFFF30] rounded-lg text-[#AFCBE3] hover:bg-[#00FFFF10] transition-all disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpdateLicense}
+                disabled={updatingLicense}
+                className="flex-1 px-4 py-2 bg-[#00FFFF20] border border-[#00FFFF66] rounded-lg text-[#00FFFF] hover:bg-[#00FFFF40] transition-all disabled:opacity-50"
+              >
+                {updatingLicense ? "Updating..." : "Update License"}
+              </button>
+            </div>
+          </div>
         </div>
+      )}
+    </div>
 
   );
 }

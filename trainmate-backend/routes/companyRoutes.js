@@ -11,6 +11,7 @@ import { initializeFresherNotifications } from "../controllers/company-specific/
 import { getModuleLockNotifications, resolveModuleLockNotification, getCompanyAdminNotifications } from "../controllers/company-specific/moduleLockNotificationsController.js";
 import { updateDepartmentSettings, getDepartmentSettings } from "../controllers/company-specific/updateDepartmentSettings.js";
 import { checkCompanyUserQuota } from "../controllers/company-specific/userQuotaController.js";
+import { renewCompanyLicense, updateCompanyLicensePlan, getCompanyLicenseInfo } from "../controllers/company-specific/companyLicenseController.js";
 
 
 const router = express.Router();
@@ -34,5 +35,10 @@ router.get("/company/:companyId/user-quota", checkCompanyUserQuota);
 // Department settings
 router.put("/department/settings", updateDepartmentSettings);
 router.get("/department/settings", getDepartmentSettings);
+
+// License management
+router.post("/company/:companyId/renew-license", renewCompanyLicense);
+router.put("/company/:companyId/license-plan", updateCompanyLicensePlan);
+router.get("/company/:companyId/license-info", getCompanyLicenseInfo);
 
 export default router;

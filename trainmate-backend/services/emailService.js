@@ -1293,6 +1293,7 @@ export async function sendCompanyCredentialsEmail({
  * Send company license renewal reminder/alert email to company admin
  * @param {Object} params
  * @param {string} params.companyEmail
+ * @param {string} params.companyId
  * @param {string} params.companyName
  * @param {string} params.licensePlan
  * @param {Date|string|number} params.renewalDate
@@ -1301,6 +1302,7 @@ export async function sendCompanyCredentialsEmail({
  */
 export async function sendCompanyLicenseRenewalAlertEmail({
   companyEmail,
+  companyId,
   companyName,
   licensePlan,
   renewalDate,
@@ -1331,6 +1333,10 @@ export async function sendCompanyLicenseRenewalAlertEmail({
       pendingLicensePlan === "License Pro" || pendingLicensePlan === "License Basic"
         ? pendingLicensePlan
         : null;
+
+    // Create review link to dedicated license review page.
+    const baseUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+    const renewalLink = `${baseUrl}/company/license-review?companyId=${encodeURIComponent(companyId || "")}&companyName=${encodeURIComponent(companyName || "Company")}`;
 
     let subject = `License renewal reminder - ${companyName || "TrainMate"}`;
     let headline = "License renewal reminder";
@@ -1436,8 +1442,8 @@ export async function sendCompanyLicenseRenewalAlertEmail({
               </div>
 
               <div style="text-align: center; margin: 24px 0 8px;">
-                <a href="https://trainmate.com" style="display: inline-block; background: linear-gradient(135deg, #00A8B5 0%, #0087A8 100%); color: #FFFFFF; text-decoration: none; font-weight: 700; font-size: 14px; padding: 12px 22px; border-radius: 999px; box-shadow: 0 8px 18px rgba(0, 168, 181, 0.22);">
-                  Review Renewal Status
+                <a href="${renewalLink}" style="display: inline-block; background: linear-gradient(135deg, #00A8B5 0%, #0087A8 100%); color: #FFFFFF; text-decoration: none; font-weight: 700; font-size: 14px; padding: 12px 22px; border-radius: 999px; box-shadow: 0 8px 18px rgba(0, 168, 181, 0.22);">
+                  Review License Plan
                 </a>
               </div>
 
@@ -1464,6 +1470,120 @@ export async function sendCompanyLicenseRenewalAlertEmail({
     return { success: true, messageId: info.messageId };
   } catch (error) {
     console.error("License renewal reminder email failed:", error);
+    throw error;
+  }
+}
+
+/**
+ * Send license renewal confirmation email
+ * @param {Object} params
+ * @param {string} params.companyEmail
+ * @param {string} params.companyName
+ * @param {string} params.licensePlan
+ * @param {Date} params.renewalDate
+ */
+export async function sendCompanyLicenseRenewalConfirmationEmail({
+  companyEmail,
+  companyName,
+  licensePlan,
+  renewalDate,
+}) {
+  try {
+    if (!companyEmail) {
+      throw new Error("Company email is required");
+    }
+
+    const transporter = createTransporter();
+    const renewalDateObj = renewalDate instanceof Date ? renewalDate : new Date(renewalDate);
+    const renewalText = renewalDateObj.toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+
+    const planLabel = licensePlan === "License Pro" ? "Pro" : "Basic";
+
+    const mailOptions = {
+      from: {
+        name: "TrainMate Billing",
+        address: "trainmate01@gmail.com",
+      },
+      to: companyEmail,
+      subject: `License Renewal Confirmed - ${companyName || "TrainMate"}`,
+      html: `
+        <div style="background: linear-gradient(180deg, #EEF8FF 0%, #F7FBFF 100%); padding: 24px 12px; font-family: Arial, Helvetica, sans-serif;">
+          <div style="max-width: 680px; margin: 0 auto; background: #ffffff; border: 1px solid #D7EAF5; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(3, 28, 58, 0.08);">
+            <div style="background: linear-gradient(135deg, #031C3A 0%, #053A66 55%, #00A8B5 100%); padding: 28px 28px 24px; text-align: center;">
+              <div style="display: inline-block; padding: 6px 12px; border: 1px solid rgba(255,255,255,0.2); border-radius: 999px; color: #BFFBFF; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; margin-bottom: 14px;">
+                ✓ License Renewed
+              </div>
+              <h1 style="margin: 0; font-size: 28px; line-height: 1.2; color: #FFFFFF;">License Renewal Successful</h1>
+              <p style="margin: 10px 0 0; font-size: 15px; line-height: 1.6; color: rgba(255,255,255,0.88);">Your TrainMate subscription is now active</p>
+            </div>
+
+            <div style="padding: 28px;">
+              <p style="margin: 0 0 10px; color: #031C3A; font-size: 16px; line-height: 1.6;">
+                Hi ${companyName || "Team"},
+              </p>
+              <p style="margin: 0 0 18px; color: #34495E; font-size: 15px; line-height: 1.7;">
+                Your license renewal has been successfully processed. Your TrainMate training platform will continue to operate without interruption.
+              </p>
+
+              <div style="background: #F8FCFF; border: 1px solid #D7EAF5; border-radius: 16px; padding: 18px;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 14px; color: #1F3449;">
+                  <tr>
+                    <td style="padding: 10px 0; width: 38%; color: #6A7D8F;">License Plan</td>
+                    <td style="padding: 10px 0; font-weight: 700;">${planLabel} License</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 10px 0; color: #6A7D8F;">Renewal Date</td>
+                    <td style="padding: 10px 0; font-weight: 700;">${renewalText}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 10px 0; color: #6A7D8F;">Status</td>
+                    <td style="padding: 10px 0; font-weight: 700; color: #00A852;">Active & Ready</td>
+                  </tr>
+                </table>
+              </div>
+
+              <div style="margin-top: 20px; padding: 14px 16px; border: 1px solid #D7EAF5; border-radius: 14px; background: #FFFFFF;">
+                <p style="margin: 0 0 8px; color: #031C3A; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;">
+                  Next Steps
+                </p>
+                <p style="margin: 0; color: #34495E; font-size: 14px; line-height: 1.6;">
+                  Your training modules, freshers, and all features are now available. You can continue managing your team and training programs seamlessly.
+                </p>
+              </div>
+
+              <div style="text-align: center; margin: 24px 0 8px;">
+                <a href="https://trainmate.com" style="display: inline-block; background: linear-gradient(135deg, #00A8B5 0%, #0087A8 100%); color: #FFFFFF; text-decoration: none; font-weight: 700; font-size: 14px; padding: 12px 22px; border-radius: 999px; box-shadow: 0 8px 18px rgba(0, 168, 181, 0.22);">
+                  Go to Dashboard
+                </a>
+              </div>
+
+              <p style="margin: 18px 0 0; color: #5E6F80; font-size: 13px; line-height: 1.6; text-align: center;">
+                Thank you for using TrainMate. We're committed to supporting your training needs.
+              </p>
+            </div>
+
+            <div style="padding: 18px 28px 24px; text-align: center; border-top: 1px solid #E5F1F8; background: #FBFDFF;">
+              <p style="margin: 0; color: #6A7D8F; font-size: 12px; line-height: 1.6;">
+                This is an automated confirmation. Please do not reply.
+              </p>
+              <p style="margin: 6px 0 0; color: #A0B1C0; font-size: 12px; line-height: 1.6;">
+                Regards, TrainMate Team
+              </p>
+            </div>
+          </div>
+        </div>
+      `,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log("License renewal confirmation email sent:", info.messageId);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error("License renewal confirmation email failed:", error);
     throw error;
   }
 }

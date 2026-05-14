@@ -22,8 +22,15 @@ const LICENSE_PLAN_OPTIONS = ["License Basic", "License Pro"];
 export default function CompanyDetails() {
   const location = useLocation();
   const navigate = useNavigate();
-  const companyId = location?.state?.companyId || localStorage.getItem("companyId");
-  const companyName = location?.state?.companyName || localStorage.getItem("companyName");
+  const queryParams = new URLSearchParams(location.search || "");
+  const companyId =
+    location?.state?.companyId ||
+    queryParams.get("companyId") ||
+    localStorage.getItem("companyId");
+  const companyName =
+    location?.state?.companyName ||
+    queryParams.get("companyName") ||
+    localStorage.getItem("companyName");
 
   const [loading, setLoading] = useState(true);
   const [companyDetails, setCompanyDetails] = useState({});
@@ -36,6 +43,22 @@ export default function CompanyDetails() {
   const [onboardingDocId, setOnboardingDocId] = useState("");
   const [licensingPlans, setLicensingPlans] = useState(DEFAULT_LICENSING_PLANS);
   const [scheduledPlan, setScheduledPlan] = useState("License Basic");
+  const [autoRenewNewPlan, setAutoRenewNewPlan] = useState(false);
+  const [showPaymentPrompt, setShowPaymentPrompt] = useState(false);
+  const [sendingTestReminder, setSendingTestReminder] = useState(false);
+
+  const formatRenewalDate = (value) => {
+    if (!value) return "N/A";
+
+    const dateValue = value?.toDate ? value.toDate() : new Date(value);
+    if (Number.isNaN(dateValue.getTime())) return "N/A";
+
+    return dateValue.toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  };
 
 
 
@@ -134,6 +157,43 @@ export default function CompanyDetails() {
     });
   };
 
+  const sendTestRenewalReminder = async () => {
+    const targetEmail = (companyDetails.email || companyDetails.companyEmail || "").trim();
+
+    if (!targetEmail) {
+      alert("No company email found in Firestore for this company.");
+      return;
+    }
+
+    setSendingTestReminder(true);
+    try {
+      const response = await fetch(`/api/email/test-license-renewal-reminder`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyEmail: targetEmail,
+          companyName: companyDetails.name || companyName || "TrainMate Test Company",
+          companyId,
+          licensePlan: companyDetails.licensePlan || initialLicense || "License Basic",
+          pendingLicensePlan: companyDetails.pendingLicensePlan || null,
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result?.error || "Failed to send test reminder email");
+      }
+
+      alert(`Test renewal reminder sent to ${targetEmail}`);
+      console.log("Test renewal reminder email response:", result);
+    } catch (err) {
+      console.error("Error sending test renewal reminder:", err);
+      alert(err.message || "Failed to send test reminder.");
+    } finally {
+      setSendingTestReminder(false);
+    }
+  };
+
   const saveChanges = async () => {
   setSaving(true); 
   try {
@@ -150,43 +210,70 @@ export default function CompanyDetails() {
 
     const currentPlan = companyDetails.licensePlan || initialLicense || "License Basic";
     const normalizedScheduledPlan = scheduledPlan || currentPlan;
+    const shouldUpdatePaymentMethod = normalizedScheduledPlan !== currentPlan && autoRenewNewPlan;
 
-    const planUpdatePayload =
-      normalizedScheduledPlan !== currentPlan
-        ? {
-            pendingLicensePlan: normalizedScheduledPlan,
-            pendingChangeRequestedAt: serverTimestamp(),
-            pendingChangeStatus: "scheduled",
-          }
-        : {
-            pendingLicensePlan: deleteField(),
-            pendingChangeRequestedAt: deleteField(),
-            pendingChangeStatus: deleteField(),
-          };
+    // Check if plan is changing and auto-renewal is enabled
+    if (shouldUpdatePaymentMethod) {
+      // Call backend renewal endpoint with new plan
+      const renewalResponse = await fetch(`/api/company/${companyId}/renew-license`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newPlan: normalizedScheduledPlan }),
+      });
 
-    
-    await updateDoc(doc(db, "companies", companyId), {
-      name: companyDetails.name,
-      phone: companyDetails.phone,
-      address: companyDetails.address,
-      ...planUpdatePayload,
-    });
+      if (!renewalResponse.ok) {
+        throw new Error("Failed to renew license with new plan");
+      }
 
-    setInitialLicense(currentPlan);
-    setCompanyDetails((prev) => ({
-      ...prev,
-      name: companyDetails.name,
-      phone: companyDetails.phone,
-      address: companyDetails.address,
-      pendingLicensePlan:
-        normalizedScheduledPlan !== currentPlan ? normalizedScheduledPlan : undefined,
-    }));
+      setInitialLicense(normalizedScheduledPlan);
+      setCompanyDetails((prev) => ({
+        ...prev,
+        licensePlan: normalizedScheduledPlan,
+      }));
+      setAutoRenewNewPlan(false);
+      setShowPaymentPrompt(false);
 
-    alert(
-      normalizedScheduledPlan !== currentPlan
-        ? `Changes saved. Plan switch to ${normalizedScheduledPlan.replace("License ", "")} is scheduled for your next renewal.`
-        : "Changes saved successfully!"
-    );
+      alert(`License renewed successfully! Your new plan is ${normalizedScheduledPlan.replace("License ", "")}`);
+    } else {
+      // Just schedule plan change for next renewal
+      const planUpdatePayload =
+        normalizedScheduledPlan !== currentPlan
+          ? {
+              pendingLicensePlan: normalizedScheduledPlan,
+              pendingChangeRequestedAt: serverTimestamp(),
+              pendingChangeStatus: "scheduled",
+            }
+          : {
+              pendingLicensePlan: deleteField(),
+              pendingChangeRequestedAt: deleteField(),
+              pendingChangeStatus: deleteField(),
+            };
+
+      
+      await updateDoc(doc(db, "companies", companyId), {
+        name: companyDetails.name,
+        phone: companyDetails.phone,
+        address: companyDetails.address,
+        ...planUpdatePayload,
+      });
+
+      setInitialLicense(currentPlan);
+      setCompanyDetails((prev) => ({
+        ...prev,
+        name: companyDetails.name,
+        phone: companyDetails.phone,
+        address: companyDetails.address,
+        pendingLicensePlan:
+          normalizedScheduledPlan !== currentPlan ? normalizedScheduledPlan : undefined,
+      }));
+      setShowPaymentPrompt(false);
+
+      alert(
+        normalizedScheduledPlan !== currentPlan
+          ? `Changes saved. Plan switch to ${normalizedScheduledPlan.replace("License ", "")} is scheduled for your next renewal.`
+          : "Changes saved successfully!"
+      );
+    }
   } catch (err) {
     console.error("Error saving changes:", err);
     alert("Failed to save changes.");
@@ -262,11 +349,7 @@ export default function CompanyDetails() {
                     {(companyDetails.licensePlan || onboardingAnswers[0] || "License Basic").replace("License ", "")} License
                   </span>
                   <p className="text-xs text-[#AFCBE3] italic">
-                    Valid till {new Date(new Date().setMonth(new Date().getMonth() + 1)).toLocaleDateString("en-GB", {
-                      day: "2-digit",
-                      month: "short",
-                      year: "numeric",
-                    })}
+                    Valid till {formatRenewalDate(companyDetails.licenseRenewalDate)}
                   </p>
                   <p className="text-xs text-[#00FFFF]/80 mt-2">Renew current plan or schedule a different plan for next renewal.</p>
                   {companyDetails.pendingLicensePlan && (
@@ -295,7 +378,12 @@ export default function CompanyDetails() {
                 <label className="text-[#AFCBE3] font-semibold mb-2 block">Next Renewal Plan</label>
                 <select
                   value={scheduledPlan}
-                  onChange={(e) => setScheduledPlan(e.target.value)}
+                  onChange={(e) => {
+                    const nextPlan = e.target.value;
+                    setScheduledPlan(nextPlan);
+                    const currentPlan = companyDetails.licensePlan || initialLicense || "License Basic";
+                    setShowPaymentPrompt(nextPlan !== currentPlan);
+                  }}
                   className="w-full p-2 rounded border border-[#00FFFF30] bg-[#021B36]/60 text-white focus:outline-none"
                 >
                   {LICENSE_PLAN_OPTIONS.map((option) => (
@@ -305,6 +393,55 @@ export default function CompanyDetails() {
                   ))}
                 </select>
                 <p className="text-sm text-[#AFCBE3] mt-1">This plan will apply automatically after successful renewal payment.</p>
+
+                {showPaymentPrompt && scheduledPlan !== (companyDetails.licensePlan || "License Basic") && (
+                  <div className="mt-4 rounded-2xl border border-[#00FFFF40] bg-[linear-gradient(180deg,rgba(2,27,54,0.96),rgba(3,28,58,0.9))] p-4 shadow-[0_12px_28px_rgba(0,255,255,0.08)]">
+                    <div className="flex items-start justify-between gap-4 mb-3">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.14em] text-[#8EB6D3]">Payment Method</p>
+                        <h3 className="text-base font-semibold text-[#E8F7FF] mt-1">Update payment details for this new plan?</h3>
+                        <p className="text-sm text-[#AFCBE3] mt-1">
+                          This appears only after you change the plan. Refreshing the page will hide it until the plan changes again.
+                        </p>
+                      </div>
+                    </div>
+
+                    <label className="flex items-center gap-3 cursor-pointer rounded-xl border border-[#00FFFF24] bg-[#021B36]/60 px-4 py-3 mb-4">
+                      <input
+                        type="checkbox"
+                        checked={autoRenewNewPlan}
+                        onChange={(e) => setAutoRenewNewPlan(e.target.checked)}
+                        className="w-4 h-4 rounded cursor-pointer accent-[#00FFFF]"
+                      />
+                      <span className="text-sm text-[#D8ECFF]">Renew immediately with the updated plan</span>
+                    </label>
+
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <button
+                        type="button"
+                        onClick={() => navigate("/company-license-payment", {
+                          state: {
+                            companyId,
+                            companyName: companyDetails.name || companyName,
+                            targetLicense: scheduledPlan,
+                            onboardingDocId,
+                            returnTo: "/CompanySpecific/CompanyDetails",
+                          },
+                        })}
+                        className="px-5 py-3 rounded-xl bg-[#00FFFF] text-[#031C3A] font-semibold hover:opacity-90 transition"
+                      >
+                        Yes, update payment method
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => saveChanges()}
+                        className="px-5 py-3 rounded-xl border border-[#00FFFF30] bg-[#031C3A]/70 text-[#E8F7FF] font-semibold hover:border-[#00FFFF66] transition"
+                      >
+                        No, save plan only
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="p-4 rounded-xl bg-[#031C3A]/70 border border-[#00FFFF30]">
@@ -360,13 +497,23 @@ export default function CompanyDetails() {
           </div>
 
           <div className="flex justify-center pt-2">
-            <button
-              onClick={saveChanges}
-              disabled={saving}
-              className="px-8 py-2.5 bg-teal-400 text-black rounded-lg font-semibold hover:opacity-90 transition disabled:opacity-70"
-            >
-              {saving ? "Saving..." : "Save All Changes"}
-            </button>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button
+                onClick={saveChanges}
+                disabled={saving}
+                className="px-8 py-2.5 bg-teal-400 text-black rounded-lg font-semibold hover:opacity-90 transition disabled:opacity-70"
+              >
+                {saving ? "Saving..." : "Save All Changes"}
+              </button>
+              <button
+                type="button"
+                onClick={sendTestRenewalReminder}
+                disabled={sendingTestReminder}
+                className="px-8 py-2.5 rounded-lg border border-[#00FFFF30] bg-[#031C3A]/80 text-[#E8F7FF] font-semibold hover:border-[#00FFFF66] transition disabled:opacity-70"
+              >
+                {sendingTestReminder ? "Sending Test Email..." : "Send Test Renewal Reminder"}
+              </button>
+            </div>
           </div>
         </div>
       </div>
