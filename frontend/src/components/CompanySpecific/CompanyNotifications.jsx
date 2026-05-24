@@ -58,6 +58,28 @@ export default function CompanyNotifications() {
     );
   };
 
+  const getModuleLockIssueInfo = (notification) => {
+    const issueType = String(notification?.lockIssueType || notification?.issueType || "").trim().toLowerCase();
+    if (issueType === "time_limit_exceeded") {
+      return {
+        label: "Time limit exceeded",
+        toneClass: "bg-sky-500/15 text-sky-300 border-sky-400/30",
+      };
+    }
+
+    if (issueType === "retries_exceeded") {
+      return {
+        label: "Retries exceeded",
+        toneClass: "bg-amber-500/15 text-amber-300 border-amber-400/30",
+      };
+    }
+
+    return {
+      label: "Module lock",
+      toneClass: "bg-[#00FFFF]/15 text-[#00FFFF] border-[#00FFFF]/30",
+    };
+  };
+
   return (
     <CompanyShellLayout companyId={companyId} companyName={companyName} headerLabel="Notifications">
         {loading ? (
@@ -100,12 +122,14 @@ export default function CompanyNotifications() {
                         {(() => {
                           const isCompletion = n.type === "training_completion";
                           const isSummary = n.type === "training_summary_report";
+                          const isModuleLock = !isCompletion && !isSummary;
                           const badgeLabel = isSummary || isCompletion ? "Update" : "Action Required";
                           const title = isSummary
                             ? "Training Summary Report"
                             : isCompletion
                             ? "Training Completed"
                             : "Module Lock Alert";
+                          const issueInfo = isModuleLock ? getModuleLockIssueInfo(n) : null;
                           return (
                             <>
                         <div className="flex items-center gap-3">
@@ -114,6 +138,13 @@ export default function CompanyNotifications() {
                           </span>
                           <h3 className="text-lg font-semibold text-[#00FFFF]">{title}</h3>
                         </div>
+
+                        {issueInfo && (
+                          <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border text-xs font-semibold ${issueInfo.toneClass}`}>
+                            <span className="uppercase tracking-wide">Issue</span>
+                            <span>{issueInfo.label}</span>
+                          </div>
+                        )}
 
                         <p className="text-[#AFCBE3] text-sm">{n.message}</p>
 

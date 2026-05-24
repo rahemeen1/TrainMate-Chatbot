@@ -57,6 +57,10 @@ const TRAINING_SUMMARY_NOTIFICATION_TYPE = "training_summary_report";
 const VALID_LICENSE_PLANS = new Set(["License Basic", "License Pro"]);
 const DEPARTMENT_OPTIONS = ["HR", "SOFTWAREDEVELOPMENT", "AI", "ACCOUNTING", "MARKETING", "OPERATIONS", "DATASCIENCE", "IT"];
 const CODING_ENABLED_DEPARTMENTS = new Set(["SOFTWAREDEVELOPMENT", "AI", "DATASCIENCE", "IT"]);
+const MODULE_LOCK_ISSUE_TYPES = {
+	retries_exceeded: "Retries exceeded",
+	time_limit_exceeded: "Time limit exceeded",
+};
 
 function normalizeDepartmentKey(value) {
 	return String(value || "")
@@ -98,6 +102,48 @@ function getLatestDocData(snapshot) {
 	});
 
 	return docs[0]?.data() || null;
+}
+
+function normalizeModuleLockIssueType(value) {
+	const normalized = String(value || "").trim().toLowerCase();
+	if (normalized === "time_limit_exceeded" || normalized === "time-limit-exceeded" || normalized === "time limit exceeded") {
+		return "time_limit_exceeded";
+	}
+	if (normalized === "retries_exceeded" || normalized === "retry_exceeded" || normalized === "retries exceeded" || normalized === "retry limit exceeded") {
+		return "retries_exceeded";
+	}
+	return "retries_exceeded";
+}
+
+function getModuleLockIssueLabel(issueType) {
+	return MODULE_LOCK_ISSUE_TYPES[normalizeModuleLockIssueType(issueType)] || MODULE_LOCK_ISSUE_TYPES.retries_exceeded;
+}
+
+function buildModuleLockReason({ issueType, moduleTitle, attemptsUsed, maxAttempts }) {
+	const normalizedIssueType = normalizeModuleLockIssueType(issueType);
+	const safeTitle = moduleTitle || "this module";
+
+	if (normalizedIssueType === "time_limit_exceeded") {
+		return `Time limit exceeded for "${safeTitle}". Quiz access will unlock after the module time threshold is met.`;
+	}
+
+	const attemptText = Number.isFinite(Number(attemptsUsed)) && Number.isFinite(Number(maxAttempts))
+		? `after ${attemptsUsed}/${maxAttempts} attempts`
+		: "after exhausting the available attempts";
+
+	return `Retries exceeded for "${safeTitle}" ${attemptText}.`;
+}
+
+function buildModuleLockNotificationMessage({ issueType, moduleTitle }) {
+	const normalizedIssueType = normalizeModuleLockIssueType(issueType);
+	const issueLabel = getModuleLockIssueLabel(normalizedIssueType);
+	const safeTitle = moduleTitle || "this module";
+
+	if (normalizedIssueType === "time_limit_exceeded") {
+		return `${issueLabel} for ${safeTitle}. Review the learner timeline before allowing another attempt.`;
+	}
+
+	return `${issueLabel} for ${safeTitle}. Review the learner record and decide the next step.`;
 }
 
 async function resolveCompanyLicensePlan(companyId, preloadedCompanySnap = null) {
@@ -188,6 +234,8 @@ function checkQuizTimeUnlock(moduleData) {
 			isUnlocked: false,
 			unlockTime: null,
 			remainingTime: "Module not started yet",
+			issueType: "time_limit_exceeded",
+			issueLabel: getModuleLockIssueLabel("time_limit_exceeded"),
 			message: "Please start the module before attempting the quiz."
 		};
 	}
@@ -224,6 +272,8 @@ function checkQuizTimeUnlock(moduleData) {
 		isUnlocked: false,
 		unlockTime,
 		remainingTime: remainingTimeStr,
+		issueType: "time_limit_exceeded",
+		issueLabel: getModuleLockIssueLabel("time_limit_exceeded"),
 		message: `Quiz will be available after you've spent 70% of the module time. Unlock in: ${remainingTimeStr}`
 	};
 }
@@ -238,7 +288,10 @@ async function createOrUpdateModuleLockNotification({
 	moduleTitle,
 	attemptNumber,
 	score,
+	issueType = "retries_exceeded",
 }) {
+	const normalizedIssueType = normalizeModuleLockIssueType(issueType);
+	const issueLabel = getModuleLockIssueLabel(normalizedIssueType);
 	const notificationId = `module-lock-${deptId}-${userId}-${moduleId}`;
 	const notificationRef = db
 		.collection("companies")
@@ -259,7 +312,12 @@ async function createOrUpdateModuleLockNotification({
 			moduleTitle: moduleTitle || "",
 			attemptNumber,
 			score,
-			message: `${userName || "Fresher"} exceeded quiz retries for ${moduleTitle || "module"}. Give one final retry?`,
+			lockIssueType: normalizedIssueType,
+			lockIssueLabel: issueLabel,
+			message: buildModuleLockNotificationMessage({
+				issueType: normalizedIssueType,
+				moduleTitle: moduleTitle || "module",
+			}),
 			createdAt: admin.firestore.FieldValue.serverTimestamp(),
 			resolvedAt: null,
 		},
@@ -1580,6 +1638,8 @@ export const generateQuiz = async (req, res) => {
 					{
 						quizLocked: true,
 						moduleLocked: true,
+						lockIssueType: "retries_exceeded",
+						lockIssueLabel: getModuleLockIssueLabel("retries_exceeded"),
 						requiresAdminContact: true,
 					},
 					{ merge: true }
@@ -1915,7 +1975,12 @@ export const submitQuiz = async (req, res) => {
 					{
 						trainingLocked: true,
 						trainingLockedAt: admin.firestore.FieldValue.serverTimestamp(),
-						trainingLockedReason: `Failed quiz "${moduleTitle}" after ${attemptsUsed} attempts`,
+						trainingLockedReason: buildModuleLockReason({
+							issueType: "retries_exceeded",
+							moduleTitle,
+							attemptsUsed,
+							maxAttempts: effectiveMaxAttempts,
+						}),
 						requiresAdminContact: true,
 					},
 					{ merge: true }
@@ -2418,6 +2483,8 @@ export const submitQuiz = async (req, res) => {
 						updateData.moduleLocked = true;
 						updateData.status = "locked";
 						updateData.requiresAdminContact = contactAdmin;
+						updateData.lockIssueType = "retries_exceeded";
+						updateData.lockIssueLabel = getModuleLockIssueLabel("retries_exceeded");
 						console.log(`Module locked by TrainMate decision after ${attemptNumber} attempts`);
 						
 						// 🔒 Lock entire training for user
@@ -2435,7 +2502,12 @@ export const submitQuiz = async (req, res) => {
 						await userRef.set({
 							trainingLocked: true,
 							trainingLockedAt: admin.firestore.FieldValue.serverTimestamp(),
-							trainingLockedReason: `Failed quiz "${moduleData.moduleTitle}" after ${attemptNumber} attempts`,
+							trainingLockedReason: buildModuleLockReason({
+								issueType: "retries_exceeded",
+								moduleTitle: moduleData.moduleTitle,
+								attemptsUsed: attemptNumber,
+								maxAttempts: effectiveMaxAttempts,
+							}),
 							requiresAdminContact: true,
 						}, { merge: true });
 						console.log(`✓ User training locked - requires admin intervention`);
@@ -2462,6 +2534,7 @@ export const submitQuiz = async (req, res) => {
 								moduleTitle: moduleData?.moduleTitle || "",
 								attemptNumber,
 								score: finalScore,
+								issueType: "retries_exceeded",
 							});
 							updateData.adminNotificationId = createdNotificationId;
 							console.log(`✓ Admin notification created: ${createdNotificationId}`);
@@ -2487,6 +2560,11 @@ export const submitQuiz = async (req, res) => {
 									moduleTitle: moduleData?.moduleTitle || "",
 									attemptNumber,
 									score: finalScore,
+									lockIssueLabel: getModuleLockIssueLabel("retries_exceeded"),
+									lockIssueMessage: buildModuleLockNotificationMessage({
+										issueType: "retries_exceeded",
+										moduleTitle: moduleData?.moduleTitle || "this module",
+									}),
 								});
 								console.log("Company notification email sent for training lock");
 							}

@@ -140,6 +140,8 @@ export async function sendTrainingLockedEmail({
   moduleTitle,
   attemptNumber,
   score,
+  lockIssueLabel = "Retries exceeded",
+  lockIssueMessage = "Please review the learner record and decide the next step.",
 }) {
   try {
     console.log("Email service: preparing training lock notification...");
@@ -163,7 +165,7 @@ export async function sendTrainingLockedEmail({
           <div style="background-color: white; padding: 24px; border-radius: 0 0 10px 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
             <h2 style="color: #031C3A; margin-top: 0;">Training Locked Notification</h2>
             <p style="color: #333; font-size: 15px; line-height: 1.6;">
-              A trainee has been locked after multiple quiz attempts. Please review and decide next steps.
+              A trainee has been locked. Please review the issue below and decide next steps.
             </p>
             <div style="background-color: #E8F4F8; padding: 16px; border-left: 4px solid #00FFFF; margin: 16px 0;">
               <p style="margin: 6px 0; color: #333;"><strong>Company:</strong> ${companyName}</p>
@@ -172,9 +174,10 @@ export async function sendTrainingLockedEmail({
               <p style="margin: 6px 0; color: #333;"><strong>Module:</strong> ${moduleTitle || "Unknown"}</p>
               <p style="margin: 6px 0; color: #333;"><strong>Attempt:</strong> ${attemptNumber || "N/A"}</p>
               <p style="margin: 6px 0; color: #333;"><strong>Latest Score:</strong> ${typeof score === "number" ? `${score}%` : "N/A"}</p>
+              <p style="margin: 6px 0; color: #333;"><strong>Lock Issue:</strong> ${lockIssueLabel}</p>
             </div>
             <p style="color: #333; font-size: 14px; line-height: 1.6;">
-              Please contact the trainee and unlock training once ready.
+              ${lockIssueMessage}
             </p>
             <p style="color: #666; font-size: 13px; line-height: 1.6; margin-top: 20px;">
               Regards,<br>

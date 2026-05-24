@@ -5,6 +5,47 @@ import { sendTrainingLockedEmail } from "../../services/emailService.js";
 const BASE_MAX_QUIZ_ATTEMPTS = 3;
 const VALID_LICENSE_PLANS = new Set(["License Basic", "License Pro"]);
 
+function normalizeModuleLockIssueType(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "time_limit_exceeded" || normalized === "time-limit-exceeded" || normalized === "time limit exceeded") {
+    return "time_limit_exceeded";
+  }
+  if (normalized === "retries_exceeded" || normalized === "retry_exceeded" || normalized === "retries exceeded" || normalized === "retry limit exceeded") {
+    return "retries_exceeded";
+  }
+  return "retries_exceeded";
+}
+
+function getModuleLockIssueLabel(issueType) {
+  return normalizeModuleLockIssueType(issueType) === "time_limit_exceeded" ? "Time limit exceeded" : "Retries exceeded";
+}
+
+function inferModuleLockIssueType(moduleData = {}) {
+  const explicitIssueType = moduleData.lockIssueType || moduleData.moduleLockIssueType || moduleData.lockReasonType;
+  if (explicitIssueType) {
+    return normalizeModuleLockIssueType(explicitIssueType);
+  }
+
+  const reasonText = String(moduleData.trainingLockedReason || moduleData.lockReason || moduleData.reason || "").toLowerCase();
+  if (reasonText.includes("time limit") || reasonText.includes("module time")) {
+    return "time_limit_exceeded";
+  }
+
+  return "retries_exceeded";
+}
+
+function buildModuleLockNotificationMessage(issueType, moduleTitle) {
+  const normalizedIssueType = normalizeModuleLockIssueType(issueType);
+  const issueLabel = getModuleLockIssueLabel(normalizedIssueType);
+  const safeTitle = moduleTitle || "this module";
+
+  if (normalizedIssueType === "time_limit_exceeded") {
+    return `${issueLabel} for ${safeTitle}. Review the learner timeline before allowing another attempt.`;
+  }
+
+  return `${issueLabel} for ${safeTitle}. Review the learner record and decide the next step.`;
+}
+
 function normalizeLicensePlan(value) {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
@@ -118,6 +159,8 @@ async function ensurePendingNotificationsForLockedUsers(companyId) {
       const moduleAttemptLimit = Number.isInteger(moduleData.maxAttemptsOverride)
         ? moduleData.maxAttemptsOverride
         : BASE_MAX_QUIZ_ATTEMPTS;
+      const lockIssueType = inferModuleLockIssueType(moduleData);
+      const lockIssueLabel = getModuleLockIssueLabel(lockIssueType);
 
       if (!moduleData.moduleLocked || !moduleData.quizLocked || moduleData.status !== "locked") {
         await moduleDoc.ref.set(
@@ -155,7 +198,9 @@ async function ensurePendingNotificationsForLockedUsers(companyId) {
           moduleTitle: moduleData.moduleTitle || "",
           attemptNumber: moduleData.quizAttempts || moduleAttemptLimit,
           score: null,
-          message: `${userData.name || "Fresher"} exceeded quiz retries for ${moduleData.moduleTitle || "module"}. Give one final retry?`,
+          lockIssueType,
+          lockIssueLabel,
+          message: buildModuleLockNotificationMessage(lockIssueType, moduleData.moduleTitle || "module"),
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
           resolvedAt: null,
           source: "auto-backfill",
@@ -173,6 +218,8 @@ async function ensurePendingNotificationsForLockedUsers(companyId) {
             moduleTitle: moduleData.moduleTitle || "",
             attemptNumber: moduleData.quizAttempts || moduleAttemptLimit,
             score: null,
+            lockIssueLabel,
+            lockIssueMessage: buildModuleLockNotificationMessage(lockIssueType, moduleData.moduleTitle || "module"),
           });
         } catch (emailErr) {
           console.warn("Training lock backfill email failed:", emailErr.message);
