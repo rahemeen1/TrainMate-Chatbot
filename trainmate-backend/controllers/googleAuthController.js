@@ -5,12 +5,31 @@ import { db } from "../config/firebase.js";
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const DEFAULT_FRONTEND_URL = process.env.FRONTEND_URL || "https://trainmate-chatbot.web.app";
+const DEFAULT_LOCAL_FRONTEND_URL = "http://localhost:3000";
 const GOOGLE_REDIRECT_URI =
   process.env.GOOGLE_REDIRECT_URI ||
   `${DEFAULT_FRONTEND_URL}/auth/google/callback`;
 const COMPANY_GOOGLE_REDIRECT_URI =
   process.env.COMPANY_GOOGLE_REDIRECT_URI ||
   `${DEFAULT_FRONTEND_URL}/auth/company-google-callback`;
+
+function getFrontendBaseUrl(req) {
+  const origin = req?.headers?.origin;
+
+  if (origin && /^https?:\/\//i.test(origin)) {
+    return origin.replace(/\/$/, "");
+  }
+
+  return (process.env.FRONTEND_URL || DEFAULT_LOCAL_FRONTEND_URL).replace(/\/$/, "");
+}
+
+function getCompanyRedirectUri(req, overrideUri) {
+  if (overrideUri) {
+    return overrideUri;
+  }
+
+  return `${getFrontendBaseUrl(req)}/auth/company-google-callback`;
+}
 
 console.log("Google OAuth config:", {
   clientId: GOOGLE_CLIENT_ID ? "SET" : "MISSING",
@@ -157,10 +176,11 @@ export const generateCompanyGoogleAuthUrl = (req, res) => {
         .json({ error: "Google OAuth credentials not configured" });
     }
 
+    const redirectUri = getCompanyRedirectUri(req);
     const oauth2Client = new google.auth.OAuth2(
       GOOGLE_CLIENT_ID,
       GOOGLE_CLIENT_SECRET,
-      COMPANY_GOOGLE_REDIRECT_URI
+      redirectUri
     );
 
     const scopes = [
@@ -182,6 +202,7 @@ export const generateCompanyGoogleAuthUrl = (req, res) => {
     res.json({
       authUrl,
       companyId,
+      redirectUri,
       message: "Redirect user to this URL to authorize Google Calendar",
     });
   } catch (error) {
@@ -198,7 +219,7 @@ export const generateCompanyGoogleAuthUrl = (req, res) => {
  */
 export const companyGoogleOAuthCallback = async (req, res) => {
   try {
-    const { code, companyId } = req.body;
+    const { code, companyId, redirectUri } = req.body;
 
     if (!code || !companyId) {
       return res.status(400).json({
@@ -214,10 +235,12 @@ export const companyGoogleOAuthCallback = async (req, res) => {
 
     console.log("Exchanging Google authorization code for company:", companyId);
 
+    const exchangeRedirectUri = getCompanyRedirectUri(req, redirectUri);
+
     const oauth2Client = new google.auth.OAuth2(
       GOOGLE_CLIENT_ID,
       GOOGLE_CLIENT_SECRET,
-      COMPANY_GOOGLE_REDIRECT_URI
+      exchangeRedirectUri
     );
 
     const { tokens } = await oauth2Client.getToken(code);

@@ -46,7 +46,8 @@ export default function CompanyGoogleAuthCallback() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ 
             code,
-            companyId: state
+            companyId: state,
+            redirectUri: `${window.location.origin}/auth/company-google-callback`
           }),
         });
 

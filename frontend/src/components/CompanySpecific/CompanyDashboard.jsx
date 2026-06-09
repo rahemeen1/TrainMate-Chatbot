@@ -523,7 +523,7 @@ console.log("companyId:", companyId);
     setGoogleAuthLoading(true);
     try {
       const response = await fetch(
-        `/api/auth/company-google-auth-url?companyId=${companyId}`
+        apiUrl(`/api/auth/company-google-auth-url?companyId=${companyId}`)
       );
       
       console.log("Response status:", response.status);

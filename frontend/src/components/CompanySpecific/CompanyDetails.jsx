@@ -45,7 +45,7 @@ export default function CompanyDetails() {
   const [scheduledPlan, setScheduledPlan] = useState("License Basic");
   const [autoRenewNewPlan, setAutoRenewNewPlan] = useState(false);
   const [showPaymentPrompt, setShowPaymentPrompt] = useState(false);
-  const [sendingTestReminder, setSendingTestReminder] = useState(false);
+  
 
   const formatRenewalDate = (value) => {
     if (!value) return "N/A";
@@ -157,42 +157,7 @@ export default function CompanyDetails() {
     });
   };
 
-  const sendTestRenewalReminder = async () => {
-    const targetEmail = (companyDetails.email || companyDetails.companyEmail || "").trim();
-
-    if (!targetEmail) {
-      alert("No company email found in Firestore for this company.");
-      return;
-    }
-
-    setSendingTestReminder(true);
-    try {
-      const response = await fetch(`/api/email/test-license-renewal-reminder`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          companyEmail: targetEmail,
-          companyName: companyDetails.name || companyName || "TrainMate Test Company",
-          companyId,
-          licensePlan: companyDetails.licensePlan || initialLicense || "License Basic",
-          pendingLicensePlan: companyDetails.pendingLicensePlan || null,
-        }),
-      });
-
-      const result = await response.json();
-      if (!response.ok) {
-        throw new Error(result?.error || "Failed to send test reminder email");
-      }
-
-      alert(`Test renewal reminder sent to ${targetEmail}`);
-      console.log("Test renewal reminder email response:", result);
-    } catch (err) {
-      console.error("Error sending test renewal reminder:", err);
-      alert(err.message || "Failed to send test reminder.");
-    } finally {
-      setSendingTestReminder(false);
-    }
-  };
+  
 
   const saveChanges = async () => {
   setSaving(true); 
@@ -235,7 +200,7 @@ export default function CompanyDetails() {
 
       alert(`License renewed successfully! Your new plan is ${normalizedScheduledPlan.replace("License ", "")}`);
     } else {
-      // Just schedule plan change for next renewal
+      
       const planUpdatePayload =
         normalizedScheduledPlan !== currentPlan
           ? {
@@ -505,14 +470,7 @@ export default function CompanyDetails() {
               >
                 {saving ? "Saving..." : "Save All Changes"}
               </button>
-              <button
-                type="button"
-                onClick={sendTestRenewalReminder}
-                disabled={sendingTestReminder}
-                className="px-8 py-2.5 rounded-lg border border-[#00FFFF30] bg-[#031C3A]/80 text-[#E8F7FF] font-semibold hover:border-[#00FFFF66] transition disabled:opacity-70"
-              >
-                {sendingTestReminder ? "Sending Test Email..." : "Send Test Renewal Reminder"}
-              </button>
+              
             </div>
           </div>
         </div>

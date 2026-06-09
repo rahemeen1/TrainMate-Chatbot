@@ -10,6 +10,8 @@ import FresherShellLayout from "./FresherShellLayout";
 import { getCompanyLicensePlan } from "../../services/companyLicense";
 import CompanyPageLoader from "../CompanySpecific/CompanyPageLoader";
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 const sortRoadmapModules = (modules) =>
   (Array.isArray(modules) ? modules : [])
     .map((module, idx) => ({ module, idx }))
@@ -39,6 +41,7 @@ export default function Roadmap() {
   const [userData, setUserData] = useState(null);
   const [licensePlan, setLicensePlan] = useState("License Basic");
   const [cvValidationWarning, setCvValidationWarning] = useState(null);
+  const [roadmapGenerationPending, setRoadmapGenerationPending] = useState(false);
   const generationRequestedRef = useRef(false);
   const isBasicPlan = licensePlan === "License Basic";
 
@@ -291,33 +294,51 @@ const getModuleStartDate = (module) => {
         let roadmapSnap = await getDocs(roadmapRef);
 
         if (roadmapSnap.empty) {
-          if (generationRequestedRef.current) {
+          if (!generationRequestedRef.current) {
+            generationRequestedRef.current = true;
+
+            if (!userSnap.exists()) throw new Error("Fresher not found");
+
+            const userData = userSnap.data();
+            const expertiseScore = userData.onboarding?.expertise ?? 1;
+            const expertiseLevel = userData.onboarding?.level ?? "Beginner";
+            const trainingOn = userData.trainingOn ?? "General";
+            const trainingDuration = userData.trainingDuration;
+
+            setRoadmapGenerationPending(true);
+            try {
+              await axios.post(apiUrl("/api/roadmap/generate"), {
+                companyId,
+                deptId,
+                userId,
+                trainingDuration,
+                expertiseScore,
+                expertiseLevel,
+                trainingOn,
+              });
+            } catch (err) {
+              const isAlreadyGenerating = err?.response?.status === 409;
+              if (!isAlreadyGenerating) {
+                throw err;
+              }
+            }
+
+            setCvValidationWarning(null);
+          }
+
+          setRoadmapGenerationPending(true);
+
+          const maxPollAttempts = 20;
+          for (let attempt = 0; attempt < maxPollAttempts; attempt += 1) {
+            roadmapSnap = await getDocs(roadmapRef);
+            if (!roadmapSnap.empty) break;
+            await sleep(1500);
+          }
+
+          if (roadmapSnap.empty) {
             setLoading(false);
             return;
           }
-          generationRequestedRef.current = true;
-          // Generate roadmap if it does not exist
-          if (!userSnap.exists()) throw new Error("Fresher not found");
-
-          const userData = userSnap.data();
-          const expertiseScore = userData.onboarding?.expertise ?? 1;
-          const expertiseLevel = userData.onboarding?.level ?? "Beginner";
-          const trainingOn = userData.trainingOn ?? "General";
-          const trainingDuration = userData.trainingDuration;
-
-          await axios.post(apiUrl("/api/roadmap/generate"), {
-            companyId,
-            deptId,
-            userId,
-            trainingDuration,
-            expertiseScore,
-            expertiseLevel,
-            trainingOn,
-          });
-
-          setCvValidationWarning(null);
-
-          roadmapSnap = await getDocs(roadmapRef);
         }
   let modules = sortRoadmapModules(
     roadmapSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
@@ -332,6 +353,7 @@ const getModuleStartDate = (module) => {
   }
 
   setRoadmap(modules);
+  setRoadmapGenerationPending(false);
 
       } catch (err) {
         console.error(err);
@@ -351,6 +373,7 @@ const getModuleStartDate = (module) => {
             issues: Array.isArray(cvValidation?.issues) ? cvValidation.issues : [],
           });
         }
+        setRoadmapGenerationPending(false);
       } finally {
         setLoading(false);
       }
@@ -655,12 +678,16 @@ if (!roadmap.length)
           </svg>
         </div>
         <p className="text-lg font-semibold mb-2">No modules found for this fresher</p>
-        <p className="text-sm text-[#AFCBE3] mb-4">Roadmap will be generated once onboarding starts.</p>
+        <p className="text-sm text-[#AFCBE3] mb-4">
+          {roadmapGenerationPending
+            ? "Your roadmap is still being generated. Please wait a moment while we fetch the saved modules."
+            : "Roadmap will be generated once onboarding starts."}
+        </p>
         <button
           onClick={() => window.location.reload()}
           className="px-5 py-2 bg-[#00FFFF] text-[#031C3A] rounded font-semibold hover:bg-white transition"
         >
-          Retry / Refresh
+          {roadmapGenerationPending ? "Check Again" : "Retry / Refresh"}
         </button>
       </div>
     </FresherShellLayout>
