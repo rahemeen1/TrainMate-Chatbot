@@ -60,6 +60,7 @@ const CODING_ENABLED_DEPARTMENTS = new Set(["SOFTWAREDEVELOPMENT", "AI", "DATASC
 const MODULE_LOCK_ISSUE_TYPES = {
 	retries_exceeded: "Retries exceeded",
 	time_limit_exceeded: "Time limit exceeded",
+	module_expired: "Module deadline expired",
 };
 
 function normalizeDepartmentKey(value) {
@@ -143,7 +144,11 @@ function buildModuleLockNotificationMessage({ issueType, moduleTitle }) {
 		return `${issueLabel} for ${safeTitle}. Review the learner timeline before allowing another attempt.`;
 	}
 
-	return `${issueLabel} for ${safeTitle}. Review the learner record and decide the next step.`;
+	if (normalizedIssueType === "module_expired") {
+		return `${issueLabel} - ${safeTitle} has been automatically locked. The learner can no longer access this module. Grant additional time or manually unlock to allow the learner to continue.`;
+	}
+
+	return `${issueLabel} for ${safeTitle}. The learner has exhausted all quiz attempts and cannot proceed. Review their performance and decide whether to grant more attempts or take other action.`;
 }
 
 async function resolveCompanyLicensePlan(companyId, preloadedCompanySnap = null) {
@@ -299,14 +304,20 @@ async function createOrUpdateModuleLockNotification({
 		.collection("adminNotifications")
 		.doc(notificationId);
 
+	const notificationTitle = normalizedIssueType === "module_expired"
+		? "Module Deadline Expired"
+		: "Quiz Attempts Exhausted";
+
 	await notificationRef.set(
 		{
 			type: "module_lock",
+			subType: normalizedIssueType, // "quiz_attempts_exhausted" or "module_deadline_expired"
 			status: "pending",
 			companyId,
 			deptId,
 			userId,
 			moduleId,
+			title: notificationTitle,
 			userName: userName || "",
 			userEmail: userEmail || "",
 			moduleTitle: moduleTitle || "",
@@ -2565,6 +2576,7 @@ export const submitQuiz = async (req, res) => {
 										issueType: "retries_exceeded",
 										moduleTitle: moduleData?.moduleTitle || "this module",
 									}),
+									issueType: "retries_exceeded",
 								});
 								console.log("Company notification email sent for training lock");
 							}

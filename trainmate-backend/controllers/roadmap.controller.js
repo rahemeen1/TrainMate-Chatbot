@@ -1189,6 +1189,17 @@ export const regenerateRoadmapModule = async (req, res) => {
     const regeneratedTotalDays = Math.max(cappedSplitCount, baseDaysForRegeneration + adaptiveExtraDays);
     const splitDays = splitDaysEvenly(regeneratedTotalDays, cappedSplitCount);
 
+    // Extract skill gap from initial roadmap generation
+    const userData = userSnap.data();
+    const initialSkillAlignment = userData?.roadmapAgentic?.skillAlignment || userData?.roadmapAgentic?.extractedSkills || {};
+    const skillGap = Array.isArray(initialSkillAlignment?.skillGap) ? initialSkillAlignment.skillGap : [];
+    const criticalGaps = Array.isArray(initialSkillAlignment?.criticalGaps) ? initialSkillAlignment.criticalGaps : [];
+    const gapBuckets = initialSkillAlignment?.gapBuckets || {
+      mustHave: criticalGaps,
+      goodToHave: skillGap.filter((skill) => !criticalGaps.includes(skill)),
+      optional: [],
+    };
+
     const regeneratedModules = await generateRegeneratedSubmodules({
       targetModule,
       weakConcepts: moduleInsights.weakConcepts,
@@ -1262,15 +1273,9 @@ export const regenerateRoadmapModule = async (req, res) => {
           weakConcepts: moduleInsights.weakConcepts,
           wrongQuestions: moduleInsights.wrongQuestions,
           skillAlignment: {
-            skillGap: Array.isArray(skillGap) ? skillGap : [],
-            criticalGaps: Array.isArray(criticalGaps) ? criticalGaps : [],
-            gapBuckets: {
-              mustHave: Array.isArray(criticalGaps) ? criticalGaps : [],
-              goodToHave: Array.isArray(skillGap)
-                ? skillGap.filter((skill) => !criticalGaps.includes(skill))
-                : [],
-              optional: [],
-            },
+            skillGap,
+            criticalGaps,
+            gapBuckets,
           },
           regeneratedParts: regeneratedModules.length,
           originalEstimatedDays: originalDays,

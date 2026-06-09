@@ -51,7 +51,7 @@ function deriveCompanyRenewalDate(companyData, latestBillingData) {
   return renewalDate;
 }
 
-async function processCompanyLicenseRenewalAlerts() {
+export async function processCompanyLicenseRenewalAlerts() {
   const today = startOfDay(new Date());
   const companiesSnap = await db.collection("companies").get();
 
@@ -210,7 +210,7 @@ function isModuleDeadlineExceeded(moduleData, now = new Date()) {
   return now >= deadline;
 }
 
-async function enforceExpiredStatusForUser(roadmapRef, now = new Date()) {
+async function enforceExpiredStatusForUser(roadmapRef, now = new Date(), notificationParams = {}) {
   const roadmapSnap = await roadmapRef.get();
   if (roadmapSnap.empty) return;
 
@@ -245,6 +245,67 @@ async function enforceExpiredStatusForUser(roadmapRef, now = new Date()) {
       expiredAt: now,
     });
     console.log(`Module expired (scheduler): ${moduleData.moduleTitle || moduleDoc.id}`);
+
+    // Create in-app notification
+    if (notificationParams.companyId && notificationParams.deptId && notificationParams.userId) {
+      try {
+        const notificationId = `module-lock-${notificationParams.deptId}-${notificationParams.userId}-${moduleDoc.id}`;
+        const notificationRef = db
+          .collection("companies")
+          .doc(notificationParams.companyId)
+          .collection("adminNotifications")
+          .doc(notificationId);
+
+        await notificationRef.set(
+          {
+            type: "module_lock",
+            subType: "module_expired",
+            status: "pending",
+            companyId: notificationParams.companyId,
+            deptId: notificationParams.deptId,
+            userId: notificationParams.userId,
+            moduleId: moduleDoc.id,
+            title: "Module Deadline Expired",
+            userName: notificationParams.userName || "Unknown",
+            userEmail: notificationParams.userEmail || "",
+            moduleTitle: moduleData.moduleTitle || "Unknown Module",
+            attemptNumber: 0,
+            score: moduleData.latestScore || 0,
+            lockIssueType: "module_expired",
+            lockIssueLabel: "Module deadline expired",
+            message: `Module deadline expired - ${moduleData.moduleTitle || "module"} has been automatically locked. The learner can no longer access this module. Grant additional time or manually unlock to allow the learner to continue.`,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            resolvedAt: null,
+          },
+          { merge: true }
+        );
+        console.log(`In-app notification created for module expiration: ${notificationId}`);
+      } catch (notificationErr) {
+        console.warn(`Failed to create module expiration notification:`, notificationErr.message);
+      }
+    }
+
+    // Send email notification if parameters are provided
+    if (notificationParams.companyEmail && notificationParams.companyName && notificationParams.userName) {
+      try {
+        const { sendTrainingLockedEmail } = await import("./emailService.js");
+        await sendTrainingLockedEmail({
+          companyEmail: notificationParams.companyEmail,
+          companyName: notificationParams.companyName,
+          userName: notificationParams.userName || "Unknown",
+          userEmail: notificationParams.userEmail || "",
+          moduleTitle: moduleData.moduleTitle || "Unknown Module",
+          attemptNumber: 0,
+          score: moduleData.latestScore || 0,
+          lockIssueLabel: "Module deadline expired",
+          lockIssueMessage: "The module deadline has passed and the training has been automatically locked. Please review the learner's progress and decide if you want to grant additional time or unlock the module manually.",
+          issueType: "module_expired",
+        });
+        console.log(`Module expiration email sent for ${notificationParams.userName}`);
+      } catch (emailErr) {
+        console.warn(`Failed to send module expiration email:`, emailErr.message);
+      }
+    }
   }
 }
 
@@ -357,7 +418,19 @@ export function scheduleDailyModuleReminders() {
               .collection("roadmap");
 
             // Always enforce practical expiry first, even when user never opened chat.
-            await enforceExpiredStatusForUser(roadmapRef, new Date());
+            // Get company data for notification
+            const companySnap = await db.collection("companies").doc(companyId).get();
+            const companyData = companySnap.exists ? companySnap.data() : {};
+            
+            await enforceExpiredStatusForUser(roadmapRef, new Date(), {
+              companyId,
+              deptId,
+              userId,
+              companyEmail: companyData?.email || companyData?.companyEmail || "",
+              companyName: companyData?.name || "TrainMate Company",
+              userName: userData?.name || "Unknown",
+              userEmail: userData?.email || "",
+            });
 
             let activeModules = await roadmapRef
               .where("status", "==", "in-progress")

@@ -142,6 +142,7 @@ export async function sendTrainingLockedEmail({
   score,
   lockIssueLabel = "Retries exceeded",
   lockIssueMessage = "Please review the learner record and decide the next step.",
+  issueType = "retries_exceeded", // "retries_exceeded" or "module_expired"
 }) {
   try {
     console.log("Email service: preparing training lock notification...");
@@ -150,34 +151,72 @@ export async function sendTrainingLockedEmail({
     const recipientEmail = companyEmail;
     console.log(`Sending training lock email to ${recipientEmail}`);
 
+    // Generate dynamic content based on issue type
+    let emailTitle = "Training Locked Notification";
+    let emailHeading = "A trainee has been locked";
+    let emailIntro = "Please review the issue below and decide next steps.";
+    let accentColor = "#00FFFF";
+    let backgroundColor = "#E8F4F8";
+    let subject = `Training Locked Alert - ${companyName}`;
+    let detailsHTML = "";
+
+    if (issueType === "module_expired") {
+      emailTitle = "Module Deadline Expired";
+      emailHeading = "Training Module Deadline Has Expired";
+      emailIntro = "A trainee's training module has automatically locked due to the deadline expiration. The learner can no longer access this module until you grant additional time or unlock it.";
+      accentColor = "#FF6B6B";
+      backgroundColor = "#FFE8E8";
+      subject = `Module Expired Alert - ${companyName}`;
+      detailsHTML = `
+        <p style="margin: 6px 0; color: #333;"><strong>Company:</strong> ${companyName}</p>
+        <p style="margin: 6px 0; color: #333;"><strong>User:</strong> ${userName || "Unknown"}</p>
+        <p style="margin: 6px 0; color: #333;"><strong>User Email:</strong> ${userEmail || "Unknown"}</p>
+        <p style="margin: 6px 0; color: #333;"><strong>Module:</strong> ${moduleTitle || "Unknown"}</p>
+        <p style="margin: 6px 0; color: #333;"><strong>Reason:</strong> Deadline expired - module automatically locked</p>
+      `;
+    } else if (issueType === "retries_exceeded") {
+      emailTitle = "Quiz Attempt Limit Reached";
+      emailHeading = "Quiz Attempt Limit Reached - Training Locked";
+      emailIntro = "A trainee has exhausted all available quiz attempts for a training module. Their training has been locked and they cannot proceed until you grant additional attempts or manually unlock the module.";
+      accentColor = "#00FFFF";
+      backgroundColor = "#E8F4F8";
+      subject = `Quiz Attempts Exhausted - ${companyName}`;
+      detailsHTML = `
+        <p style="margin: 6px 0; color: #333;"><strong>Company:</strong> ${companyName}</p>
+        <p style="margin: 6px 0; color: #333;"><strong>User:</strong> ${userName || "Unknown"}</p>
+        <p style="margin: 6px 0; color: #333;"><strong>User Email:</strong> ${userEmail || "Unknown"}</p>
+        <p style="margin: 6px 0; color: #333;"><strong>Module:</strong> ${moduleTitle || "Unknown"}</p>
+        <p style="margin: 6px 0; color: #333;"><strong>Attempts Used:</strong> ${attemptNumber || "N/A"}</p>
+        <p style="margin: 6px 0; color: #333;"><strong>Latest Score:</strong> ${typeof score === "number" ? `${score}%` : "N/A"}</p>
+        <p style="margin: 6px 0; color: #333;"><strong>Reason:</strong> All quiz attempts exhausted</p>
+      `;
+    }
+
     const mailOptions = {
       from: {
         name: "TrainMate",
         address: "trainmate01@gmail.com",
       },
       to: recipientEmail,
-      subject: `Training Locked Alert - ${companyName}`,
+      subject: subject,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 20px; background-color: #f4f4f4;">
           <div style="background-color: #031C3A; padding: 24px; text-align: center; border-radius: 10px 10px 0 0;">
             <h1 style="color: #00FFFF; margin: 0; font-size: 24px;">TrainMate</h1>
           </div>
           <div style="background-color: white; padding: 24px; border-radius: 0 0 10px 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-            <h2 style="color: #031C3A; margin-top: 0;">Training Locked Notification</h2>
-            <p style="color: #333; font-size: 15px; line-height: 1.6;">
-              A trainee has been locked. Please review the issue below and decide next steps.
+            <h2 style="color: #031C3A; margin-top: 0;">⚠️ ${emailTitle}</h2>
+            <p style="color: #D9534F; font-size: 16px; font-weight: bold; line-height: 1.6;">
+              ${emailHeading}
             </p>
-            <div style="background-color: #E8F4F8; padding: 16px; border-left: 4px solid #00FFFF; margin: 16px 0;">
-              <p style="margin: 6px 0; color: #333;"><strong>Company:</strong> ${companyName}</p>
-              <p style="margin: 6px 0; color: #333;"><strong>User:</strong> ${userName || "Unknown"}</p>
-              <p style="margin: 6px 0; color: #333;"><strong>User Email:</strong> ${userEmail || "Unknown"}</p>
-              <p style="margin: 6px 0; color: #333;"><strong>Module:</strong> ${moduleTitle || "Unknown"}</p>
-              <p style="margin: 6px 0; color: #333;"><strong>Attempt:</strong> ${attemptNumber || "N/A"}</p>
-              <p style="margin: 6px 0; color: #333;"><strong>Latest Score:</strong> ${typeof score === "number" ? `${score}%` : "N/A"}</p>
-              <p style="margin: 6px 0; color: #333;"><strong>Lock Issue:</strong> ${lockIssueLabel}</p>
+            <p style="color: #333; font-size: 15px; line-height: 1.6;">
+              ${emailIntro}
+            </p>
+            <div style="background-color: ${backgroundColor}; padding: 16px; border-left: 4px solid ${accentColor}; margin: 16px 0;">
+              ${detailsHTML}
             </div>
-            <p style="color: #333; font-size: 14px; line-height: 1.6;">
-              ${lockIssueMessage}
+            <p style="color: #333; font-size: 14px; line-height: 1.6; background-color: #f9f9f9; padding: 12px; border-radius: 5px;">
+              <strong>Next Steps:</strong> ${lockIssueMessage}
             </p>
             <p style="color: #666; font-size: 13px; line-height: 1.6; margin-top: 20px;">
               Regards,<br>
