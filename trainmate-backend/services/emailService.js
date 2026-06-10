@@ -8,11 +8,17 @@ dotenv.config();
  * Create email transporter using Gmail
  */
 function createTransporter() {
+  const gmailPassword = process.env.GMAIL_APP_PASSWORD;
+  
+  if (!gmailPassword) {
+    throw new Error("GMAIL_APP_PASSWORD environment variable is not set. Email service cannot send messages.");
+  }
+  
   return nodemailer.createTransport({
     service: "gmail",
     auth: {
       user: "trainmate01@gmail.com",
-      pass: process.env.GMAIL_APP_PASSWORD, // App password, not regular password
+      pass: gmailPassword, // App password, not regular password
     },
     // For testing behind proxies with SSL inspection
     tls: {
@@ -1508,10 +1514,17 @@ export async function sendCompanyLicenseRenewalAlertEmail({
     };
 
     const info = await transporter.sendMail(mailOptions);
-    console.log("License renewal reminder email sent:", info.messageId);
+    console.log("✅ License renewal reminder email sent:", info.messageId, "to:", companyEmail);
     return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error("License renewal reminder email failed:", error);
+    console.error("❌ License renewal reminder email failed:", {
+      companyEmail,
+      companyId,
+      errorMessage: error?.message,
+      errorCode: error?.code,
+      errorDetails: error?.response?.toString(),
+      fullError: error
+    });
     throw error;
   }
 }

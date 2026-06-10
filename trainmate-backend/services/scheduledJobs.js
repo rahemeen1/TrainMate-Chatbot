@@ -53,19 +53,29 @@ function deriveCompanyRenewalDate(companyData, latestBillingData) {
 
 export async function processCompanyLicenseRenewalAlerts() {
   const today = startOfDay(new Date());
+  console.log(`\n📋 Starting license renewal alert processing for date: ${today.toLocaleDateString()}`);
+  
   const companiesSnap = await db.collection("companies").get();
+  let processedCount = 0;
+  let sentCount = 0;
+  let skippedCount = 0;
 
   for (const companyDoc of companiesSnap.docs) {
     const companyId = companyDoc.id;
     const companyData = companyDoc.data() || {};
+    processedCount++;
 
     if (companyData.status && companyData.status !== "active") {
+      console.log(`  ⏭️  Skipping ${companyId}: status is ${companyData.status}, not active`);
+      skippedCount++;
       continue;
     }
 
     const companyEmail =
       String(companyData.email || companyData.companyEmail || "").trim().toLowerCase();
     if (!companyEmail) {
+      console.log(`  ⏭️  Skipping ${companyId}: no email found`);
+      skippedCount++;
       continue;
     }
 
@@ -80,12 +90,16 @@ export async function processCompanyLicenseRenewalAlerts() {
 
     const renewalDate = deriveCompanyRenewalDate(companyData, latestBillingData);
     if (!renewalDate) {
+      console.log(`  ⏭️  Skipping ${companyId}: no renewal date found`);
+      skippedCount++;
       continue;
     }
 
     const renewalDay = startOfDay(renewalDate);
     const dayDiff = Math.round((renewalDay.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
     if (!LICENSE_REMINDER_OFFSETS_DAYS.includes(dayDiff)) {
+      console.log(`  ⏭️  Skipping ${companyId}: renewal in ${dayDiff} days (no reminder scheduled)`);
+      skippedCount++;
       continue;
     }
 
@@ -98,6 +112,8 @@ export async function processCompanyLicenseRenewalAlerts() {
 
     const reminderSnap = await reminderRef.get();
     if (reminderSnap.exists) {
+      console.log(`  ⏭️  Skipping ${companyId}: reminder already sent for this date/offset`);
+      skippedCount++;
       continue;
     }
 
@@ -109,54 +125,66 @@ export async function processCompanyLicenseRenewalAlerts() {
         ? companyData.pendingLicensePlan
         : null;
 
-    await sendCompanyLicenseRenewalAlertEmail({
-      companyEmail,
-      companyId,
-      companyName: companyData.name || "Company",
-      licensePlan,
-      renewalDate,
-      daysRemaining: dayDiff,
-      pendingLicensePlan,
-    });
+    try {
+      await sendCompanyLicenseRenewalAlertEmail({
+        companyEmail,
+        companyId,
+        companyName: companyData.name || "Company",
+        licensePlan,
+        renewalDate,
+        daysRemaining: dayDiff,
+        pendingLicensePlan,
+      });
 
-    await reminderRef.set({
-      companyId,
-      companyEmail,
-      licensePlan,
-      renewalDate,
-      daysRemaining: dayDiff,
-      sentAt: new Date(),
-      sourceBillingDocId: latestBillingDoc?.id || null,
-      pendingLicensePlan,
-    });
+      await reminderRef.set({
+        companyId,
+        companyEmail,
+        licensePlan,
+        renewalDate,
+        daysRemaining: dayDiff,
+        sentAt: new Date(),
+        sourceBillingDocId: latestBillingDoc?.id || null,
+        pendingLicensePlan,
+      });
 
-    console.log(
-      `License reminder sent for company ${companyId} (${dayDiff} days remaining)`
-    );
+      console.log(
+        `✅ License reminder sent for company ${companyId} (${dayDiff} days remaining) to ${companyEmail}`
+      );
+      sentCount++;
+    } catch (emailError) {
+      console.error(
+        `❌ Failed to send renewal email for company ${companyId}:`,
+        emailError?.message
+      );
+      // Continue processing other companies even if one fails
+    }
   }
+
+  console.log(`📊 License renewal job summary: Processed ${processedCount} companies, sent ${sentCount} reminders, skipped ${skippedCount}\n`);
 }
 
 export function scheduleCompanyLicenseRenewalAlerts() {
   const cronExpression = process.env.COMPANY_LICENSE_REMINDER_CRON || "0 15 * * *"; // 3 PM daily
+  const timezone = process.env.DEFAULT_TIMEZONE || "Asia/Karachi";
 
   cron.schedule(
     cronExpression,
     async () => {
-      console.log("\nLicense renewal reminder job started at", new Date().toLocaleString());
+      console.log(`\n📧 [NOTIFICATIONS][LICENSE] License renewal reminder job started at ${new Date().toLocaleString()} (${timezone})`);
       try {
         await processCompanyLicenseRenewalAlerts();
-        console.log("License renewal reminder job completed\n");
+        console.log("📧 [NOTIFICATIONS][LICENSE] License renewal reminder job completed successfully\n");
       } catch (error) {
-        console.error("License renewal reminder job failed:", error);
+        console.error(`❌ [NOTIFICATIONS][LICENSE] License renewal reminder job failed: ${error?.message}\n`, error);
       }
     },
     {
-      timezone: process.env.DEFAULT_TIMEZONE || "Asia/Karachi",
+      timezone: timezone,
     }
   );
 
   console.log(
-    `Company license reminder scheduler initialized (runs at ${cronExpression})`
+    `✅ Company license reminder scheduler initialized (runs at ${cronExpression} ${timezone} time)`
   );
 }
 
