@@ -8,8 +8,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { generateRoadmapPDF } from "../services/pdfService.js";
 import { handleRoadmapGenerated } from "../services/notificationService.js";
 
-const MAX_QUIZ_ATTEMPTS = 3; // Must match QuizController.js
-
+const MAX_QUIZ_ATTEMPTS = 3; 
 let roadmapModel = null;
 
 function initializeModel() {
@@ -1211,6 +1210,29 @@ export const regenerateRoadmapModule = async (req, res) => {
 
     const orderShift = cappedSplitCount - 1;
     const now = new Date();
+
+    // Clear stale lock state from previously failed modules before regeneration so the
+    // fresher page does not remain stuck on an old training-lock screen.
+    const existingRoadmapSnap = await userRef.collection("roadmap").orderBy("order").get();
+    const existingModules = existingRoadmapSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+
+    await Promise.all(
+      existingModules.map((module) =>
+        userRef.collection("roadmap").doc(module.id).set(
+          {
+            moduleLocked: false,
+            quizLocked: false,
+            requiresAdminContact: false,
+            lockIssueType: null,
+            lockIssueLabel: null,
+            status: module.completed ? "completed" : "pending",
+            quizPassed: Boolean(module.quizPassed),
+            adminNotificationId: null,
+          },
+          { merge: true }
+        )
+      )
+    );
 
     const targetDocRef = userRef.collection("roadmap").doc(moduleId);
     await db.recursiveDelete(targetDocRef);

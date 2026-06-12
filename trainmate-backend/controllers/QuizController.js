@@ -135,20 +135,21 @@ function buildModuleLockReason({ issueType, moduleTitle, attemptsUsed, maxAttemp
 	return `Retries exceeded for "${safeTitle}" ${attemptText}.`;
 }
 
-function buildModuleLockNotificationMessage({ issueType, moduleTitle }) {
+function buildModuleLockNotificationMessage({ issueType, moduleTitle, attemptNumber = null, maxAttempts = null, score = null }) {
 	const normalizedIssueType = normalizeModuleLockIssueType(issueType);
 	const issueLabel = getModuleLockIssueLabel(normalizedIssueType);
 	const safeTitle = moduleTitle || "this module";
+	const attemptsUsed = Number.isFinite(Number(attemptNumber)) ? Number(attemptNumber) : null;
+	const maxAttemptLimit = Number.isFinite(Number(maxAttempts)) ? Number(maxAttempts) : null;
+	const scoreValue = Number.isFinite(Number(score)) ? Number(score) : null;
+	const attemptsText = attemptsUsed && maxAttemptLimit
+		? ` Learner reached ${attemptsUsed}/${maxAttemptLimit} attempts.`
+		: attemptsUsed
+			? ` Learner reached ${attemptsUsed} attempts.`
+			: "";
+	const scoreText = Number.isFinite(scoreValue) ? ` Last recorded score: ${Math.round(scoreValue)}%.` : "";
 
-	if (normalizedIssueType === "time_limit_exceeded") {
-		return `${issueLabel} for ${safeTitle}. Review the learner timeline before allowing another attempt.`;
-	}
-
-	if (normalizedIssueType === "module_expired") {
-		return `${issueLabel} - ${safeTitle} has been automatically locked. The learner can no longer access this module. Grant additional time or manually unlock to allow the learner to continue.`;
-	}
-
-	return `${issueLabel} for ${safeTitle}. The learner has exhausted all quiz attempts and cannot proceed. Review their performance and decide whether to grant more attempts or take other action.`;
+	return `Module ${safeTitle} is locked. Review the learner record and decide whether to regenerate, retry, or pass this module.`;
 }
 
 async function resolveCompanyLicensePlan(companyId, preloadedCompanySnap = null) {
@@ -328,6 +329,9 @@ async function createOrUpdateModuleLockNotification({
 			message: buildModuleLockNotificationMessage({
 				issueType: normalizedIssueType,
 				moduleTitle: moduleTitle || "module",
+				attemptNumber,
+				maxAttempts: Number.isFinite(Number(attemptNumber)) ? Number(attemptNumber) : null,
+				score,
 			}),
 			createdAt: admin.firestore.FieldValue.serverTimestamp(),
 			resolvedAt: null,

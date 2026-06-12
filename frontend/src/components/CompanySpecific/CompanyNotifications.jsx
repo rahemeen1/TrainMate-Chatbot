@@ -129,7 +129,7 @@ export default function CompanyNotifications() {
                             : isCompletion
                             ? "Training Completed"
                             : "Module Lock Alert";
-                          const issueInfo = isModuleLock ? getModuleLockIssueInfo(n) : null;
+                          const issueInfo = null;
                           return (
                             <>
                         <div className="flex items-center gap-3">
@@ -139,24 +139,16 @@ export default function CompanyNotifications() {
                           <h3 className="text-lg font-semibold text-[#00FFFF]">{title}</h3>
                         </div>
 
-                        {issueInfo && (
-                          <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border text-xs font-semibold ${issueInfo.toneClass}`}>
-                            <span className="uppercase tracking-wide">Issue</span>
-                            <span>{issueInfo.label}</span>
-                          </div>
-                        )}
-
-                        <p className="text-[#AFCBE3] text-sm">{n.message}</p>
+                        <p className="text-[#AFCBE3] text-sm">{n.message || `Issue detected for ${n.moduleTitle || "this module"}.`}</p>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
                           <p><span className="text-[#AFCBE3]">User:</span> {n.userName || "Unknown"}</p>
                           <p><span className="text-[#AFCBE3]">Email:</span> {n.userEmail || "Unknown"}</p>
                           <p><span className="text-[#AFCBE3]">Department:</span> {n.deptId || "Unknown"}</p>
                           {!isCompletion && !isSummary && <p><span className="text-[#AFCBE3]">Module:</span> {n.moduleTitle || n.moduleId || "N/A"}</p>}
-                          {!isCompletion && !isSummary && <p><span className="text-[#AFCBE3]">Attempt:</span> {n.attemptNumber || "N/A"}</p>}
                           {isSummary && <p><span className="text-[#AFCBE3]">Modules:</span> {n?.summary?.completedModules || "N/A"}/{n?.summary?.totalModules || "N/A"}</p>}
                           {isSummary && <p><span className="text-[#AFCBE3]">Total Attempts:</span> {n?.summary?.totalQuizAttempts ?? "N/A"}</p>}
-                          <p><span className="text-[#AFCBE3]">Score:</span> {typeof n.score === "number" ? `${n.score}%` : "N/A"}</p>
+                          {isCompletion && <p><span className="text-[#AFCBE3]">Score:</span> {typeof n.score === "number" ? `${n.score}%` : "N/A"}</p>}
                         </div>
                             </>
                           );

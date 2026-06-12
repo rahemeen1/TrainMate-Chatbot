@@ -34,16 +34,23 @@ function inferModuleLockIssueType(moduleData = {}) {
   return "retries_exceeded";
 }
 
-function buildModuleLockNotificationMessage(issueType, moduleTitle) {
+function buildModuleLockNotificationMessage(issueType, moduleTitle, details = {}) {
   const normalizedIssueType = normalizeModuleLockIssueType(issueType);
   const issueLabel = getModuleLockIssueLabel(normalizedIssueType);
   const safeTitle = moduleTitle || "this module";
+  const attemptsUsed = Number(details.attemptNumber || details.attemptsUsed || 0);
+  const maxAttempts = Number(details.maxAttempts || 0);
+  const score = Number.isFinite(Number(details.score)) ? Number(details.score) : null;
 
-  if (normalizedIssueType === "time_limit_exceeded") {
-    return `${issueLabel} for ${safeTitle}. Review the learner timeline before allowing another attempt.`;
-  }
+  const attemptsText = attemptsUsed && maxAttempts
+    ? ` Learner reached ${attemptsUsed}/${maxAttempts} attempts.`
+    : attemptsUsed
+      ? ` Learner reached ${attemptsUsed} attempts.`
+      : "";
 
-  return `${issueLabel} for ${safeTitle}. Review the learner record and decide the next step.`;
+  const scoreText = Number.isFinite(score) ? ` Last recorded score: ${Math.round(score)}%.` : "";
+
+  return `Module ${safeTitle} is locked. Review the learner record and decide whether to regenerate, retry, or pass this module.`;
 }
 
 function normalizeLicensePlan(value) {
@@ -175,6 +182,7 @@ async function ensurePendingNotificationsForLockedUsers(companyId) {
       }
 
       const notificationId = `module-lock-${deptId}-${userId}-${moduleId}`;
+      const scoreValue = moduleData?.lastQuizScore ?? moduleData?.latestScore ?? moduleData?.score ?? null;
 
       const notificationRef = db
         .collection("companies")
@@ -197,10 +205,14 @@ async function ensurePendingNotificationsForLockedUsers(companyId) {
           userEmail: userData.email || "",
           moduleTitle: moduleData.moduleTitle || "",
           attemptNumber: moduleData.quizAttempts || moduleAttemptLimit,
-          score: null,
+          score: Number.isFinite(Number(scoreValue)) ? Number(scoreValue) : null,
           lockIssueType,
           lockIssueLabel,
-          message: buildModuleLockNotificationMessage(lockIssueType, moduleData.moduleTitle || "module"),
+          message: buildModuleLockNotificationMessage(lockIssueType, moduleData.moduleTitle || "module", {
+            attemptNumber: moduleData.quizAttempts || moduleAttemptLimit,
+            maxAttempts: moduleAttemptLimit,
+            score: scoreValue,
+          }),
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
           resolvedAt: null,
           source: "auto-backfill",
@@ -217,7 +229,7 @@ async function ensurePendingNotificationsForLockedUsers(companyId) {
             userEmail: userData.email || "",
             moduleTitle: moduleData.moduleTitle || "",
             attemptNumber: moduleData.quizAttempts || moduleAttemptLimit,
-            score: null,
+            score: Number.isFinite(Number(scoreValue)) ? Number(scoreValue) : null,
             lockIssueLabel,
             lockIssueMessage: buildModuleLockNotificationMessage(lockIssueType, moduleData.moduleTitle || "module"),
           });
