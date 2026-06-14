@@ -11,6 +11,49 @@ import { FEATURE_FLAGS, isFeatureAvailable } from "../../services/featureAccess"
 import { getCompanyLicensePlan } from "../../services/companyLicense";
 import CompanyPageLoader from "../CompanySpecific/CompanyPageLoader";
 
+// Convert LaTeX math expressions to HTML symbols
+const convertLatexToSymbols = (text) => {
+  if (!text || typeof text !== 'string') return text;
+  
+  // Common LaTeX replacements
+  const latexMap = {
+    '\\rightarrow': '→',
+    '\\leftarrow': '←',
+    '\\leftrightarrow': '↔',
+    '\\Rightarrow': '⇒',
+    '\\Leftarrow': '⇐',
+    '\\approx': '≈',
+    '\\neq': '≠',
+    '\\leq': '≤',
+    '\\geq': '≥',
+    '\\infty': '∞',
+    '\\times': '×',
+    '\\div': '÷',
+    '\\pm': '±',
+    '\\sqrt': '√',
+    '\\alpha': 'α',
+    '\\beta': 'β',
+    '\\gamma': 'γ',
+    '\\delta': 'δ',
+    '\\theta': 'θ',
+    '\\pi': 'π',
+    '\\sum': '∑',
+    '\\int': '∫',
+  };
+  
+  let result = text;
+  
+  // Replace LaTeX symbols both with and without dollar signs
+  for (const [latex, symbol] of Object.entries(latexMap)) {
+    // Replace $\command$ format
+    result = result.replace(new RegExp(`\\$${latex.replace(/\\/g, '\\\\')}\\$`, 'g'), symbol);
+    // Replace plain \command format (without dollar signs)
+    result = result.replace(new RegExp(latex.replace(/\\/g, '\\\\'), 'g'), symbol);
+  }
+  
+  return result;
+};
+
 // Markdown to HTML converter utility
 const normalizeAssessmentBlocks = (text) => {
   if (!text || typeof text !== 'string') return text;
@@ -45,7 +88,10 @@ const normalizeAssessmentBlocks = (text) => {
 
 const markdownToHtml = (text) => {
   if (!text || typeof text !== 'string') return text;
-  const normalizedAssessmentText = normalizeAssessmentBlocks(text);
+  
+  // First convert LaTeX to symbols
+  const latexConverted = convertLatexToSymbols(text);
+  const normalizedAssessmentText = normalizeAssessmentBlocks(latexConverted);
   
   // If already contains HTML tags, return as-is
   if (/<[^>]+>/.test(normalizedAssessmentText)) return normalizedAssessmentText;

@@ -3,10 +3,55 @@ import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { apiUrl } from "../../services/api";
 
+// Convert LaTeX math expressions to HTML symbols
+function convertLatexToSymbols(text) {
+  if (!text) return text;
+  
+  // Common LaTeX replacements
+  const latexMap = {
+    '\\rightarrow': '→',
+    '\\leftarrow': '←',
+    '\\leftrightarrow': '↔',
+    '\\Rightarrow': '⇒',
+    '\\Leftarrow': '⇐',
+    '\\approx': '≈',
+    '\\neq': '≠',
+    '\\leq': '≤',
+    '\\geq': '≥',
+    '\\infty': '∞',
+    '\\times': '×',
+    '\\div': '÷',
+    '\\pm': '±',
+    '\\sqrt': '√',
+    '\\alpha': 'α',
+    '\\beta': 'β',
+    '\\gamma': 'γ',
+    '\\delta': 'δ',
+    '\\theta': 'θ',
+    '\\pi': 'π',
+    '\\sum': '∑',
+    '\\int': '∫',
+  };
+  
+  let result = text;
+  
+  // Replace LaTeX symbols both with and without dollar signs
+  for (const [latex, symbol] of Object.entries(latexMap)) {
+    // Replace $\command$ format
+    result = result.replace(new RegExp(`\\$${latex.replace(/\\/g, '\\\\')}\\$`, 'g'), symbol);
+    // Replace plain \command format (without dollar signs)
+    result = result.replace(new RegExp(latex.replace(/\\/g, '\\\\'), 'g'), symbol);
+  }
+  
+  return result;
+}
+
 function renderStyledBotText(text) {
   if (!text) return null;
-
-  const cleanText = text.replace(/\*\*/g, "").trim();
+  
+  // First convert LaTeX to symbols
+  const latexConverted = convertLatexToSymbols(text);
+  const cleanText = latexConverted.replace(/\*\*/g, "").trim();
   const lines = cleanText.split("\n");
 
   const renderInlineHighlights = (line, lineIndex) => {

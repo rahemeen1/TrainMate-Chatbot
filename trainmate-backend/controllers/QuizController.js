@@ -776,12 +776,29 @@ async function maybeOpenFinalAssessment({ userRef, userData = {}, companyName = 
 }
 
 async function embedText(text) {
-	const res = await cohere.embed({
-		model: "embed-english-v3.0",
-		texts: [text],
-		inputType: "search_query",
-	});
-	return res.embeddings[0];
+	try {
+		const res = await cohere.embed({
+			model: "embed-english-v3.0",
+			texts: [text],
+			inputType: "search_query",
+		});
+		if (!res.embeddings || !res.embeddings[0]) {
+			throw new Error("No embeddings returned from Cohere");
+		}
+		return res.embeddings[0];
+	} catch (err) {
+		console.error("Cohere embedding error:", err.message);
+		if (err.statusCode === 401 || err.message.includes("401")) {
+			throw new Error("COHERE_API_KEY is invalid or expired. Please check your API key at https://dashboard.cohere.com/api-keys");
+		}
+		if (err.statusCode === 429) {
+			throw new Error("Cohere API rate limit exceeded. Please try again later");
+		}
+		if (err.message.includes("fetch failed") || err.statusCode === 0) {
+			throw new Error("Failed to connect to Cohere API. Check your internet connection or if Cohere service is available");
+		}
+		throw err;
+	}
 }
 
 async function queryPinecone({ embedding, companyId, deptId, topK = 8 }) {

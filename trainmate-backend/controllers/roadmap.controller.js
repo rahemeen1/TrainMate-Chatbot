@@ -1208,6 +1208,8 @@ export const regenerateRoadmapModule = async (req, res) => {
       learningProfile,
     });
 
+    console.log(`✅ Regeneration: Created ${regeneratedModules.length} modules with days:`, regeneratedModules.map((m, i) => `Part${i+1}=${m.estimatedDays}d`).join(", "));
+
     const orderShift = cappedSplitCount - 1;
     const now = new Date();
 
@@ -1243,8 +1245,12 @@ export const regenerateRoadmapModule = async (req, res) => {
       const newRef = userRef.collection("roadmap").doc();
       newModuleRefs.push(newRef);
 
+      // Ensure estimatedDays has a valid value (at least 1)
+      const estimatedDaysForModule = Math.max(1, Number(regenerated.estimatedDays) || 1);
+
       await newRef.set({
         ...regenerated,
+        estimatedDays: estimatedDaysForModule,
         order: targetOrder + index,
         completed: false,
         quizPassed: false,
