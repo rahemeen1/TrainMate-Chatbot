@@ -27,7 +27,7 @@ function Certificate() {
   const [finalAssessment, setFinalAssessment] = useState(null);
   const certificateRef = useRef(null);
   const coordinatorSignature = "Rahemeen";
-  const directorSignature = companyName || "TrainMate";
+  const directorSignature = "Alishba";
   const signatureFontFamily = '"Segoe Script", "Lucida Handwriting", "Bradley Hand", cursive';
 
   useEffect(() => {
